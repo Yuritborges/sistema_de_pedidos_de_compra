@@ -1,0 +1,83 @@
+{
+  "versao": 1,
+  "arquivo_origem": "",
+  "obra": "AGENOR DE CAMPOS",
+  "empresa_faturadora": "B&B",
+  "fornecedores": [
+    "CORANTE",
+    "OLD RIVER",
+    "N TINTAS"
+  ],
+  "fretes": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "descontos": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "itens": [
+    {
+      "descricao": "LATA TINTA SUPER RENDIMENTO BRANCO",
+      "quantidade": 5.0,
+      "unidade": "UNID.",
+      "precos": [
+        259.9,
+        269.9,
+        280.0
+      ]
+    },
+    {
+      "descricao": "GALÃO TINTA BRANCO GELO",
+      "quantidade": 12.0,
+      "unidade": "GL",
+      "precos": [
+        109.9,
+        89.9,
+        119.9
+      ]
+    },
+    {
+      "descricao": "LIXA 100 PAREDE",
+      "quantidade": 100.0,
+      "unidade": "UNID.",
+      "precos": [
+        0.99,
+        0.69,
+        0.65
+      ]
+    },
+    {
+      "descricao": "ROLO LÃ 05CM ANTI RESPINGO",
+      "quantidade": 10.0,
+      "unidade": "UNID.",
+      "precos": [
+        4.5,
+        4.69,
+        4.99
+      ]
+    },
+    {
+      "descricao": "ROLO LÃ 23CM",
+      "quantidade": 3.0,
+      "unidade": "UNID.",
+      "precos": [
+        15.0,
+        18.0,
+        12.99
+      ]
+    },
+    {
+      "descricao": "TINTA PISO PREMIUM",
+      "quantidade": 1.0,
+      "unidade": "LT",
+      "precos": [
+        349.9,
+        345.5,
+        340.0
+      ]
+    }
+  ]
+}

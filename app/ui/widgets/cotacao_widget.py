@@ -272,6 +272,7 @@ class CotacaoWidget(QWidget):
         self._obras     = {}
         self._bloqueio  = False
         self._arquivo_cotacao_atual = ""
+        self._itens_negociacao = []
         os.makedirs(_COT_DIR, exist_ok=True)
         self._build()
         self._carregar_obras()
@@ -1296,46 +1297,116 @@ class CotacaoWidget(QWidget):
             QMessageBox.warning(self, "WhatsApp", "Não foi possível abrir o WhatsApp Web.")
 
     def _mostrar_previa_negociacao(self, itens):
+        """Diálogo de prévia com tabela rolável — substitui o QMessageBox."""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QDialogButtonBox, QScrollArea
         if not itens:
             QMessageBox.information(self, "Negociação", "Não há itens para negociação.")
             return
 
-        linhas = []
-        linhas.append("ITENS PARA NEGOCIAÇÃO")
-        linhas.append("")
+        economia_total = sum(x["diferenca_total"] for x in itens)
+        vencedor = itens[0]["fornecedor_vencedor"] if itens else "—"
+        total_atual = self._resultados[self._venc_idx].total_final if hasattr(self, "_resultados") else 0.0
+        novo_total  = max(0.0, total_atual - economia_total)
 
-        economia_total = 0.0
-        for i, item in enumerate(itens, start=1):
-            economia_total += item["diferenca_total"]
-            linhas.append(
-                f"{i}. {item['descricao']}\n"
-                f"   Qtd: {self._fn(item['quantidade'])} {item['unidade']}\n"
-                f"   Seu preço ({item['fornecedor_vencedor']}): R$ {self._f(item['preco_vencedor'])}\n"
-                f"   Melhor concorrente ({item['fornecedor_melhor']}): R$ {self._f(item['preco_melhor'])}\n"
-                f"   Diferença unitária: R$ {self._f(item['diferenca_unitaria'])}\n"
-                f"   Diferença total: R$ {self._f(item['diferenca_total'])}\n"
-            )
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Prévia de Negociação")
+        dlg.setMinimumSize(780, 480)
+        dlg.setStyleSheet(f"background:{WHITE}; color:{TXT};")
+        vl = QVBoxLayout(dlg); vl.setContentsMargins(16,14,16,14); vl.setSpacing(10)
 
-        linhas.append("")
-        linhas.append(f"ECONOMIA POTENCIAL TOTAL: R$ {self._f(economia_total)}")
+        # Cabeçalho
+        lbl_tit = QLabel(f"Itens para negociar com <b>{vencedor.upper()}</b>")
+        lbl_tit.setStyleSheet(f"font-size:14px;font-weight:bold;color:{GRAY};background:transparent;")
+        vl.addWidget(lbl_tit)
 
-        QMessageBox.information(
-            self,
-            "Prévia de Negociação",
-            "\n".join(linhas)
-        )
+        # Tabela dos itens
+        tbl = QTableWidget(len(itens), 7)
+        tbl.setHorizontalHeaderLabels([
+            "Descrição", "Qtd", "Unid",
+            f"Preço {vencedor[:12]}", "Melhor concorrente", "Dif. unit.", "Dif. total"
+        ])
+        tbl.setStyleSheet(CSS_TABLE)
+        tbl.setEditTriggers(QTableWidget.NoEditTriggers)
+        tbl.setSelectionBehavior(QTableWidget.SelectRows)
+        tbl.verticalHeader().setVisible(False)
+        tbl.setShowGrid(True)
+        tbl.setFrameShape(QFrame.NoFrame)
+        hh = tbl.horizontalHeader()
+        hh.setSectionResizeMode(0, QHeaderView.Stretch)
+        for c, w in enumerate([0, 50, 50, 100, 140, 85, 85], start=0):
+            if c > 0: tbl.setColumnWidth(c, w)
+
+        for r, item in enumerate(itens):
+            tbl.setRowHeight(r, 32)
+            bg = WHITE if r % 2 == 0 else "#F8F8F8"
+
+            def cell(txt, align=Qt.AlignVCenter|Qt.AlignLeft, cor="#1A1A1A", bold=False):
+                it2 = QTableWidgetItem(str(txt))
+                it2.setTextAlignment(align)
+                it2.setFlags(it2.flags() & ~Qt.ItemIsEditable)
+                it2.setForeground(QBrush(QColor(cor)))
+                it2.setBackground(QBrush(QColor(bg)))
+                if bold: ff=QFont(); ff.setBold(True); it2.setFont(ff)
+                return it2
+
+            tbl.setItem(r, 0, cell(item["descricao"][:55], bold=True))
+            tbl.setItem(r, 1, cell(self._fn(item["quantidade"]), Qt.AlignCenter|Qt.AlignVCenter))
+            tbl.setItem(r, 2, cell(item["unidade"], Qt.AlignCenter|Qt.AlignVCenter, "#555"))
+            tbl.setItem(r, 3, cell(f"R$ {self._f(item['preco_vencedor'])}", Qt.AlignRight|Qt.AlignVCenter, "#C0392B"))
+            tbl.setItem(r, 4, cell(
+                f"{item['fornecedor_melhor'][:14]}: R$ {self._f(item['preco_melhor'])}",
+                Qt.AlignRight|Qt.AlignVCenter, "#1A7A3C"))
+            tbl.setItem(r, 5, cell(f"R$ {self._f(item['diferenca_unitaria'])}", Qt.AlignRight|Qt.AlignVCenter, "#1A5276"))
+            tbl.setItem(r, 6, cell(f"R$ {self._f(item['diferenca_total'])}", Qt.AlignRight|Qt.AlignVCenter, "#1A5276", bold=True))
+
+        vl.addWidget(tbl, 1)
+
+        # Rodapé com totais
+        rod = QFrame()
+        rod.setStyleSheet("QFrame{background:#F0F8FF;border-radius:8px;border:1px solid #D6EAF8;}")
+        hl_rod = QHBoxLayout(rod); hl_rod.setContentsMargins(14,10,14,10); hl_rod.setSpacing(30)
+
+        def stat(label, valor, cor="#1A1A1A"):
+            vls = QVBoxLayout(); vls.setSpacing(2)
+            l1 = QLabel(label)
+            l1.setStyleSheet("font-size:9px;font-weight:700;color:#888;background:transparent;letter-spacing:1px;")
+            l2 = QLabel(valor)
+            l2.setStyleSheet(f"font-size:16px;font-weight:bold;color:{cor};background:transparent;")
+            vls.addWidget(l1); vls.addWidget(l2)
+            return vls
+
+        hl_rod.addLayout(stat("ITENS PARA NEGOCIAR", str(len(itens)), "#1A5276"))
+        hl_rod.addLayout(stat("ECONOMIA POTENCIAL", f"R$ {self._f(economia_total)}", GREEN))
+        hl_rod.addLayout(stat("TOTAL ATUAL", f"R$ {self._f(total_atual)}", "#C0392B"))
+        hl_rod.addLayout(stat("NOVO TOTAL POSSÍVEL", f"R$ {self._f(novo_total)}", "#1A7A3C"))
+        hl_rod.addStretch()
+        vl.addWidget(rod)
+
+        # Botões
+        hl_btn = QHBoxLayout(); hl_btn.setSpacing(8)
+        btn_copiar = btn_solid("📋  Copiar texto", "#1A5276", h=36)
+        btn_copiar.clicked.connect(lambda: (
+            QApplication.clipboard().setText(self._gerar_texto_negociacao(itens)),
+            QMessageBox.information(dlg, "Copiado", "✅ Texto copiado para a área de transferência.")
+        ))
+        btn_whats = btn_solid("🟢  WhatsApp", "#25D366", h=36)
+        btn_whats.clicked.connect(lambda: QDesktopServices.openUrl(
+            QUrl(f"https://wa.me/?text={quote(self._gerar_texto_negociacao(itens))}")))
+        btn_fechar = btn_outline("Fechar")
+        btn_fechar.clicked.connect(dlg.accept)
+        hl_btn.addWidget(btn_copiar)
+        hl_btn.addWidget(btn_whats)
+        hl_btn.addStretch()
+        hl_btn.addWidget(btn_fechar)
+        vl.addLayout(hl_btn)
+
+        dlg.exec()
 
     def _negociar(self):
-        itens = getattr(self, "_itens_negociacao", None) or self._coletar_itens_negociacao()
-
+        itens = self._itens_negociacao or self._coletar_itens_negociacao()
         if not itens:
-            QMessageBox.information(
-                self,
-                "Negociação",
-                "Nenhum item encontrado para negociação."
-            )
+            QMessageBox.information(self, "Negociação", "Nenhum item encontrado para negociação.")
             return
-
         self._mostrar_previa_negociacao(itens)
 
     # ══════════════════════════════════════════════════════════════════════════
