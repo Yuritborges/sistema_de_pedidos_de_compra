@@ -1,14 +1,5 @@
-"""
-app/ui/widgets/pedidos_widget.py
-=================================
-Aba "Pedidos Gerados" — visual moderno no padrão Brasul.
-
-NOVIDADES:
-    - CSS e helpers vindos de app.ui.style (sem duplicação)
-    - Botão "Imprimir Hoje" — gera Relação de Pedidos do dia e abre para impressão
-    - Botão "Imprimir por Data" — seletor de data para imprimir qualquer dia
-"""
-
+# app/ui/widgets/pedidos_widget.py
+# Aba de pedidos gerados com filtros e impressão.
 import os, sys, subprocess, shutil, tempfile
 from datetime import datetime, date, timedelta
 
@@ -438,12 +429,12 @@ class PedidosWidget(QWidget):
     # ══════════════════════════════════════════════════════════════════════════
 
     def _imprimir_hoje(self):
-        """Gera e abre para impressão a Relação de Pedidos de hoje."""
+                # Gera e abre para impressão a Relação de Pedidos de hoje.
         hoje = datetime.now().date()
         self._gerar_e_imprimir_relacao(hoje)
 
     def _imprimir_por_data(self):
-        """Abre seletor de data e imprime a Relação de Pedidos do dia escolhido."""
+                # Abre seletor de data e imprime a Relação de Pedidos do dia escolhido.
         dlg = QDialog(self)
         dlg.setWindowTitle("Selecionar data para impressão")
         dlg.setMinimumWidth(300)
@@ -487,7 +478,7 @@ class PedidosWidget(QWidget):
         self._gerar_e_imprimir_relacao(data_sel)
 
     def _gerar_e_imprimir_relacao(self, data_ref: date):
-        """Filtra pedidos pela data, pede comprador, confirma e gera PDF."""
+                # Filtra pedidos pela data, pede comprador, confirma e gera PDF.
         # ── 1. Filtra pedidos do dia ──────────────────────────────────────────
         pedidos_dia = [p for p in self._todos if p["data"].date() == data_ref]
 

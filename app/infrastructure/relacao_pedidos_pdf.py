@@ -1,10 +1,5 @@
-"""
-app/infrastructure/relacao_pedidos_pdf.py
-==========================================
-Gera o PDF "Relação de Pedidos" — equivalente à aba PEDIDOS EMITIDOS do Excel.
-Usado pelo pedidos_widget.py para impressão diária ao financeiro.
-"""
-
+# app/infrastructure/relacao_pedidos_pdf.py
+# Gera o PDF da Relação de Pedidos para o financeiro.
 import os
 from datetime import date, datetime
 from reportlab.lib.pagesizes import A4, landscape

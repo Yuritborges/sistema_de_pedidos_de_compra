@@ -1,10 +1,5 @@
-"""
-relatorio_obra_excel.py
-=======================
-Gera relatório Excel de auditoria completo de uma obra.
-Usado pelo obras_widget.py — não execute diretamente.
-"""
-
+# app/ui/widgets/relatorio_obra_excel.py
+# Gera relatório Excel por obra.
 import os
 from datetime import datetime
 from openpyxl import Workbook

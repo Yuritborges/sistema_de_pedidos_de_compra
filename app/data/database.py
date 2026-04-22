@@ -1,15 +1,12 @@
-"""
-app/data/database.py
-Inicialização do banco de dados SQLite.
-Na V1 cria as tabelas; na V2 adiciona Alembic para migrations.
-"""
+# app/data/database.py
+# Cria e gerencia o banco de dados SQLite do sistema.
 
 import sqlite3
 import os
 from config import DATABASE_PATH
 
 
-def get_connection() -> sqlite3.Connection:
+def get_connection():
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
@@ -18,7 +15,7 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_db():
-    """Cria todas as tabelas se não existirem."""
+    # Cria todas as tabelas se ainda não existirem
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
     with get_connection() as conn:
         conn.executescript("""
@@ -40,16 +37,16 @@ def init_db():
             );
 
             CREATE TABLE IF NOT EXISTS fornecedores (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                nome        TEXT NOT NULL UNIQUE,
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome         TEXT NOT NULL UNIQUE,
                 razao_social TEXT,
-                email       TEXT,
-                vendedor    TEXT,
-                telefone    TEXT,
-                pix         TEXT,
-                favorecido  TEXT,
-                ativo       INTEGER DEFAULT 1,
-                criado_em   TEXT DEFAULT (datetime('now'))
+                email        TEXT,
+                vendedor     TEXT,
+                telefone     TEXT,
+                pix          TEXT,
+                favorecido   TEXT,
+                ativo        INTEGER DEFAULT 1,
+                criado_em    TEXT DEFAULT (datetime('now'))
             );
 
             CREATE TABLE IF NOT EXISTS pedidos (
@@ -72,14 +69,14 @@ def init_db():
             );
 
             CREATE TABLE IF NOT EXISTS itens_pedido (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                pedido_id       INTEGER NOT NULL REFERENCES pedidos(id),
-                descricao       TEXT NOT NULL,
-                quantidade      REAL,
-                unidade         TEXT,
-                valor_unitario  REAL,
-                valor_total     REAL,
-                categoria       TEXT
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                pedido_id      INTEGER NOT NULL REFERENCES pedidos(id),
+                descricao      TEXT NOT NULL,
+                quantidade     REAL,
+                unidade        TEXT,
+                valor_unitario REAL,
+                valor_total    REAL,
+                categoria      TEXT
             );
 
             CREATE TABLE IF NOT EXISTS cotacoes (
@@ -91,22 +88,22 @@ def init_db():
             );
 
             CREATE TABLE IF NOT EXISTS itens_cotacao (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                cotacao_id      INTEGER NOT NULL REFERENCES cotacoes(id),
-                descricao       TEXT NOT NULL,
-                quantidade      REAL,
-                unidade         TEXT,
-                preco_f1        REAL,
-                preco_f2        REAL,
-                preco_f3        REAL,
-                fornecedor_1    TEXT,
-                fornecedor_2    TEXT,
-                fornecedor_3    TEXT
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                cotacao_id   INTEGER NOT NULL REFERENCES cotacoes(id),
+                descricao    TEXT NOT NULL,
+                quantidade   REAL,
+                unidade      TEXT,
+                preco_f1     REAL,
+                preco_f2     REAL,
+                preco_f3     REAL,
+                fornecedor_1 TEXT,
+                fornecedor_2 TEXT,
+                fornecedor_3 TEXT
             );
 
             CREATE TABLE IF NOT EXISTS contador_pedidos (
-                id      INTEGER PRIMARY KEY CHECK (id = 1),
-                ultimo  INTEGER NOT NULL DEFAULT 2548
+                id     INTEGER PRIMARY KEY CHECK (id = 1),
+                ultimo INTEGER NOT NULL DEFAULT 2548
             );
 
             INSERT OR IGNORE INTO contador_pedidos (id, ultimo) VALUES (1, 2548);
@@ -114,8 +111,8 @@ def init_db():
     print(f"[DB] Banco inicializado: {DATABASE_PATH}")
 
 
-def proximo_numero_pedido() -> str:
-    """Retorna o próximo número de pedido e incrementa o contador."""
+def proximo_numero_pedido():
+    # Pega o próximo número disponível e já incrementa no banco
     with get_connection() as conn:
         row = conn.execute("SELECT ultimo FROM contador_pedidos WHERE id=1").fetchone()
         proximo = (row["ultimo"] if row else 2548) + 1

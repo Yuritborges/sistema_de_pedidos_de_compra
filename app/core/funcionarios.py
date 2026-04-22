@@ -1,26 +1,19 @@
-"""
-app/core/funcionarios.py
-=========================
-Gerencia a lista de compradores/funcionários do sistema.
-Persistido em assets/funcionarios.json.
-Funções:
-    listar()        → lista de nomes
-    adicionar(nome) → True se adicionou, False se já existe
-    remover(nome)   → True se removeu
-"""
+# app/core/funcionarios.py
+# Gerencia a lista de compradores salvos em assets/funcionarios.json
 
-import os, json
+import os
+import json
 
 _ASSETS = os.path.normpath(
     os.path.join(os.path.dirname(__file__), '..', '..', 'assets')
 )
 _JSON = os.path.join(_ASSETS, 'funcionarios.json')
 
-# Funcionários padrão — criados na primeira execução
+# Funcionários criados na primeira vez que o sistema rodar
 _PADRAO = ["IURY", "THAMYRES"]
 
 
-def _carregar() -> list:
+def _carregar():
     try:
         with open(_JSON, encoding='utf-8') as f:
             data = json.load(f)
@@ -33,20 +26,17 @@ def _carregar() -> list:
     return list(_PADRAO)
 
 
-def _salvar(lista: list):
+def _salvar(lista):
     os.makedirs(_ASSETS, exist_ok=True)
     with open(_JSON, 'w', encoding='utf-8') as f:
         json.dump(lista, f, ensure_ascii=False, indent=2)
 
 
-def listar() -> list:
-    """Retorna lista de nomes em maiúsculas, ordenada."""
-    func = _carregar()
-    return sorted(func)
+def listar():
+    return sorted(_carregar())
 
 
-def adicionar(nome: str) -> bool:
-    """Adiciona funcionário. Retorna False se já existir."""
+def adicionar(nome):
     nome = nome.strip().upper()
     if not nome:
         return False
@@ -58,8 +48,7 @@ def adicionar(nome: str) -> bool:
     return True
 
 
-def remover(nome: str) -> bool:
-    """Remove funcionário. Retorna False se não existir."""
+def remover(nome):
     nome = nome.strip().upper()
     func = _carregar()
     if nome not in func:

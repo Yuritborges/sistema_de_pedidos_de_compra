@@ -1,36 +1,17 @@
-"""
-Sistema de Cotação e Pedidos de Compra - Brasul Construtora
-Execute: python main.py
-
-COMO ESTE ARQUIVO FUNCIONA (para estudantes):
-    Este é o ponto de entrada do programa. Quando você roda 'python main.py'
-    ou clica no iniciar.bat, Python começa aqui.
-
-    O fluxo é:
-        1. init_db()     → cria/verifica o banco de dados SQLite
-        2. QApplication  → inicializa o framework de interface gráfica (PySide6)
-        3. MainWindow()  → cria a janela principal com as abas
-        4. app.exec()    → entra no loop de eventos (mantém a janela aberta)
-
-    O 'if __name__ == "__main__"' garante que main() só roda quando o arquivo
-    é executado diretamente — não quando é importado por outro módulo.
-"""
+# main.py
+# Ponto de entrada do sistema.
+# Rode com: python main.py
 
 import sys
 import os
 
-# Adiciona a pasta raiz do projeto ao PATH do Python,
-# para que imports como 'from app.data.database import ...' funcionem
-# independente de onde o script é executado.
+# Adiciona a pasta raiz ao path para os imports funcionarem
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.data.database import init_db
 from app.ui.main_window import MainWindow
 
-# ── CSS global aplicado em toda a aplicação ────────────────────────────────────
-# O tema Fusion do Qt pode herdar cores do sistema operacional e deixar
-# texto branco em fundo branco (invisível). Este CSS força texto preto
-# em todos os campos, independente do tema do Windows.
+# CSS global: garante texto legível independente do tema do Windows
 GLOBAL_CSS = """
     QWidget                { color: #111827; }
     QLineEdit              { color: #111827; background: #FFFFFF;
@@ -56,37 +37,29 @@ GLOBAL_CSS = """
 
 
 def main():
-    # Passo 1: inicializa o banco de dados (cria as tabelas se não existirem)
     init_db()
 
     try:
         from PySide6.QtWidgets import QApplication
 
-        # Passo 2: cria a aplicação Qt (obrigatório antes de qualquer widget)
         app = QApplication(sys.argv)
         app.setApplicationName("Sistema de Cotação - Brasul")
         app.setOrganizationName("Brasul Construtora")
-        app.setStyle("Fusion")          # tema visual limpo e profissional
-        app.setStyleSheet(GLOBAL_CSS)   # aplica o CSS global
+        app.setStyle("Fusion")
+        app.setStyleSheet(GLOBAL_CSS)
 
-        # Passo 3: cria e exibe a janela principal
         window = MainWindow()
         window.show()
 
-        # Passo 4: entra no loop de eventos — mantém a janela aberta até fechar
         sys.exit(app.exec())
 
     except ImportError:
-        # Fallback caso PySide6 não esteja instalado: roda demo em modo texto
         print("PySide6 não instalado. Rodando demo CLI...")
         _demo_cli()
 
 
 def _demo_cli():
-    """
-    Modo de demonstração sem interface gráfica.
-    Útil para testar a geração de PDF via linha de comando.
-    """
+    # Modo de teste sem interface gráfica
     from app.core.services.pedido_service import PedidoService
     from app.core.dto.pedido_dto import PedidoDTO, ItemPedidoDTO
 

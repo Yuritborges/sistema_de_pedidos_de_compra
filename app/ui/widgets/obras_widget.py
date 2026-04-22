@@ -1,10 +1,5 @@
-"""
-app/ui/widgets/obras_widget.py
-================================
-Aba "Obras" — gerenciamento completo de obras cadastradas.
-CSS e helpers vindos de app.ui.style (sem duplicação).
-"""
-
+# app/ui/widgets/obras_widget.py
+# Aba de cadastro e gerenciamento de obras.
 import os, sys, json, subprocess
 from datetime import datetime
 

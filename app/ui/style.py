@@ -1,29 +1,26 @@
-"""
-app/ui/style.py
-===============
-Paleta de cores, CSS e componentes visuais centralizados.
-Importe daqui em todos os widgets — nunca duplique CSS.
-"""
+# app/ui/style.py
+# Cores, CSS e botões padrão do sistema.
+# Importe daqui em todos os widgets.
 
 from PySide6.QtWidgets import QPushButton, QFrame, QVBoxLayout, QLabel
 from PySide6.QtCore import Qt
 
-# ── Paleta ────────────────────────────────────────────────────────────────────
-RED    = "#C0392B"
-GRAY   = "#2C2C2C"
-WHITE  = "#FFFFFF"
-BG     = "#F0EDED"
-BDR    = "#D8CCCC"
-BDR_F  = "#C0392B"
-TXT    = "#1A1A1A"
-TXT_S  = "#6B5555"
-SEL    = "#FADBD8"
-HOV    = "#FEF0EF"
-GREEN  = "#1E8449"
-BLUE   = "#2980B9"
-RO_BG  = "#F5F0F0"
+# Paleta de cores
+RED   = "#C0392B"
+GRAY  = "#2C2C2C"
+WHITE = "#FFFFFF"
+BG    = "#F0EDED"
+BDR   = "#D8CCCC"
+BDR_F = "#C0392B"
+TXT   = "#1A1A1A"
+TXT_S = "#6B5555"
+SEL   = "#FADBD8"
+HOV   = "#FEF0EF"
+GREEN = "#1E8449"
+BLUE  = "#2980B9"
+RO_BG = "#F5F0F0"
 
-# ── CSS reutilizáveis ─────────────────────────────────────────────────────────
+# CSS dos campos de texto
 CSS_INPUT = f"""
     QLineEdit {{
         color:{TXT}; background:{WHITE};
@@ -34,6 +31,7 @@ CSS_INPUT = f"""
     QLineEdit:read-only {{ color:{TXT_S}; background:{RO_BG}; border:1.5px solid #E8DEDE; }}
 """
 
+# CSS dos comboboxes
 CSS_COMBO = f"""
     QComboBox {{
         color:{TXT}; background:{WHITE};
@@ -62,6 +60,7 @@ CSS_COMBO = f"""
     }}
 """
 
+# CSS do campo de busca
 CSS_BUSCA = f"""
     QLineEdit {{
         color:{TXT}; background:{WHITE};
@@ -71,6 +70,7 @@ CSS_BUSCA = f"""
     QLineEdit:focus {{ border:1.5px solid {RED}; background:#FFFBFB; }}
 """
 
+# CSS das tabelas
 CSS_TABLE = f"""
     QTableWidget {{
         background:{WHITE}; border:none;
@@ -101,7 +101,7 @@ CSS_TABLE = f"""
 
 CSS_TABLE_SM = CSS_TABLE.replace("font-size:12px", "font-size:11px")
 
-# Cores por empresa faturadora
+# Cor de destaque por empresa faturadora
 CORES_EMPRESA = {
     "BRASUL":      RED,
     "JB":          "#A93226",
@@ -111,10 +111,8 @@ CORES_EMPRESA = {
 }
 
 
-# ── Componentes helper ────────────────────────────────────────────────────────
-
-def btn_solid(texto: str, cor: str, h: int = 34) -> QPushButton:
-    """Botão sólido colorido padrão Brasul."""
+# Botão preenchido colorido
+def btn_solid(texto, cor, h=34):
     b = QPushButton(texto)
     b.setFixedHeight(h)
     b.setCursor(Qt.PointingHandCursor)
@@ -129,8 +127,8 @@ def btn_solid(texto: str, cor: str, h: int = 34) -> QPushButton:
     return b
 
 
-def btn_outline(texto: str, h: int = 34) -> QPushButton:
-    """Botão outline (borda) padrão Brasul."""
+# Botão com borda (outline)
+def btn_outline(texto, h=34):
     b = QPushButton(texto)
     b.setFixedHeight(h)
     b.setCursor(Qt.PointingHandCursor)
@@ -146,8 +144,8 @@ def btn_outline(texto: str, h: int = 34) -> QPushButton:
     return b
 
 
-def btn_filtro(rotulo: str) -> QPushButton:
-    """Botão de filtro rápido checkable."""
+# Botão de filtro que fica marcado ao clicar
+def btn_filtro(rotulo):
     b = QPushButton(rotulo)
     b.setFixedHeight(34)
     b.setCheckable(True)
@@ -167,8 +165,8 @@ def btn_filtro(rotulo: str) -> QPushButton:
     return b
 
 
-def make_card(titulo: str, valor: str, cor: str):
-    """Card de resumo. Retorna (QFrame, QLabel_valor)."""
+# Card de resumo com título e valor
+def make_card(titulo, valor, cor):
     card = QFrame()
     card.setFixedHeight(72)
     card.setMinimumWidth(170)
@@ -201,8 +199,8 @@ def make_card(titulo: str, valor: str, cor: str):
     return card, lv
 
 
-def card_container() -> QFrame:
-    """Frame branco com borda suave e sombra — container padrão de tabelas."""
+# Frame branco arredondado usado como container de tabelas
+def card_container():
     frame = QFrame()
     frame.setStyleSheet(
         f"QFrame {{ background:{WHITE}; border-radius:12px; border:1px solid #EEE5E5; }}"

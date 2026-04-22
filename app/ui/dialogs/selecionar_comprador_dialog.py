@@ -1,11 +1,6 @@
-"""
-app/ui/dialogs/selecionar_comprador_dialog.py
-==============================================
-Diálogo exibido antes de gerar a Relação de Pedidos.
-Permite:
-  - Selecionar o comprador/funcionário responsável
-  - Gerenciar a lista (adicionar / remover) sem sair da tela
-"""
+# app/ui/dialogs/selecionar_comprador_dialog.py
+# Diálogo para escolher o comprador antes de gerar a Relação de Pedidos.
+
 
 import os
 
@@ -25,9 +20,6 @@ from app.core import funcionarios as func_svc
 
 
 class SelecionarCompradorDialog(QDialog):
-    """
-    Retorna o comprador escolhido via .comprador_selecionado após exec().
-    """
 
     def __init__(self, parent=None, titulo_relatorio: str = "Relação de Pedidos"):
         super().__init__(parent)

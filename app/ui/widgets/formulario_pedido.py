@@ -1,33 +1,5 @@
-"""
-app/ui/widgets/formulario_pedido.py
-
-Widget principal da aba "Pedido de Compra".
-
-NOVIDADES DESTA VERSÃO (v3):
-    1. Campo de desconto abaixo da tabela de itens:
-       - Modo PORCENTAGEM (%): digita 10 → desconta 10% do subtotal
-       - Modo VALOR (R$): digita 100 → desconta R$ 100,00 fixo
-       - Botão alterna entre os modos; o total é recalculado em tempo real
-    2. Tabela de itens melhorada:
-       - Um clique na célula de descrição já abre edição (sem precisar de dois)
-       - Tab navega célula a célula pela linha
-       - SpinBoxes sem setas (mais espaço para digitar)
-    3. obs_padrao da empresa vai direto para o bloco de faturamento do PDF
-    4. Botão Limpar / Novo Pedido com confirmação
-    5. Label informativo mostra o texto automático da empresa selecionada
-
-CONCEITO DE DESCONTO (para estudantes):
-    Guardamos o desconto em dois atributos:
-        self._desconto_tipo  → "%" ou "R$"
-        self._desconto_valor → número digitado pelo usuário
-
-    No _recalc() calculamos:
-        se tipo == "%": desconto_R$ = subtotal * valor / 100
-        se tipo == "R$": desconto_R$ = valor
-
-    O DTO recebe sempre o valor em R$ já calculado.
-"""
-
+# app/ui/widgets/formulario_pedido.py
+# Formulário de criação e edição de pedidos de compra.
 import os, sys, subprocess, json, copy
 from datetime import datetime
 
@@ -174,7 +146,7 @@ def _grp(titulo):
     b = QGroupBox(titulo); b.setStyleSheet(CSS_GROUP); return b
 
 def _col(label, widget, w=-1):
-    """Layout vertical: label em cima, widget embaixo."""
+        # Layout vertical: label em cima, widget embaixo.
     col = QVBoxLayout(); col.setSpacing(4)
     lbl = QLabel(label)
     lbl.setStyleSheet(f"font-size:11px;color:{TXT_S};font-weight:600;background:transparent;")
@@ -198,7 +170,7 @@ def _btn(texto, cor, mini=False):
     return b
 
 def _make_completer(lista, parent):
-    """Autocomplete que encontra o termo em qualquer parte do texto."""
+        # Autocomplete que encontra o termo em qualquer parte do texto.
     c = QCompleter(lista, parent)
     c.setCaseSensitivity(Qt.CaseInsensitive)
     c.setFilterMode(Qt.MatchContains)
@@ -241,7 +213,7 @@ class _SpinFoco(QDoubleSpinBox):
         self.setButtonSymbols(QDoubleSpinBox.NoButtons)  # sem setas
 
     def focusInEvent(self, event):
-        """Chamado pelo Qt quando o widget recebe foco (clique ou Tab)."""
+                # Chamado pelo Qt quando o widget recebe foco (clique ou Tab).
         super().focusInEvent(event)
         # selectAll() precisa ser chamado depois que o Qt terminar de processar
         # o evento de foco — por isso usamos um timer de 0ms (próximo ciclo)
@@ -340,7 +312,7 @@ class TabelaItens(QTableWidget):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class NovaObraDialog(QDialog):
-    """Janela para cadastrar uma nova obra."""
+        # Janela para cadastrar uma nova obra.
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Cadastrar Nova Obra")
@@ -402,7 +374,7 @@ class NovaObraDialog(QDialog):
 
 
 class NovoFornecedorDialog(QDialog):
-    """Janela para cadastrar um novo fornecedor."""
+        # Janela para cadastrar um novo fornecedor.
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Cadastrar Novo Fornecedor")
@@ -569,7 +541,7 @@ class NovaEmpresaDialog(QDialog):
         form.addRow(bb)
 
     def _obs_maiusculas(self):
-        """Mantém o conteúdo do campo Obs. sempre em maiúsculas."""
+                # Mantém o conteúdo do campo Obs. sempre em maiúsculas.
         txt = self._obs.toPlainText()
         upper = txt.upper()
         if txt != upper:
@@ -583,7 +555,7 @@ class NovaEmpresaDialog(QDialog):
             self._obs.blockSignals(False)
 
     def _escolher_logo(self):
-        """Abre seletor de arquivo PNG e mostra preview."""
+                # Abre seletor de arquivo PNG e mostra preview.
         from PySide6.QtWidgets import QFileDialog
         from PySide6.QtGui import QPixmap
         caminho, _ = QFileDialog.getOpenFileName(
@@ -1086,7 +1058,7 @@ class PedidoWidget(QWidget):
         return box
 
     def _rebuild_botoes_empresa(self):
-        """Reconstrói os botões de empresa (base do config + extras do usuário)."""
+                # Reconstrói os botões de empresa (base do config + extras do usuário).
         while self._frame_empresas.count():
             item = self._frame_empresas.takeAt(0)
             if item.widget():
@@ -1116,7 +1088,7 @@ class PedidoWidget(QWidget):
             self._frame_empresas.addWidget(b)
 
     def _get_todas_empresas(self):
-        """Mescla empresas do config.py com as extras salvas pelo usuário."""
+                # Mescla empresas do config.py com as extras salvas pelo usuário.
         import config as _cfg
         todas = dict(_cfg.EMPRESAS_FATURADORAS)
         for sigla, dados in _load(_EMP).items():
@@ -1125,7 +1097,7 @@ class PedidoWidget(QWidget):
         return todas
 
     def _cad_empresa(self):
-        """Abre diálogo de cadastro e salva a nova empresa em empresas_extra.json."""
+                # Abre diálogo de cadastro e salva a nova empresa em empresas_extra.json.
         dlg = NovaEmpresaDialog(self)
         if dlg.exec() != QDialog.Accepted:
             return
@@ -1144,7 +1116,7 @@ class PedidoWidget(QWidget):
             f"Dica: adicione o logo em  assets/logos/{r['logo']}")
 
     def _excluir_empresa(self):
-        """Permite excluir apenas empresas cadastradas pelo usuário (não as 5 originais)."""
+                # Permite excluir apenas empresas cadastradas pelo usuário (não as 5 originais).
         from PySide6.QtWidgets import QInputDialog
         extras = _load(_EMP)
         if not extras:
@@ -1508,7 +1480,7 @@ class PedidoWidget(QWidget):
     # ══════════════════════════════════════════════════════════════════════════
 
     def _limpar_formulario(self):
-        """Reseta todos os campos. Pede confirmação antes."""
+                # Reseta todos os campos. Pede confirmação antes.
         resp = QMessageBox.question(
             self,"Limpar formulário",
             "Deseja limpar todos os campos e começar um novo pedido?",
@@ -1549,7 +1521,7 @@ class PedidoWidget(QWidget):
     # ══════════════════════════════════════════════════════════════════════════
 
     def preencher_de_cotacao(self, dados):
-        """Preenche o formulário a partir de uma cotação vencedora (Sprint 3)."""
+                # Preenche o formulário a partir de uma cotação vencedora (Sprint 3).
         idx = self.e_obra.findText(dados.get("obra",""))
         if idx >= 0: self.e_obra.setCurrentIndex(idx)
         idx = self.e_fsel.findText(dados.get("fornecedor",""))
@@ -1664,5 +1636,5 @@ class PedidoWidget(QWidget):
 
     @staticmethod
     def _fmt(v):
-        """Formata R$: 1234.5 → '1.234,50'"""
+                # Formata R$: 1234.5 → '1.234,50'
         return f"{v:,.2f}".replace(",","X").replace(".",",").replace("X",".")

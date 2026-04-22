@@ -1,19 +1,5 @@
-
-"""
-app/ui/widgets/cotacao_widget.py  — v6 MANUAL + NEGOCIAÇÃO + SALVAR/CARREGAR
-=============================================================================
-Cotação 100% manual — sem importação de PDF.
-Novidades:
-  - Coluna Unidade com dropdown clicável (UNID, UN, KG, GL, LT, M2, M3, PCT...)
-  - Tab/Enter navega entre colunas editáveis
-  - Delete/Backspace apaga linha selecionada
-  - Destaque verde (melhor preço) e vermelho (pior preço) por linha
-  - Dashboard com vencedor, comparativo e botões de gerar pedido
-  - Card de negociação com economia potencial e novo total possível
-  - Copiar texto de negociação
-  - Salvar/Carregar cotação em JSON
-"""
-
+# app/ui/widgets/cotacao_widget.py
+# Aba de Cotação Comparativa — manual, com análise de negociação e salvar/carregar.
 import os, json
 from datetime import datetime
 from urllib.parse import quote
@@ -1297,7 +1283,7 @@ class CotacaoWidget(QWidget):
             QMessageBox.warning(self, "WhatsApp", "Não foi possível abrir o WhatsApp Web.")
 
     def _mostrar_previa_negociacao(self, itens):
-        """Diálogo de prévia com tabela rolável — substitui o QMessageBox."""
+                # Diálogo de prévia com tabela rolável — substitui o QMessageBox.
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QDialogButtonBox, QScrollArea
         if not itens:
             QMessageBox.information(self, "Negociação", "Não há itens para negociação.")

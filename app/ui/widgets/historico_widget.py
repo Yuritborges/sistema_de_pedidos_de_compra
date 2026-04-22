@@ -1,16 +1,5 @@
-"""
-app/ui/widgets/historico_widget.py
-===================================
-Aba "Histórico" — Dashboard executivo Brasul.
-
-PAINÉIS:
-    ┌─────────────────────────────────────────────────────────┐
-    │  Cards: Total Pedidos | Valor Total | Obras | Fornec.   │
-    ├──────────────────────────────┬──────────────────────────┤
-    │  Gráfico barras — Gasto/Mês  │  Filtros + Tabela        │
-    └──────────────────────────────┴──────────────────────────┘
-"""
-
+# app/ui/widgets/historico_widget.py
+# Aba de histórico com dashboard e filtros.
 import os
 from datetime import datetime, date
 from collections import defaultdict
@@ -347,7 +336,7 @@ class HistoricoWidget(QWidget):
     # ══════════════════════════════════════════════════════════════════════════
 
     def _carregar(self):
-        """Carrega todos os pedidos do banco."""
+                # Carrega todos os pedidos do banco.
         self._todos = []
         try:
             from app.data.database import get_connection
@@ -367,7 +356,7 @@ class HistoricoWidget(QWidget):
         self._aplicar_filtros()
 
     def _atualizar_combos(self):
-        """Preenche os combos de Ano e Obra com os dados reais do banco."""
+                # Preenche os combos de Ano e Obra com os dados reais do banco.
         anos = sorted({
             self._extrair_ano(p["data_pedido"])
             for p in self._todos
@@ -677,7 +666,7 @@ class HistoricoWidget(QWidget):
 
     @staticmethod
     def _fmt_curto(v) -> str:
-        """Formata valores grandes de forma compacta: 1.2k, 45k, 1.2M"""
+                # Formata valores grandes de forma compacta: 1.2k, 45k, 1.2M
         try:
             v = float(v)
             if v >= 1_000_000:
