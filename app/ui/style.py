@@ -50,7 +50,15 @@ CSS_COMBO = f"""
     QComboBox QAbstractItemView {{
         color:{TXT}; background:{WHITE}; border:1.5px solid {BDR};
         selection-background-color:{SEL}; selection-color:{GRAY};
-        font-size:12px;
+        font-size:12px; outline:none;
+    }}
+    QComboBox QAbstractItemView::item {{
+        color:{TXT}; background:{WHITE};
+        padding:4px 10px; min-height:26px;
+    }}
+    QComboBox QAbstractItemView::item:hover,
+    QComboBox QAbstractItemView::item:selected {{
+        background:{SEL}; color:{GRAY};
     }}
 """
 

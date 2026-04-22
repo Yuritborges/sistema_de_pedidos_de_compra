@@ -1,29 +1,25 @@
 """
-app/ui/widgets/cotacao_widget.py  — v4 CLEAN
-============================================
-CORREÇÕES:
-  - Adicionar item: insere linha na tabela diretamente, numera 1,2,3... automaticamente
-  - Foco vai para a coluna Descrição da nova linha
+app/ui/widgets/cotacao_widget.py  — v5 MANUAL
+=============================================
+Cotação 100% manual — sem importação de PDF.
+Novidades:
+  - Coluna Unidade com dropdown clicável (UNID, UN, KG, GL, LT, M2, M3, PCT...)
+  - Tab/Enter navega entre colunas editáveis
   - Delete/Backspace apaga linha selecionada
-  - Botão "Apagar selecionado" funciona corretamente
-  - Botão "Limpar tudo" com confirmação
-  - Cálculo não pula linhas
-  - Empresa auto-preenchida pela obra
-  - PDF: extração gratuita + modo visual lado a lado
+  - Destaque verde (melhor preço) e vermelho (pior preço) por linha
+  - Dashboard com vencedor, comparativo e botões de gerar pedido
 """
 
 import os, json
-from datetime import datetime
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
     QComboBox, QGraphicsDropShadowEffect, QPushButton,
-    QSplitter, QScrollArea, QMessageBox, QDialog,
-    QAbstractItemView, QFileDialog, QProgressDialog,
-    QApplication, QStyledItemDelegate, QTextEdit,
+    QSplitter, QScrollArea, QMessageBox,
+    QAbstractItemView, QStyledItemDelegate, QApplication,
 )
-from PySide6.QtCore import Qt, QTimer, QThread, Signal
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QBrush
 
 from app.ui.style import (
@@ -35,14 +31,43 @@ from app.ui.style import (
 _ASSETS   = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'assets'))
 _OBR_JSON = os.path.join(_ASSETS, 'obras.json')
 
-# Cores F1/F2/F3
+# Cores por fornecedor
 COR_F = ["#1A5276", "#1E8449", "#784212"]
 
-# Cores de destaque da tabela
-COR_MELHOR    = QColor("#D5F5E3")
-COR_MELHOR_FG = QColor("#1A7A3C")
-COR_PIOR      = QColor("#FDFEFE")
-COR_VAZIO     = QColor("#F4F6F7")
+# Cores de destaque na tabela
+COR_MELHOR   = QColor("#D5F5E3")
+COR_MELHOR_FG= QColor("#1A7A3C")
+COR_PIOR_BG  = QColor("#FDECEA")
+COR_PIOR_FG  = QColor("#922B21")
+COR_NEUTRO   = QColor("#FDFEFE")
+COR_VAZIO    = QColor("#F4F6F7")
+
+# Regras de negociação
+NEGOCIACAO_DIF_MIN = 2.00      # diferença mínima unitária em R$
+NEGOCIACAO_PCT_MIN = 5.0       # diferença mínima percentual
+
+# ── Unidades disponíveis no dropdown ──────────────────────────────────────────
+UNIDADES = [
+    "UNID.", "UN", "PC", "PCT",
+    "KG", "G",
+    "GL",   # galão
+    "LT",   # lata
+    "L",    # litro
+    "ML",
+    "MT",   # metro linear
+    "M2",   # metro quadrado
+    "M3",   # metro cúbico
+    "RL",   # rolo
+    "BR",   # barra
+    "CX",   # caixa
+    "SC",   # saco
+    "BD",   # balde
+    "VB",   # verba
+    "JG",   # jogo
+    "CT",   # conjunto
+    "PR",   # par
+    "HR",   # hora
+]
 
 CSS_TABLE = f"""
     QTableWidget {{
@@ -65,6 +90,7 @@ CSS_TABLE = f"""
     }}
     QScrollBar::add-line, QScrollBar::sub-line {{ width:0; height:0; }}
 """
+
 CSS_EDIT = f"""
     QLineEdit {{
         color:#1A1A1A; background:{WHITE};
@@ -73,248 +99,96 @@ CSS_EDIT = f"""
     }}
 """
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# THREAD — extração gratuita de PDF
-# ══════════════════════════════════════════════════════════════════════════════
-
-class PDFExtractorThread(QThread):
-    resultado      = Signal(list)
-    texto_extraido = Signal(str)
-    erro           = Signal(str)
-    progresso      = Signal(str)
-
-    def __init__(self, caminho, fi):
-        super().__init__()
-        self.caminho = caminho
-        self.fi      = fi
-
-    def run(self):
-        try:
-            self.progresso.emit("Lendo PDF...")
-            texto = self._ler()
-            if not texto.strip():
-                self.erro.emit(
-                    "Não foi possível extrair texto deste PDF.\n\n"
-                    "O arquivo pode ser uma foto/scan.\n\n"
-                    "Use o Modo Visual para preencher manualmente.")
-                return
-            self.progresso.emit("Detectando itens e preços...")
-            itens = self._extrair(texto)
-            if itens:
-                self.resultado.emit(itens)
-            else:
-                self.texto_extraido.emit(texto)
-        except Exception as e:
-            self.erro.emit(f"Erro ao processar PDF:\n{e}")
-
-    def _ler(self):
-        try:
-            import pdfplumber
-            txt = ""
-            with pdfplumber.open(self.caminho) as pdf:
-                for p in pdf.pages:
-                    t = p.extract_text()
-                    if t: txt += t + "\n"
-            if txt.strip(): return txt
-        except Exception:
-            pass
-        from pypdf import PdfReader
-        return "\n".join(p.extract_text() or "" for p in PdfReader(self.caminho).pages)
-
-    def _num(self, s):
-        try: return float(str(s).replace(".","").replace(",","."))
-        except: return None
-
-    def _extrair(self, texto):
-        """
-        Detecta o formato automaticamente e extrai apenas
-        descrição, quantidade e preço unitário.
-        Sem tentar entender toda a estrutura do PDF.
-        """
-        cab = " ".join(texto.split("\n")[:20]).upper()
-
-        # Formato UEHARA: CODIGO DESCRICAO UND BARRAS NCM QTDE UNITARIO TOTAL
-        if any(x in cab for x in ["CÓDIGODESCRIÇÃO", "UEHARA", "COTAÇÃO DE PREÇOS"]):
-            itens = self._uehara(texto)
-            if itens: return itens
-
-        # Formato SIRO: N CODIGO QTDE UN DESCRICAO BARRAS(13) NCM PRECO 0,00 TOTAL
-        if any(x in cab for x in ["S.TRIB", "VLR. UNIT", "SIRO", "PROPOSTA COMERCIAL"]):
-            itens = self._siro(texto)
-            if itens: return itens
-
-        # Formato AREA: N CODIGO DESCRICAO CODFAB MARCA QTDE.UN R$PRECO R$TOTAL
-        if "R$" in texto[:2000] and any(x in cab for x in ["DDL", "AREA", "DISTRIBUIDORA"]):
-            itens = self._area(texto)
-            if itens: return itens
-
-        # Fallback: tenta os 3 formatos e retorna o que tiver mais itens
-        resultados = [self._uehara(texto), self._siro(texto), self._area(texto)]
-        melhor = max(resultados, key=len)
-        return melhor
-
-    def _uehara(self, texto):
-        """CODIGO DESCRICAO UND BARRAS NCM QTDE PRECO TOTAL — Ex: UEHARA Elétrica"""
-        import re
-        itens = []
-        UNIDS = r"(PCT|PC|MT|RL|BR|CF|UN|CX|KG|SC|M2|M3|VB|JG|CT|BD|LT|CAR|GR)"
-        for linha in texto.split("\n"):
-            linha = linha.strip()
-            m = re.match(r"^\d{6}\s+(.+?)\s+" + UNIDS + r"\s+", linha)
-            if not m: continue
-            resto = linha[m.end():]
-            nums = [v for tok in resto.split()
-                    for v in [self._num(tok)] if v and 0 < v < 100000]
-            if len(nums) < 2: continue
-            preco = nums[-2]; qtd = nums[-3] if len(nums) >= 3 else 1.0
-            desc  = m.group(1).upper().strip()
-            if preco > 0 and len(desc) > 3:
-                itens.append({"descricao": desc[:80], "quantidade": qtd,
-                               "unidade": m.group(2), "preco_unitario": preco})
-        return itens
-
-    def _siro(self, texto):
-        """N CODIGO QTDE UN DESCRICAO BARRAS(13) NCM PRECO 0,00 TOTAL — Ex: SIRO Materiais"""
-        import re
-        itens = []
-        UNIDS = r"(PC|MT|BR|CF|UN|RL|CT|KG|SC|M2|M3|CX|LT|BD)"
-        PAT = re.compile(
-            r"^\d{1,3}\s+[\d.]+\s+([\d,]+)\s+" + UNIDS +
-            r"\s+(.+?)\s+\d{13}\s+[\d.]+\s+([\d.,]+)\s+0,00")
-        for linha in texto.split("\n"):
-            m = PAT.match(linha.strip())
-            if not m: continue
-            qtd   = self._num(m.group(1))
-            unid  = m.group(2)
-            desc  = re.sub(r"\s+-\s+-.*$", "", m.group(3)).upper().strip()
-            preco = self._num(m.group(4))
-            if preco and preco > 0 and len(desc) > 3:
-                itens.append({"descricao": desc[:80], "quantidade": qtd or 1.0,
-                               "unidade": unid, "preco_unitario": preco})
-        return itens
-
-    def _area(self, texto):
-        """N CODIGO DESCRICAO CODFAB MARCA QTDE.UN R$PRECO R$TOTAL — Ex: AEA Distribuidora"""
-        import re
-        itens = []
-        UNIDS = r"(PC|MT|BR|CF|UN|RL|CT|KG|SC|M2|M3|CX|LT|BD|UNIDADE)"
-        PAT = re.compile(
-            r"^\d{1,3}\s+\d+\s+(.+?)\s+([\d,]+)" + UNIDS +
-            r"\s+R\$([\d.,]+)\s+R\$[\d.,]+")
-        for linha in texto.split("\n"):
-            m = PAT.match(linha.strip())
-            if not m: continue
-            desc_raw = m.group(1).upper().strip()
-            qtd   = self._num(m.group(2))
-            unid  = m.group(3)
-            preco = self._num(m.group(4))
-            if not preco or preco <= 0: continue
-            # Remove código de fábrica (tokens alfanuméricos sem espaço)
-            desc = " ".join(
-                p for p in desc_raw.split()
-                if not re.match(r"^[A-Z]{2,}\d+[A-Z0-9]*$", p)
-            ).strip()
-            if len(desc) < 4: continue
-            itens.append({"descricao": desc[:80], "quantidade": qtd or 1.0,
-                           "unidade": unid, "preco_unitario": preco})
-        return itens
-
-
-class PDFVisualDialog(QDialog):
-    def __init__(self, texto, fi, nome_forn, itens, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(f"Modo Visual — {nome_forn}")
-        self.setMinimumSize(1000, 600)
-        self.setStyleSheet(f"background:{WHITE}; color:{TXT};")
-        self.precos: dict[int, float] = {}
-        self._itens = itens; self._fi = fi
-        self._build(texto, nome_forn)
-
-    def _build(self, texto, nome):
-        vl = QVBoxLayout(self); vl.setContentsMargins(14,12,14,12); vl.setSpacing(10)
-        lbl = QLabel(f"📄  <b>{nome}</b> — veja o orçamento à esquerda e digite os preços à direita")
-        lbl.setStyleSheet(f"font-size:12px; color:{GRAY}; background:transparent;")
-        vl.addWidget(lbl)
-
-        sp = QSplitter(Qt.Horizontal); sp.setHandleWidth(5)
-
-        tv = QTextEdit(); tv.setReadOnly(True); tv.setPlainText(texto)
-        tv.setStyleSheet("QTextEdit{background:#FAFAFA;color:#111;border:1px solid #DDD;"
-                         "border-radius:6px;font-family:Consolas,monospace;font-size:11px;padding:8px;}")
-        sp.addWidget(tv)
-
-        right = QFrame(); right.setStyleSheet("background:transparent;border:none;")
-        vr = QVBoxLayout(right); vr.setContentsMargins(8,0,0,0); vr.setSpacing(6)
-        lbr = QLabel("Digite o preço unitário de cada item:")
-        lbr.setStyleSheet(f"font-size:11px;font-weight:bold;color:{GRAY};background:transparent;")
-        vr.addWidget(lbr)
-
-        self._tbl = QTableWidget(len(self._itens), 5)
-        self._tbl.setHorizontalHeaderLabels(["#","Descrição","Qtd","Unid",f"Preço {nome[:10]}"])
-        self._tbl.setStyleSheet(CSS_TABLE); self._tbl.verticalHeader().setVisible(False)
-        hh = self._tbl.horizontalHeader()
-        hh.setSectionResizeMode(0, QHeaderView.Fixed); self._tbl.setColumnWidth(0,30)
-        hh.setSectionResizeMode(1, QHeaderView.Stretch)
-        hh.setSectionResizeMode(2, QHeaderView.Fixed); self._tbl.setColumnWidth(2,55)
-        hh.setSectionResizeMode(3, QHeaderView.Fixed); self._tbl.setColumnWidth(3,60)
-        hh.setSectionResizeMode(4, QHeaderView.Fixed); self._tbl.setColumnWidth(4,95)
-
-        for r, it in enumerate(self._itens):
-            self._tbl.setRowHeight(r, 30)
-            def ro(t, a=Qt.AlignCenter):
-                i2 = QTableWidgetItem(str(t)); i2.setTextAlignment(a)
-                i2.setFlags(i2.flags() & ~Qt.ItemIsEditable)
-                i2.setForeground(QBrush(QColor("#333"))); return i2
-            self._tbl.setItem(r,0,ro(r+1)); self._tbl.setItem(r,1,ro(it.descricao or "—",Qt.AlignLeft|Qt.AlignVCenter))
-            self._tbl.setItem(r,2,ro(it.quantidade)); self._tbl.setItem(r,3,ro(it.unidade))
-            p = it.precos[self._fi]
-            ep = QTableWidgetItem(f"{p:.2f}".replace(".",",") if p else "")
-            ep.setTextAlignment(Qt.AlignRight|Qt.AlignVCenter)
-            ep.setForeground(QBrush(QColor("#1A1A1A")))
-            self._tbl.setItem(r,4,ep)
-        vr.addWidget(self._tbl,1)
-        dica = QLabel("💡  Tab avança para o próximo item")
-        dica.setStyleSheet("font-size:10px;color:#666;background:transparent;")
-        vr.addWidget(dica)
-        sp.addWidget(right); sp.setSizes([500,480]); vl.addWidget(sp,1)
-
-        sep = QFrame(); sep.setFrameShape(QFrame.HLine); sep.setStyleSheet("background:#E0E0E0;")
-        vl.addWidget(sep)
-        hl = QHBoxLayout(); hl.addStretch()
-        bc = btn_outline("Cancelar"); bc.clicked.connect(self.reject); hl.addWidget(bc)
-        bo = btn_solid("✅  Aplicar preços", GREEN, h=36); bo.clicked.connect(self._aplicar); hl.addWidget(bo)
-        vl.addLayout(hl)
-
-    def _aplicar(self):
-        def p(t):
-            try: return float(str(t).replace("R$","").replace(" ","").replace(".","").replace(",","."))
-            except: return None
-        for r in range(self._tbl.rowCount()):
-            it = self._tbl.item(r,4)
-            if it:
-                v = p(it.text())
-                if v and v > 0: self.precos[r] = v
-        self.accept()
+CSS_COMBO_UNID = f"""
+    QComboBox {{
+        color:{TXT}; background:{WHITE};
+        border:1px solid {BDR}; border-radius:3px;
+        padding:1px 4px; font-size:11px; min-height:28px;
+    }}
+    QComboBox:focus {{ border:1.5px solid #C0392B; }}
+    QComboBox::drop-down {{ border:none; width:16px; background:transparent; }}
+    QComboBox::down-arrow {{
+        width:8px; height:8px;
+        border-left:4px solid transparent; border-right:4px solid transparent;
+        border-top:4px solid {TXT_S}; margin-right:4px;
+    }}
+    QComboBox QAbstractItemView {{
+        color:{TXT}; background:{WHITE}; border:1.5px solid {BDR};
+        selection-background-color:{SEL}; selection-color:#2C2C2C;
+        font-size:11px; outline:none;
+    }}
+    QComboBox QAbstractItemView::item {{
+        color:{TXT}; background:{WHITE};
+        padding:4px 8px; min-height:24px;
+    }}
+    QComboBox QAbstractItemView::item:hover,
+    QComboBox QAbstractItemView::item:selected {{
+        background:{SEL}; color:#2C2C2C;
+    }}
+"""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# DELEGATE — Tab/Enter navegam entre colunas editáveis
+# DELEGATE — Tab/Enter navegam entre colunas; coluna 3 = dropdown de unidade
 # ══════════════════════════════════════════════════════════════════════════════
 
 class NavDelegate(QStyledItemDelegate):
+    """
+    Editor customizado:
+    - Colunas de texto: QLineEdit com CSS vermelho
+    - Coluna 3 (Unidade): QComboBox com lista de unidades
+    - Tab/Enter avança para próxima coluna editável
+    """
+
+    # Colunas editáveis (na ordem de navegação por Tab/Enter)
+    COLS_EDIT = [1, 2, 3, 4, 6, 8]   # Desc, Qtd, Unid, PF1, PF2, PF3
+
     def __init__(self, tabela, cb_nova_linha, parent=None):
         super().__init__(parent)
         self._t  = tabela
         self._nl = cb_nova_linha
 
     def createEditor(self, parent, option, index):
-        e = QLineEdit(parent); e.setStyleSheet(CSS_EDIT)
-        if index.column() == 1:
+        col = index.column()
+
+        if col == 3:
+            # Dropdown de unidade
+            cb = QComboBox(parent)
+            cb.setStyleSheet(CSS_COMBO_UNID)
+            for u in UNIDADES:
+                cb.addItem(u)
+            return cb
+
+        # Demais colunas: linha de texto
+        e = QLineEdit(parent)
+        e.setStyleSheet(CSS_EDIT)
+        if col == 1:
+            # Descrição → maiúsculo automático
             e.textChanged.connect(
-                lambda txt, w=e: (w.blockSignals(True), w.setText(txt.upper()),
-                                   w.blockSignals(False)) if txt != txt.upper() else None)
+                lambda txt, w=e: (
+                    w.blockSignals(True),
+                    w.setText(txt.upper()),
+                    w.blockSignals(False)
+                ) if txt != txt.upper() else None
+            )
         return e
+
+    def setEditorData(self, editor, index):
+        val = index.data(Qt.EditRole) or ""
+        if isinstance(editor, QComboBox):
+            idx = editor.findText(str(val).upper())
+            if idx >= 0:
+                editor.setCurrentIndex(idx)
+            else:
+                editor.setCurrentIndex(0)
+        else:
+            editor.setText(str(val))
+
+    def setModelData(self, editor, model, index):
+        if isinstance(editor, QComboBox):
+            model.setData(index, editor.currentText(), Qt.EditRole)
+        else:
+            model.setData(index, editor.text(), Qt.EditRole)
 
     def eventFilter(self, editor, event):
         if event.type() == event.Type.KeyPress:
@@ -322,18 +196,18 @@ class NavDelegate(QStyledItemDelegate):
             if key in (Qt.Key_Tab, Qt.Key_Return, Qt.Key_Enter):
                 idx = self._t.currentIndex()
                 row, col = idx.row(), idx.column()
-                COLS = [1, 2, 3, 4, 6, 8]
                 self.commitData.emit(editor)
                 self.closeEditor.emit(editor, QStyledItemDelegate.NoHint)
-                if col in COLS:
-                    ni = COLS.index(col) + 1
-                    if ni < len(COLS):
-                        nc = COLS[ni]
+                if col in self.COLS_EDIT:
+                    ni = self.COLS_EDIT.index(col) + 1
+                    if ni < len(self.COLS_EDIT):
+                        nc = self.COLS_EDIT[ni]
                         QTimer.singleShot(0, lambda r=row, c=nc: (
                             self._t.setCurrentCell(r, c),
                             self._t.edit(self._t.model().index(r, c))
                         ))
                     else:
+                        # Última coluna → nova linha
                         if row + 1 >= self._t.rowCount():
                             QTimer.singleShot(0, self._nl)
                         else:
@@ -374,10 +248,10 @@ class ItemCotacao:
 
 class ResultadoFornecedor:
     def __init__(self, nome, idx):
-        self.nome=nome; self.idx=idx
-        self.itens_cotados=0; self.itens_baratos=0
-        self.total_itens=0; self.subtotal_val=0.0
-        self.frete=0.0; self.desconto=0.0
+        self.nome = nome; self.idx = idx
+        self.itens_cotados = 0; self.itens_baratos = 0
+        self.total_itens = 0; self.subtotal_val = 0.0
+        self.frete = 0.0; self.desconto = 0.0
 
     @property
     def total_final(self):
@@ -387,6 +261,18 @@ class ResultadoFornecedor:
         if self.itens_cotados == n: return "✓ Completo"
         if self.itens_cotados > 0:  return f"Parcial ({self.itens_cotados}/{n})"
         return "Sem cotação"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HELPERS DE LAYOUT
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _mk_vdiv():
+    """Divisor vertical leve entre mini-stats."""
+    f = QFrame(); f.setFrameShape(QFrame.VLine)
+    f.setStyleSheet("background:#EDD;border:none;")
+    f.setFixedWidth(1); f.setFixedHeight(44)
+    return f
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -402,10 +288,8 @@ class CotacaoWidget(QWidget):
         self._descontos = [0.0, 0.0, 0.0]
         self._obras     = {}
         self._bloqueio  = False
-        self._progress  = None
         self._build()
         self._carregar_obras()
-        # Inicia com 1 item vazio
         self._itens.append(ItemCotacao())
         self._inserir_linha(0, self._itens[0])
         self._atualizar_contador()
@@ -425,16 +309,21 @@ class CotacaoWidget(QWidget):
         t.setStyleSheet(f"font-size:20px;font-weight:bold;color:{GRAY};background:transparent;")
         s = QLabel("Compare fornecedores item a item e gere o pedido do vencedor")
         s.setStyleSheet(f"font-size:11px;color:#555;background:transparent;")
-        tv.addWidget(t); tv.addWidget(s); hl.addLayout(tv); hl.addStretch()
-        bn = btn_outline("🗑  Nova cotação"); bn.clicked.connect(self._nova_cotacao); hl.addWidget(bn)
+        tv.addWidget(t); tv.addWidget(s)
+        hl.addLayout(tv); hl.addStretch()
+        bn = btn_outline("🗑  Nova cotação")
+        bn.clicked.connect(self._nova_cotacao)
+        hl.addWidget(bn)
         vl.addLayout(hl)
         vl.addWidget(self._build_cab())
 
         sp = QSplitter(Qt.Horizontal)
         sp.setStyleSheet("QSplitter::handle{background:#C0C0C0;width:5px;}QSplitter::handle:hover{background:#C0392B;}")
         sp.setHandleWidth(6); sp.setChildrenCollapsible(False)
-        sp.addWidget(self._build_tabela()); sp.addWidget(self._build_dashboard())
-        sp.setSizes([760,440]); vl.addWidget(sp,1)
+        sp.addWidget(self._build_tabela())
+        sp.addWidget(self._build_dashboard())
+        sp.setSizes([760, 440])
+        vl.addWidget(sp, 1)
 
     def _build_cab(self):
         box = QFrame()
@@ -445,54 +334,94 @@ class CotacaoWidget(QWidget):
             vl2 = QVBoxLayout(); vl2.setSpacing(4)
             l = QLabel(lbl_txt.upper())
             l.setStyleSheet("font-size:9px;font-weight:700;color:#444;background:transparent;letter-spacing:1px;")
-            vl2.addWidget(l); vl2.addWidget(widget); return vl2
+            vl2.addWidget(l); vl2.addWidget(widget)
+            return vl2
 
-        self._cb_obra = QComboBox(); self._cb_obra.setMinimumWidth(200); self._cb_obra.setStyleSheet(CSS_COMBO)
+        # Obra
+        self._cb_obra = QComboBox()
+        self._cb_obra.setMinimumWidth(220)
+        self._cb_obra.setEditable(True)
+        self._cb_obra.setInsertPolicy(QComboBox.NoInsert)
+        self._cb_obra.setStyleSheet(CSS_COMBO)
+        self._cb_obra.lineEdit().setPlaceholderText("Digite para buscar...")
+        from PySide6.QtWidgets import QCompleter
+        self._cb_obra.completer().setCompletionMode(
+            QCompleter.PopupCompletion if hasattr(QCompleter, 'PopupCompletion') else 0)
+        popup = self._cb_obra.completer().popup()
+        popup.setStyleSheet(f"""
+            QListView {{
+                background:#FFFFFF; color:#1A1A1A;
+                border:1.5px solid #D8CCCC; border-radius:5px;
+                font-size:12px; outline:none;
+            }}
+            QListView::item {{
+                background:#FFFFFF; color:#1A1A1A;
+                padding:5px 10px; min-height:26px;
+            }}
+            QListView::item:hover, QListView::item:selected {{
+                background:#FADBD8; color:#2C2C2C;
+            }}
+        """)
         self._cb_obra.currentTextChanged.connect(self._on_obra)
         hl.addLayout(grp("Obra", self._cb_obra))
 
-        self._cb_emp = QComboBox(); self._cb_emp.setMinimumWidth(130); self._cb_emp.setStyleSheet(CSS_COMBO)
-        for e in ["BRASUL","JB","B&B","INTERIORANA","INTERBRAS"]: self._cb_emp.addItem(e)
+        # Empresa faturadora
+        self._cb_emp = QComboBox()
+        self._cb_emp.setMinimumWidth(130)
+        self._cb_emp.setStyleSheet(CSS_COMBO)
+        for e in ["BRASUL","JB","B&B","INTERIORANA","INTERBRAS"]:
+            self._cb_emp.addItem(e)
         hl.addLayout(grp("Empresa faturadora", self._cb_emp))
         hl.addWidget(self._vsep())
 
-        self._e_forn = []; self._btn_pdf = []
+        # Fornecedores (só nome, sem botão PDF)
+        self._e_forn = []
         for i in range(3):
             cor = COR_F[i]
             vf = QVBoxLayout(); vf.setSpacing(4)
             lf = QLabel(f"FORNECEDOR {i+1}")
             lf.setStyleSheet(f"font-size:9px;font-weight:700;color:{cor};background:transparent;letter-spacing:1px;")
             vf.addWidget(lf)
-            hf = QHBoxLayout(); hf.setSpacing(4)
-            e = QLineEdit(); e.setPlaceholderText(f"Nome F{i+1}"); e.setMinimumWidth(115); e.setStyleSheet(CSS_INPUT)
-            e.textChanged.connect(lambda txt,idx=i: self._on_forn(idx,txt))
+            e = QLineEdit()
+            e.setPlaceholderText(f"Nome F{i+1}")
+            e.setMinimumWidth(140)
+            e.setStyleSheet(CSS_INPUT)
+            e.textChanged.connect(lambda txt, idx=i: self._on_forn(idx, txt))
             self._e_forn.append(e)
-            bp = QPushButton("📄 PDF"); bp.setFixedHeight(32); bp.setFixedWidth(58)
-            bp.setCursor(Qt.PointingHandCursor)
-            bp.setStyleSheet(f"QPushButton{{background:{cor};color:white;font-size:10px;font-weight:bold;border-radius:5px;border:none;}}QPushButton:hover{{background:{cor}CC;}}")
-            bp.clicked.connect(lambda _,idx=i: self._importar_pdf(idx))
-            self._btn_pdf.append(bp)
-            hf.addWidget(e); hf.addWidget(bp); vf.addLayout(hf); hl.addLayout(vf)
+            vf.addWidget(e)
+            hl.addLayout(vf)
 
         hl.addWidget(self._vsep())
+
+        # Frete
         self._e_frete = []
         for i in range(3):
-            e = QLineEdit("0,00"); e.setMaximumWidth(80); e.setStyleSheet(CSS_INPUT)
-            e.textChanged.connect(lambda t,idx=i: self._on_frete(idx,t))
-            self._e_frete.append(e); hl.addLayout(grp(f"Frete F{i+1}", e))
+            e = QLineEdit("0,00")
+            e.setMaximumWidth(80)
+            e.setStyleSheet(CSS_INPUT)
+            e.textChanged.connect(lambda t, idx=i: self._on_frete(idx, t))
+            self._e_frete.append(e)
+            hl.addLayout(grp(f"Frete F{i+1}", e))
 
         hl.addWidget(self._vsep())
+
+        # Desconto
         self._e_desc = []
         for i in range(3):
-            e = QLineEdit("0,00"); e.setMaximumWidth(80); e.setStyleSheet(CSS_INPUT)
-            e.textChanged.connect(lambda t,idx=i: self._on_desc(idx,t))
-            self._e_desc.append(e); hl.addLayout(grp(f"Desc. F{i+1}", e))
+            e = QLineEdit("0,00")
+            e.setMaximumWidth(80)
+            e.setStyleSheet(CSS_INPUT)
+            e.textChanged.connect(lambda t, idx=i: self._on_desc(idx, t))
+            self._e_desc.append(e)
+            hl.addLayout(grp(f"Desc. F{i+1}", e))
 
-        hl.addStretch(); return box
+        hl.addStretch()
+        return box
 
     def _build_tabela(self):
         frame = card_container()
-        sh = QGraphicsDropShadowEffect(); sh.setBlurRadius(14); sh.setOffset(0,2); sh.setColor(QColor(0,0,0,15))
+        sh = QGraphicsDropShadowEffect()
+        sh.setBlurRadius(14); sh.setOffset(0,2); sh.setColor(QColor(0,0,0,15))
         frame.setGraphicsEffect(sh)
         vl = QVBoxLayout(frame); vl.setContentsMargins(0,0,0,0); vl.setSpacing(0)
 
@@ -520,23 +449,26 @@ class CotacaoWidget(QWidget):
         b4.setToolTip("Recalcula comparativos")
         b4.clicked.connect(self._calcular)
 
-        for b in [b1,b2,b3,b4]: hl.addWidget(b)
+        for b in [b1, b2, b3, b4]: hl.addWidget(b)
         vl.addLayout(hl)
 
-        sep = QFrame(); sep.setFrameShape(QFrame.HLine); sep.setStyleSheet("background:#E0E0E0;"); sep.setFixedHeight(1)
+        sep = QFrame(); sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("background:#E0E0E0;"); sep.setFixedHeight(1)
         vl.addWidget(sep)
 
+        # Tabela
         self._tbl = QTableWidget(0, 12)
         self._tbl.setHorizontalHeaderLabels([
-            "#","Descrição do Material","Qtd","Unid",
-            "Preço F1","Sub F1","Preço F2","Sub F2","Preço F3","Sub F3",
-            "✓ Melhor","Fornecedor"
+            "#", "Descrição do Material", "Qtd", "Unid",
+            "Preço F1", "Sub F1", "Preço F2", "Sub F2", "Preço F3", "Sub F3",
+            "✓ Melhor", "Fornecedor"
         ])
         self._tbl.setStyleSheet(CSS_TABLE)
         self._tbl.setSelectionBehavior(QTableWidget.SelectRows)
-        self._tbl.setEditTriggers(QTableWidget.DoubleClicked|QTableWidget.EditKeyPressed)
+        self._tbl.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed)
         self._tbl.verticalHeader().setVisible(False)
-        self._tbl.setShowGrid(True); self._tbl.setFrameShape(QFrame.NoFrame)
+        self._tbl.setShowGrid(True)
+        self._tbl.setFrameShape(QFrame.NoFrame)
         self._tbl.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self._tbl.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
 
@@ -544,18 +476,22 @@ class CotacaoWidget(QWidget):
         self._tbl.setItemDelegate(self._delegate)
 
         hh = self._tbl.horizontalHeader()
-        hh.setHighlightSections(False); hh.setMinimumSectionSize(40)
-        hh.setStretchLastSection(False); hh.setSectionResizeMode(QHeaderView.Interactive)
-        for col, w in enumerate([28,220,55,65,85,85,85,85,85,85,90,110]):
+        hh.setHighlightSections(False)
+        hh.setMinimumSectionSize(40)
+        hh.setStretchLastSection(False)
+        hh.setSectionResizeMode(QHeaderView.Interactive)
+        for col, w in enumerate([28, 220, 55, 70, 85, 85, 85, 85, 85, 85, 90, 110]):
             self._tbl.setColumnWidth(col, w)
 
         self._tbl.keyPressEvent = self._key_press
         self._tbl.itemChanged.connect(self._on_changed)
         vl.addWidget(self._tbl, 1)
 
-        sep2 = QFrame(); sep2.setFrameShape(QFrame.HLine); sep2.setStyleSheet("background:#E0E0E0;"); sep2.setFixedHeight(1)
+        sep2 = QFrame(); sep2.setFrameShape(QFrame.HLine)
+        sep2.setStyleSheet("background:#E0E0E0;"); sep2.setFixedHeight(1)
         vl.addWidget(sep2)
 
+        # Totais rodapé
         hl2 = QHBoxLayout(); hl2.setContentsMargins(14,8,14,10); hl2.setSpacing(24)
         self._lbl_tot = [QLabel(f"F{i+1}: —") for i in range(3)]
         self._lbl_melhor = QLabel("✓ Melhor item a item: —")
@@ -564,81 +500,229 @@ class CotacaoWidget(QWidget):
             lb.setStyleSheet(f"font-size:11px;font-weight:600;color:{COR_F[i]};background:transparent;")
             hl2.addWidget(lb)
         hl2.addWidget(self._lbl_melhor); hl2.addStretch()
-        vl.addLayout(hl2); return frame
+        vl.addLayout(hl2)
+        return frame
 
     def _build_dashboard(self):
         frame = card_container()
-        sh = QGraphicsDropShadowEffect(); sh.setBlurRadius(14); sh.setOffset(0,2); sh.setColor(QColor(0,0,0,15))
+        sh = QGraphicsDropShadowEffect()
+        sh.setBlurRadius(14); sh.setOffset(0,2); sh.setColor(QColor(0,0,0,15))
         frame.setGraphicsEffect(sh)
-        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame)
+
+        scroll = QScrollArea(); scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
         scroll.setStyleSheet("background:transparent;")
         inner = QWidget(); inner.setStyleSheet(f"background:{WHITE};")
-        vl = QVBoxLayout(inner); vl.setContentsMargins(18,16,18,16); vl.setSpacing(12)
+        vl = QVBoxLayout(inner); vl.setContentsMargins(16,16,16,16); vl.setSpacing(10)
 
-        lbl = QLabel("Resultado da Análise")
-        lbl.setStyleSheet(f"font-size:14px;font-weight:bold;color:{GRAY};background:transparent;")
-        vl.addWidget(lbl)
-        sep = QFrame(); sep.setFrameShape(QFrame.HLine); sep.setStyleSheet("background:#E0E0E0;")
+        # ── Título ────────────────────────────────────────────────────────────
+        lbl_tit = QLabel("Resultado da Análise")
+        lbl_tit.setStyleSheet(
+            f"font-size:15px;font-weight:bold;color:{GRAY};background:transparent;")
+        vl.addWidget(lbl_tit)
+
+        sep = QFrame(); sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("background:#EEEEEE;"); sep.setFixedHeight(1)
         vl.addWidget(sep)
 
+        # ── Card vencedor ─────────────────────────────────────────────────────
         self._frame_ven = QFrame()
-        self._frame_ven.setStyleSheet(f"QFrame{{background:#FEF9F9;border-radius:10px;border-left:5px solid {RED};border-top:1px solid #EEE;border-right:1px solid #EEE;border-bottom:1px solid #EEE;}}")
-        vv = QVBoxLayout(self._frame_ven); vv.setContentsMargins(14,12,14,12); vv.setSpacing(5)
-        lt = QLabel("🏆  EMPRESA VENCEDORA")
-        lt.setStyleSheet("font-size:9px;font-weight:700;color:#555;background:transparent;letter-spacing:1px;")
+        self._frame_ven.setStyleSheet(
+            f"QFrame{{background:#FEF9F9;border-radius:12px;"
+            f"border-left:5px solid {RED};"
+            f"border-top:1px solid #EEE8E8;border-right:1px solid #EEE8E8;border-bottom:1px solid #EEE8E8;}}"
+        )
+        vv = QVBoxLayout(self._frame_ven); vv.setContentsMargins(16,14,16,14); vv.setSpacing(6)
+
+        hl_badge = QHBoxLayout(); hl_badge.setSpacing(8)
+        badge = QLabel("🏆  VENCEDOR")
+        badge.setStyleSheet(
+            "font-size:9px;font-weight:800;color:#922B21;"
+            "background:#FADBD8;border-radius:4px;padding:3px 8px;"
+            "letter-spacing:1.5px;border:none;")
+        hl_badge.addWidget(badge); hl_badge.addStretch()
+        vv.addLayout(hl_badge)
+
         self._lbl_ven = QLabel("—")
-        self._lbl_ven.setStyleSheet(f"font-size:22px;font-weight:bold;color:{RED};background:transparent;")
-        self._lbl_mot = QLabel("Preencha os preços e clique em Calcular")
-        self._lbl_mot.setStyleSheet("font-size:10px;color:#555;background:transparent;")
+        self._lbl_ven.setStyleSheet(
+            f"font-size:26px;font-weight:bold;color:{RED};background:transparent;")
+        vv.addWidget(self._lbl_ven)
+
+        # Motivo principal
+        self._lbl_mot = QLabel("Preencha os preços e clique em ⚡ Calcular")
+        self._lbl_mot.setStyleSheet(
+            "font-size:11px;color:#666;background:transparent;")
         self._lbl_mot.setWordWrap(True)
-        vv.addWidget(lt); vv.addWidget(self._lbl_ven); vv.addWidget(self._lbl_mot)
+        vv.addWidget(self._lbl_mot)
+
+        # Linha separadora interna
+        sep_v = QFrame(); sep_v.setFrameShape(QFrame.HLine)
+        sep_v.setStyleSheet("background:#EDD;border:none;"); sep_v.setFixedHeight(1)
+        vv.addWidget(sep_v)
+
+        # Métricas do vencedor: 3 mini-stats
+        hl_stats = QHBoxLayout(); hl_stats.setSpacing(0)
+
+        def mini_stat(obj_lbl, obj_val, icone, label, cor_val):
+            w = QWidget()
+            w.setStyleSheet("background:transparent;border:none;")
+            vls = QVBoxLayout(w); vls.setContentsMargins(8,4,8,4); vls.setSpacing(1)
+            l1 = QLabel(f"{icone}  {label}")
+            l1.setStyleSheet("font-size:9px;color:#888;background:transparent;font-weight:600;")
+            l1.setObjectName(obj_lbl)
+            l2 = QLabel("—")
+            l2.setStyleSheet(f"font-size:17px;font-weight:bold;color:{cor_val};background:transparent;")
+            l2.setObjectName(obj_val)
+            vls.addWidget(l1); vls.addWidget(l2)
+            return w
+
+        self._frame_ven.ms_total  = mini_stat("v_lbl_total",  "v_val_total",  "💰", "TOTAL FINAL",   RED)
+        self._frame_ven.ms_baratos= mini_stat("v_lbl_bar",    "v_val_bar",    "✅", "ITENS + BARATOS", GREEN)
+        self._frame_ven.ms_econ   = mini_stat("v_lbl_econ",   "v_val_econ",   "📉", "ECONOMIA vs 2º",  "#1A5276")
+
+        div = lambda: _mk_vdiv()
+        hl_stats.addWidget(self._frame_ven.ms_total)
+        hl_stats.addWidget(_mk_vdiv())
+        hl_stats.addWidget(self._frame_ven.ms_baratos)
+        hl_stats.addWidget(_mk_vdiv())
+        hl_stats.addWidget(self._frame_ven.ms_econ)
+        hl_stats.addStretch()
+        vv.addLayout(hl_stats)
         vl.addWidget(self._frame_ven)
 
-        lc = QLabel("COMPARATIVO")
-        lc.setStyleSheet("font-size:9px;font-weight:700;color:#444;background:transparent;letter-spacing:1px;")
+        # ── Cards comparativo ─────────────────────────────────────────────────
+        lc = QLabel("COMPARATIVO DE FORNECEDORES")
+        lc.setStyleSheet(
+            "font-size:9px;font-weight:800;color:#888;"
+            "background:transparent;letter-spacing:1.5px;")
         vl.addWidget(lc)
 
         self._cards = [self._make_card(i) for i in range(3)]
         for c in self._cards: vl.addWidget(c)
 
+        # ── Aviso itens faltantes ─────────────────────────────────────────────
         self._lbl_obs = QLabel("")
-        self._lbl_obs.setStyleSheet("font-size:10px;color:#555;background:#F8F8F8;border-radius:6px;padding:8px;border:1px solid #DDD;")
-        self._lbl_obs.setWordWrap(True); self._lbl_obs.setVisible(False)
+        self._lbl_obs.setStyleSheet(
+            "font-size:10px;color:#7D6608;"
+            "background:#FEFDE7;border-radius:6px;"
+            "padding:8px 10px;border:1px solid #F9E79F;")
+        self._lbl_obs.setWordWrap(True)
+        self._lbl_obs.setVisible(False)
         vl.addWidget(self._lbl_obs)
 
-        sep2 = QFrame(); sep2.setFrameShape(QFrame.HLine); sep2.setStyleSheet("background:#E0E0E0;")
+        # ── Card negociação ───────────────────────────────────────────────────
+        self._frame_neg = QFrame()
+        self._frame_neg.setStyleSheet(
+            "QFrame{background:#F8FBFF;border-radius:10px;border:1px solid #D6EAF8;}"
+        )
+        vn = QVBoxLayout(self._frame_neg)
+        vn.setContentsMargins(14,12,14,12)
+        vn.setSpacing(6)
+
+        self._lbl_neg_titulo = QLabel("Itens para Negociação")
+        self._lbl_neg_titulo.setStyleSheet(
+            "font-size:13px;font-weight:bold;color:#1A5276;background:transparent;"
+        )
+        vn.addWidget(self._lbl_neg_titulo)
+
+        self._lbl_neg_resumo = QLabel("Nenhuma análise de negociação disponível.")
+        self._lbl_neg_resumo.setWordWrap(True)
+        self._lbl_neg_resumo.setStyleSheet(
+            "font-size:11px;color:#555;background:transparent;"
+        )
+        vn.addWidget(self._lbl_neg_resumo)
+
+        self._lbl_neg_stats = QLabel("0 itens • Economia potencial: R$ 0,00")
+        self._lbl_neg_stats.setStyleSheet(
+            "font-size:12px;font-weight:700;color:#1A5276;background:transparent;"
+        )
+        vn.addWidget(self._lbl_neg_stats)
+
+        self._lbl_neg_novo_total = QLabel("Novo total possível: R$ 0,00")
+        self._lbl_neg_novo_total.setStyleSheet(
+            "font-size:11px;font-weight:600;color:#117A65;background:transparent;"
+        )
+        vn.addWidget(self._lbl_neg_novo_total)
+
+        hb_neg = QHBoxLayout(); hb_neg.setSpacing(8)
+
+        self._btn_negociar = btn_solid("🤝  NEGOCIAR", "#1A5276", h=36)
+        self._btn_negociar.setEnabled(False)
+        self._btn_negociar.clicked.connect(self._negociar)
+        hb_neg.addWidget(self._btn_negociar)
+
+        self._btn_copiar_neg = btn_outline("📋  Copiar texto")
+        self._btn_copiar_neg.setEnabled(False)
+        self._btn_copiar_neg.clicked.connect(self._copiar_negociacao)
+        hb_neg.addWidget(self._btn_copiar_neg)
+
+        vn.addLayout(hb_neg)
+
+        self._frame_neg.setVisible(False)
+        vl.addWidget(self._frame_neg)
+
+        sep2 = QFrame(); sep2.setFrameShape(QFrame.HLine)
+        sep2.setStyleSheet("background:#EEEEEE;"); sep2.setFixedHeight(1)
         vl.addWidget(sep2)
 
-        self._btn_ven = btn_solid("📋  Gerar Pedido do Vencedor", RED, h=42)
-        self._btn_ven.setEnabled(False); self._btn_ven.clicked.connect(self._gerar_pedido)
+        # ── Botões ────────────────────────────────────────────────────────────
+        self._btn_ven = btn_solid("📋  Gerar Pedido do Vencedor", RED, h=44)
+        self._btn_ven.setEnabled(False)
+        self._btn_ven.clicked.connect(self._gerar_pedido)
         vl.addWidget(self._btn_ven)
 
-        self._btn_ii = btn_solid("🔀  Gerar Pedido Item a Item", GREEN, h=38)
-        self._btn_ii.setEnabled(False); self._btn_ii.clicked.connect(self._gerar_item_item)
+        self._btn_ii = btn_solid("🔀  Gerar Pedido Item a Item", GREEN, h=40)
+        self._btn_ii.setEnabled(False)
+        self._btn_ii.clicked.connect(self._gerar_item_item)
         vl.addWidget(self._btn_ii)
+
         vl.addStretch()
         scroll.setWidget(inner)
         ol = QVBoxLayout(frame); ol.setContentsMargins(0,0,0,0); ol.addWidget(scroll)
         return frame
 
     def _make_card(self, i):
+        """Card de fornecedor no comparativo — layout modernizado."""
         c = QFrame()
-        c.setStyleSheet("QFrame{background:#F8F8F8;border-radius:8px;border:1px solid #E0E0E0;}")
-        vl = QVBoxLayout(c); vl.setContentsMargins(12,10,12,10); vl.setSpacing(4)
-        ht = QHBoxLayout()
+        c.setStyleSheet(
+            "QFrame{background:#F8F8F8;border-radius:10px;border:1px solid #E0E0E0;}")
+        vl = QVBoxLayout(c); vl.setContentsMargins(14,12,14,12); vl.setSpacing(6)
+
+        # Linha topo: nome + status
+        ht = QHBoxLayout(); ht.setSpacing(8)
         ln = QLabel(f"Fornecedor {i+1}")
-        ln.setStyleSheet(f"font-size:12px;font-weight:bold;color:{COR_F[i]};background:transparent;")
+        ln.setStyleSheet(
+            f"font-size:13px;font-weight:bold;color:{COR_F[i]};background:transparent;")
         ln.setObjectName(f"cn_{i}")
-        ls = QLabel("—"); ls.setStyleSheet("font-size:10px;color:#555;background:transparent;")
+        ls = QLabel("—")
+        ls.setStyleSheet(
+            "font-size:10px;font-weight:600;color:#888;"
+            "background:#EEEEEE;border-radius:4px;padding:2px 7px;border:none;")
         ls.setObjectName(f"cs_{i}")
-        ht.addWidget(ln); ht.addStretch(); ht.addWidget(ls); vl.addLayout(ht)
-        hm = QHBoxLayout(); hm.setSpacing(14)
-        for key,cor,obj in [("ITENS",BLUE,f"ci_{i}"),("+ BARATOS",GREEN,f"cb_{i}"),("TOTAL",RED,f"ct_{i}")]:
-            vm = QVBoxLayout(); vm.setSpacing(1)
-            lt = QLabel(key); lt.setStyleSheet("font-size:8px;font-weight:700;color:#444;background:transparent;letter-spacing:1px;")
-            lv = QLabel("—"); lv.setStyleSheet(f"font-size:15px;font-weight:bold;color:{cor};background:transparent;")
-            lv.setObjectName(obj); vm.addWidget(lt); vm.addWidget(lv); hm.addLayout(vm)
-        hm.addStretch(); vl.addLayout(hm); return c
+        ht.addWidget(ln); ht.addStretch(); ht.addWidget(ls)
+        vl.addLayout(ht)
+
+        # Linha de métricas
+        hm = QHBoxLayout(); hm.setSpacing(0)
+        for key, cor, obj, icone in [
+            ("ITENS",    BLUE,  f"ci_{i}", "📦"),
+            ("+ BARATOS",GREEN, f"cb_{i}", "✅"),
+            ("TOTAL",    RED,   f"ct_{i}", "💰"),
+        ]:
+            vm = QVBoxLayout(); vm.setSpacing(1); vm.setContentsMargins(0,0,12,0)
+            lt2 = QLabel(f"{icone}  {key}")
+            lt2.setStyleSheet(
+                "font-size:9px;font-weight:700;color:#888;"
+                "background:transparent;letter-spacing:0.5px;")
+            lv = QLabel("—")
+            lv.setStyleSheet(
+                f"font-size:16px;font-weight:bold;color:{cor};background:transparent;")
+            lv.setObjectName(obj)
+            vm.addWidget(lt2); vm.addWidget(lv)
+            hm.addLayout(vm)
+        hm.addStretch()
+        vl.addLayout(hm)
+        return c
 
     # ══════════════════════════════════════════════════════════════════════════
     # DADOS
@@ -646,11 +730,14 @@ class CotacaoWidget(QWidget):
 
     def _carregar_obras(self):
         try:
-            with open(_OBR_JSON, encoding='utf-8') as f: self._obras = json.load(f)
-        except Exception: self._obras = {}
+            with open(_OBR_JSON, encoding='utf-8') as f:
+                self._obras = json.load(f)
+        except Exception:
+            self._obras = {}
         self._cb_obra.blockSignals(True); self._cb_obra.clear()
         self._cb_obra.addItem("— Selecione a obra —")
-        for n in sorted(self._obras): self._cb_obra.addItem(n)
+        for n in sorted(self._obras):
+            self._cb_obra.addItem(n)
         self._cb_obra.blockSignals(False)
 
     def _on_obra(self, nome):
@@ -664,9 +751,14 @@ class CotacaoWidget(QWidget):
     # ══════════════════════════════════════════════════════════════════════════
 
     def _inserir_linha(self, row: int, item: ItemCotacao):
-        """Insere UMA linha na tabela. Quem chama deve controlar blockSignals."""
-        nomes  = [e.text().strip() or f"F{i+1}" for i,e in enumerate(self._e_forn)]
+        """Insere UMA linha na tabela."""
+        nomes  = [e.text().strip() or f"F{i+1}" for i, e in enumerate(self._e_forn)]
         melhor = item.melhor_idx()
+
+        # Calcula pior preço para destaque vermelho
+        subs_validos = [(fi, item.subtotal(fi)) for fi in range(3)
+                        if item.subtotal(fi) is not None]
+        pior_fi = max(subs_validos, key=lambda x: x[1])[0] if len(subs_validos) > 1 else -1
 
         self._tbl.insertRow(row)
         self._tbl.setRowHeight(row, 34)
@@ -681,28 +773,38 @@ class CotacaoWidget(QWidget):
             it.setFlags(it.flags() | Qt.ItemIsEditable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             it.setForeground(QBrush(QColor(cor))); return it
 
-        # Coluna 0: número sequencial automático
         self._tbl.setItem(row, 0, ro(str(row+1)))
-        # Colunas editáveis
         self._tbl.setItem(row, 1, ed(item.descricao))
         self._tbl.setItem(row, 2, ed(self._fn(item.quantidade), Qt.AlignCenter))
+        # Coluna unidade — editável, o delegate cria o combo
         self._tbl.setItem(row, 3, ed(item.unidade, Qt.AlignCenter, "#555"))
 
         for fi in range(3):
             cp, cs = 4+fi*2, 5+fi*2
             preco = item.precos[fi]; sub = item.subtotal(fi)
-            bst   = (melhor == fi) and sub is not None
-            bgp   = COR_MELHOR if bst else (COR_VAZIO if preco is None else COR_PIOR)
+            bst  = (melhor == fi) and sub is not None
+            pior = (pior_fi == fi) and sub is not None and len(subs_validos) > 1
+
+            if preco is None:
+                bgp = COR_VAZIO; fg_preco = "#AAAAAA"
+            elif bst:
+                bgp = COR_MELHOR; fg_preco = "#1A7A3C"
+            elif pior:
+                bgp = COR_PIOR_BG; fg_preco = COR_PIOR_FG.name()
+            else:
+                bgp = COR_NEUTRO; fg_preco = "#1A1A1A"
 
             ip = ed(self._fb(preco) if preco is not None else "",
-                    Qt.AlignRight|Qt.AlignVCenter, "#1A7A3C" if bst else "#1A1A1A")
+                    Qt.AlignRight|Qt.AlignVCenter, fg_preco)
             ip.setBackground(QBrush(bgp))
             if bst: ff=QFont(); ff.setBold(True); ip.setFont(ff)
             self._tbl.setItem(row, cp, ip)
 
+            fg_sub = "#1A7A3C" if bst else (COR_PIOR_FG.name() if pior else "#555")
+            bg_sub = COR_MELHOR if bst else (COR_PIOR_BG if pior else COR_VAZIO)
             is2 = ro(self._fb(sub) if sub is not None else "—",
-                     Qt.AlignRight|Qt.AlignVCenter, "#1A7A3C" if bst else "#555")
-            is2.setBackground(QBrush(COR_MELHOR if bst else COR_VAZIO))
+                     Qt.AlignRight|Qt.AlignVCenter, fg_sub)
+            is2.setBackground(QBrush(bg_sub))
             if bst: ff=QFont(); ff.setBold(True); is2.setFont(ff)
             self._tbl.setItem(row, cs, is2)
 
@@ -719,7 +821,6 @@ class CotacaoWidget(QWidget):
         self._tbl.setItem(row, 11, iv)
 
     def _renumerar(self):
-        """Renumera a coluna # após remoção."""
         self._bloqueio = True
         self._tbl.blockSignals(True)
         for r in range(self._tbl.rowCount()):
@@ -729,7 +830,6 @@ class CotacaoWidget(QWidget):
         self._bloqueio = False
 
     def _rebuild(self):
-        """Reconstrói a tabela completa (após cálculo ou carga de PDF)."""
         self._bloqueio = True
         self._tbl.blockSignals(True)
         self._tbl.setRowCount(0)
@@ -737,154 +837,136 @@ class CotacaoWidget(QWidget):
             self._inserir_linha(r, item)
         self._tbl.blockSignals(False)
         self._bloqueio = False
-        self._atualizar_contador()
-        self._atualizar_totais()
 
     def _atualizar_contador(self):
         n = len(self._itens)
         self._lbl_n.setText(f"{n} item{'ns' if n!=1 else ''}")
 
-    def _adicionar_item(self, item=None):
-        """Adiciona linha — RÁPIDO, sem reconstruir a tabela inteira."""
-        if item is None: item = ItemCotacao()
-        self._itens.append(item)
-        r = len(self._itens) - 1
-        self._bloqueio = True
-        self._tbl.blockSignals(True)
-        self._inserir_linha(r, item)
-        self._tbl.blockSignals(False)
-        self._bloqueio = False
-        self._atualizar_contador()
+    # ══════════════════════════════════════════════════════════════════════════
+    # AÇÕES DA TABELA
+    # ══════════════════════════════════════════════════════════════════════════
 
-        def foca():
-            self._tbl.scrollTo(self._tbl.model().index(r, 1))
-            self._tbl.setCurrentCell(r, 1)
-            self._tbl.edit(self._tbl.model().index(r, 1))
-        QTimer.singleShot(30, foca)
+    def _adicionar_item(self):
+        self._tbl.blockSignals(True)
+        item = ItemCotacao()
+        self._itens.append(item)
+        row = len(self._itens) - 1
+        self._inserir_linha(row, item)
+        self._tbl.blockSignals(False)
+        self._atualizar_contador()
+        QTimer.singleShot(0, lambda: (
+            self._tbl.setCurrentCell(row, 1),
+            self._tbl.edit(self._tbl.model().index(row, 1))
+        ))
 
     def _apagar_selecionado(self):
-        """Apaga a linha selecionada (ou a última se nada selecionado)."""
-        row = self._tbl.currentRow()
-        n   = len(self._itens)
-
-        if n == 1:
-            # Só 1 item: limpa em vez de remover
-            self._itens[0] = ItemCotacao()
-            self._rebuild(); return
-
-        if row < 0 or row >= n:
-            # Nada selecionado: remove o último
-            self._itens.pop()
-            self._tbl.removeRow(self._tbl.rowCount()-1)
-        else:
-            self._itens.pop(row)
-            self._tbl.removeRow(row)
-
-        self._renumerar(); self._atualizar_contador(); self._atualizar_totais()
-        nr = min(row if row >= 0 else n-2, len(self._itens)-1)
-        if nr >= 0: self._tbl.setCurrentCell(nr, 1)
+        rows = sorted(set(i.row() for i in self._tbl.selectedItems()), reverse=True)
+        if not rows: return
+        self._tbl.blockSignals(True)
+        for r in rows:
+            if 0 <= r < len(self._itens):
+                self._itens.pop(r)
+                self._tbl.removeRow(r)
+        self._tbl.blockSignals(False)
+        self._renumerar(); self._atualizar_contador(); self._atualizar_dashboard()
+        if not self._itens:
+            self._adicionar_item()
 
     def _limpar_tudo(self):
         if QMessageBox.question(self, "Limpar tudo",
-                "Deseja remover todos os itens?\nDados dos fornecedores são mantidos.",
-                QMessageBox.Yes|QMessageBox.No, QMessageBox.No) != QMessageBox.Yes: return
-        self._itens = [ItemCotacao()]; self._rebuild()
+                "Remover todos os itens?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
+        self._tbl.blockSignals(True)
+        self._itens.clear(); self._tbl.setRowCount(0)
+        self._tbl.blockSignals(False)
+        self._atualizar_contador(); self._atualizar_dashboard()
+        self._adicionar_item()
 
     def _key_press(self, event):
-        """Delete/Backspace apaga item selecionado."""
         if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
-            if self._tbl.state() != QTableWidget.EditingState:
+            if not self._tbl.state() == QAbstractItemView.EditingState:
                 self._apagar_selecionado(); return
         QTableWidget.keyPressEvent(self._tbl, event)
 
-    def _on_changed(self, ti):
+    def _on_changed(self, cell):
         if self._bloqueio: return
-        row, col = ti.row(), ti.column()
+        row = cell.row(); col = cell.column()
         if row >= len(self._itens): return
-        item = self._itens[row]; txt = ti.text().strip()
+        item = self._itens[row]
+        txt  = cell.text().strip()
 
         if col == 1:
             item.descricao = txt.upper()
         elif col == 2:
-            v = self._pn(txt); item.quantidade = v if v and v > 0 else 1.0
-            # Atualiza subtotais da linha sem rebuild completo
-            self._atualizar_linha_calc(row, item)
-            self._atualizar_dashboard()
+            item.quantidade = float(txt.replace(",",".")) if txt else 1.0
         elif col == 3:
             item.unidade = txt.upper() or "UNID."
         elif col in (4, 6, 8):
             fi = (col - 4) // 2
             item.precos[fi] = self._pn(txt)
-            # Atualiza só os subtotais/melhor desta linha
-            self._atualizar_linha_calc(row, item)
-            self._atualizar_dashboard()
+            self._atualizar_linha(row)
+            self._atualizar_totais()
+            return
 
-    def _atualizar_linha_calc(self, row: int, item: ItemCotacao):
-        """Atualiza só as células calculadas (subtotais, melhor) de uma linha."""
-        if row >= self._tbl.rowCount(): return
-        melhor = item.melhor_idx()
+        self._atualizar_totais()
+
+    def _atualizar_linha(self, row: int):
+        """Atualiza cores de uma linha após mudança de preço."""
+        if row >= len(self._itens): return
+        item   = self._itens[row]
         nomes  = [e.text().strip() or f"F{i+1}" for i, e in enumerate(self._e_forn)]
+        melhor = item.melhor_idx()
+        subs_v = [(fi, item.subtotal(fi)) for fi in range(3) if item.subtotal(fi) is not None]
+        pior_fi = max(subs_v, key=lambda x: x[1])[0] if len(subs_v) > 1 else -1
 
         self._bloqueio = True
         self._tbl.blockSignals(True)
 
         for fi in range(3):
-            cs = 5 + fi * 2
-            sub = item.subtotal(fi)
-            bst = (melhor == fi) and sub is not None
-            is2 = self._tbl.item(row, cs)
-            if not is2:
-                is2 = QTableWidgetItem()
-                is2.setFlags(is2.flags() & ~Qt.ItemIsEditable)
-                self._tbl.setItem(row, cs, is2)
-            is2.setText(self._fb(sub) if sub is not None else "—")
-            is2.setBackground(QBrush(COR_MELHOR if bst else COR_VAZIO))
-            fg = QColor("#1A7A3C") if bst else QColor("#555555")
-            is2.setForeground(QBrush(fg))
-            if bst:
-                ff = QFont(); ff.setBold(True); is2.setFont(ff)
-            else:
-                is2.setFont(QFont())
-            # Também atualiza o fundo da célula de preço para refletir melhor
-            ip = self._tbl.item(row, cs - 1)
-            if ip:
-                preco = item.precos[fi]
-                bgp = COR_MELHOR if bst else (COR_VAZIO if preco is None else COR_PIOR)
-                ip.setBackground(QBrush(bgp))
-                ip.setForeground(QBrush(QColor("#1A7A3C") if bst else QColor("#1A1A1A")))
-                if bst:
-                    ff = QFont(); ff.setBold(True); ip.setFont(ff)
-                else:
-                    ip.setFont(QFont())
+            cp, cs = 4+fi*2, 5+fi*2
+            sub  = item.subtotal(fi)
+            bst  = (melhor == fi) and sub is not None
+            pior = (pior_fi == fi) and sub is not None and len(subs_v) > 1
 
-        # Melhor subtotal (col 10)
+            if item.precos[fi] is None:
+                fg_preco = "#AAAAAA"; bgp = COR_VAZIO
+            elif bst:
+                fg_preco = "#1A7A3C"; bgp = COR_MELHOR
+            elif pior:
+                fg_preco = COR_PIOR_FG.name(); bgp = COR_PIOR_BG
+            else:
+                fg_preco = "#1A1A1A"; bgp = COR_NEUTRO
+
+            ip = self._tbl.item(row, cp)
+            if ip:
+                ip.setForeground(QBrush(QColor(fg_preco)))
+                ip.setBackground(QBrush(bgp))
+                ff = QFont(); ff.setBold(bst); ip.setFont(ff)
+
+            fg_sub = "#1A7A3C" if bst else (COR_PIOR_FG.name() if pior else "#555")
+            bg_sub = COR_MELHOR if bst else (COR_PIOR_BG if pior else COR_VAZIO)
+            is2 = self._tbl.item(row, cs)
+            if is2:
+                is2.setText(self._fb(sub) if sub is not None else "—")
+                is2.setForeground(QBrush(QColor(fg_sub)))
+                is2.setBackground(QBrush(bg_sub))
+                ff = QFont(); ff.setBold(bst); is2.setFont(ff)
+
         ms = item.melhor_sub()
         im = self._tbl.item(row, 10)
-        if not im:
-            im = QTableWidgetItem()
-            im.setFlags(im.flags() & ~Qt.ItemIsEditable)
-            self._tbl.setItem(row, 10, im)
-        im.setText(self._fb(ms) if ms else "—")
-        im.setBackground(QBrush(COR_MELHOR if ms else COR_VAZIO))
-        im.setForeground(QBrush(QColor("#1A7A3C") if ms else QColor("#999999")))
-        if ms:
-            ff = QFont(); ff.setBold(True); im.setFont(ff)
-        else:
-            im.setFont(QFont())
+        if im:
+            im.setText(self._fb(ms) if ms else "—")
+            im.setBackground(QBrush(COR_MELHOR if ms else COR_VAZIO))
+            im.setForeground(QBrush(QColor("#1A7A3C" if ms else "#999999")))
+            ff = QFont(); ff.setBold(bool(ms)); im.setFont(ff)
 
-        # Fornecedor vencedor do item (col 11)
         iv = self._tbl.item(row, 11)
-        if not iv:
-            iv = QTableWidgetItem()
-            iv.setFlags(iv.flags() & ~Qt.ItemIsEditable)
-            self._tbl.setItem(row, 11, iv)
-        vn = nomes[melhor] if melhor is not None else "—"
-        iv.setText(vn)
-        iv.setForeground(QBrush(QColor("#1A7A3C") if melhor is not None else QColor("#999999")))
-        if melhor is not None:
-            ff = QFont(); ff.setBold(True); iv.setFont(ff)
-        else:
-            iv.setFont(QFont())
+        if iv:
+            vn = nomes[melhor] if melhor is not None else "—"
+            iv.setText(vn)
+            iv.setForeground(QBrush(QColor("#1A7A3C" if melhor is not None else "#999999")))
+            ff = QFont(); ff.setBold(melhor is not None); iv.setFont(ff)
 
         self._tbl.blockSignals(False)
         self._bloqueio = False
@@ -906,7 +988,7 @@ class CotacaoWidget(QWidget):
     def _calcular(self): self._rebuild(); self._atualizar_dashboard()
 
     def _atualizar_totais(self):
-        nomes = [e.text().strip() or f"F{i+1}" for i,e in enumerate(self._e_forn)]
+        nomes = [e.text().strip() or f"F{i+1}" for i, e in enumerate(self._e_forn)]
         for fi in range(3):
             tot = sum((it.subtotal(fi) or 0) for it in self._itens) + self._fretes[fi] - self._descontos[fi]
             self._lbl_tot[fi].setText(f"{nomes[fi]}: R$ {self._f(tot)}")
@@ -918,7 +1000,8 @@ class CotacaoWidget(QWidget):
         for fi in range(3):
             nome = self._e_forn[fi].text().strip() or f"Fornecedor {fi+1}"
             r = ResultadoFornecedor(nome, fi)
-            r.total_itens = len(self._itens); r.frete = self._fretes[fi]; r.desconto = self._descontos[fi]
+            r.total_itens = len(self._itens)
+            r.frete = self._fretes[fi]; r.desconto = self._descontos[fi]
             for it in self._itens:
                 sub = it.subtotal(fi)
                 if sub is not None: r.itens_cotados += 1; r.subtotal_val += sub
@@ -929,7 +1012,7 @@ class CotacaoWidget(QWidget):
     def _vencedor(self, res):
         n = len(self._itens)
         val = [r for r in res if r.itens_cotados > 0]
-        if not val: return None,"Preencha os preços e clique em Calcular",""
+        if not val: return None, "Preencha os preços e clique em Calcular", ""
         comp = [r for r in val if r.itens_cotados == n]
         if comp:
             v = min(comp, key=lambda r: (r.total_final, -r.itens_baratos))
@@ -942,147 +1025,426 @@ class CotacaoWidget(QWidget):
     def _atualizar_dashboard(self):
         res = self._calcular_res()
         v, mot, obs = self._vencedor(res)
+        n = len(self._itens)
+
         if v is None:
-            self._lbl_ven.setText("—"); self._lbl_mot.setText(mot)
-            self._btn_ven.setEnabled(False); self._btn_ii.setEnabled(False); return
+            self._lbl_ven.setText("—")
+            self._lbl_mot.setText(mot)
+            self._btn_ven.setEnabled(False); self._btn_ii.setEnabled(False)
+            if hasattr(self, '_frame_neg'):
+                self._frame_neg.setVisible(False)
+            if hasattr(self, '_btn_copiar_neg'):
+                self._btn_copiar_neg.setEnabled(False)
+            return
+
         self._venc_idx = v.idx; self._resultados = res
         cor = CORES_EMPRESA.get(v.nome.upper(), RED)
+
+        # ── Nome e cor do vencedor ────────────────────────────────────────────
         self._lbl_ven.setText(v.nome.upper())
-        self._lbl_ven.setStyleSheet(f"font-size:22px;font-weight:bold;color:{cor};background:transparent;")
-        self._lbl_mot.setText(mot)
-        self._frame_ven.setStyleSheet(f"QFrame{{background:#F8FFFE;border-radius:10px;border-left:5px solid {cor};border-top:1px solid #DDD;border-right:1px solid #DDD;border-bottom:1px solid #DDD;}}")
+        self._lbl_ven.setStyleSheet(
+            f"font-size:26px;font-weight:bold;color:{cor};background:transparent;")
+
+        # ── Motivo detalhado ──────────────────────────────────────────────────
+        outros = [r for r in res if r.idx != v.idx and r.itens_cotados > 0]
+        partes_mot = []
+
+        if v.itens_cotados == n:
+            partes_mot.append(f"Cotou todos os {n} itens")
+        else:
+            partes_mot.append(f"Cotou {v.itens_cotados} de {n} itens (maior cobertura)")
+
+        if outros:
+            seg = min(outros, key=lambda r: r.total_final if r.itens_cotados > 0 else 99999)
+            if seg.total_final > 0 and v.total_final > 0:
+                dif = seg.total_final - v.total_final
+                pct = dif / seg.total_final * 100
+                if dif > 0:
+                    partes_mot.append(
+                        f"{pct:.1f}% mais barato que {seg.nome} "
+                        f"(economia de R$ {self._f(dif)})")
+                elif dif < 0:
+                    partes_mot.append(
+                        f"Venceu por maior cobertura — "
+                        f"R$ {self._f(abs(dif))} mais caro que {seg.nome}")
+
+        if v.itens_baratos > 0:
+            partes_mot.append(
+                f"Melhor preço em {v.itens_baratos} item{'ns' if v.itens_baratos!=1 else ''}")
+
+        if v.frete > 0:
+            partes_mot.append(f"Frete incluso: R$ {self._f(v.frete)}")
+        if v.desconto > 0:
+            partes_mot.append(f"Desconto: R$ {self._f(v.desconto)}")
+
+        self._lbl_mot.setText("  •  ".join(partes_mot))
+
+        # ── Frame vencedor ────────────────────────────────────────────────────
+        bg_ven = "#F0FFF4" if cor == GREEN else "#FEF9F9"
+        self._frame_ven.setStyleSheet(
+            f"QFrame{{background:{bg_ven};border-radius:12px;"
+            f"border-left:5px solid {cor};"
+            f"border-top:1px solid #E8E8E8;border-right:1px solid #E8E8E8;"
+            f"border-bottom:1px solid #E8E8E8;}}"
+        )
+
+        # ── Mini-stats do vencedor ────────────────────────────────────────────
+        lv_total = self._frame_ven.ms_total.findChild(QLabel, "v_val_total")
+        if lv_total: lv_total.setText(f"R$ {self._f(v.total_final)}")
+        lv_total_lbl = self._frame_ven.ms_total.findChild(QLabel, "v_lbl_total")
+        if lv_total_lbl: lv_total_lbl.setStyleSheet(f"font-size:9px;color:#888;background:transparent;font-weight:600;")
+
+        lv_bar = self._frame_ven.ms_baratos.findChild(QLabel, "v_val_bar")
+        if lv_bar: lv_bar.setText(f"{v.itens_baratos}/{n}")
+
+        # Economia vs 2º lugar
+        lv_econ = self._frame_ven.ms_econ.findChild(QLabel, "v_val_econ")
+        if lv_econ:
+            if outros:
+                seg = min(outros, key=lambda r: r.total_final if r.total_final > 0 else 99999)
+                dif = seg.total_final - v.total_final
+                lv_econ.setText(f"R$ {self._f(abs(dif))}" if dif != 0 else "—")
+                lv_econ.setStyleSheet(
+                    f"font-size:17px;font-weight:bold;"
+                    f"color:{'#1A5276' if dif >= 0 else '#C0392B'};"
+                    f"background:transparent;")
+            else:
+                lv_econ.setText("—")
+
+        # ── Cards de cada fornecedor ──────────────────────────────────────────
         for fi, r in enumerate(res):
             c = self._cards[fi]
-            for obj,val in [(f"cn_{fi}",r.nome),(f"cs_{fi}",r.status(len(self._itens))),
-                            (f"ci_{fi}",f"{r.itens_cotados}/{len(self._itens)}"),
-                            (f"cb_{fi}",str(r.itens_baratos)),(f"ct_{fi}",f"R$ {self._f(r.total_final)}")]:
+            destaque = (fi == v.idx)
+
+            # Nome (atualiza com nome digitado)
+            lb_nome = c.findChild(QLabel, f"cn_{fi}")
+            if lb_nome:
+                lb_nome.setText(r.nome)
+                lb_nome.setStyleSheet(
+                    f"font-size:13px;font-weight:bold;"
+                    f"color:{COR_F[fi] if not destaque else cor};"
+                    f"background:transparent;")
+
+            # Status badge
+            lb_status = c.findChild(QLabel, f"cs_{fi}")
+            if lb_status:
+                st = r.status(n)
+                bg_st = "#D5F5E3" if "Completo" in st else ("#FEF9E7" if "Parcial" in st else "#F4F6F7")
+                cor_st = "#1A7A3C" if "Completo" in st else ("#7D6608" if "Parcial" in st else "#888")
+                lb_status.setText(st)
+                lb_status.setStyleSheet(
+                    f"font-size:10px;font-weight:600;color:{cor_st};"
+                    f"background:{bg_st};border-radius:4px;padding:2px 7px;border:none;")
+
+            # Métricas
+            for obj, val in [
+                (f"ci_{fi}", f"{r.itens_cotados}/{n}"),
+                (f"cb_{fi}", str(r.itens_baratos)),
+                (f"ct_{fi}", f"R$ {self._f(r.total_final)}"),
+            ]:
                 lb = c.findChild(QLabel, obj)
                 if lb: lb.setText(val)
-            c.setStyleSheet(f"QFrame{{background:{'#F0FFF4' if fi==v.idx else '#F8F8F8'};border-radius:8px;border:{'2px solid '+cor if fi==v.idx else '1px solid #E0E0E0'};}}")
+
+            # Estilo do card — vencedor destacado, outros neutros
+            if destaque:
+                c.setStyleSheet(
+                    f"QFrame{{background:#F0FFF4;border-radius:10px;"
+                    f"border:2px solid {cor};}}")
+            else:
+                c.setStyleSheet(
+                    "QFrame{background:#F8F8F8;border-radius:10px;"
+                    "border:1px solid #E0E0E0;}")
+
         self._lbl_obs.setText(obs); self._lbl_obs.setVisible(bool(obs))
         self._btn_ven.setEnabled(True); self._btn_ii.setEnabled(True)
         self._atualizar_totais()
+        self._atualizar_negociacao()
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # NEGOCIAÇÃO
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _coletar_itens_negociacao(self):
+        """
+        Retorna os itens em que o vencedor geral NÃO é o melhor preço.
+        Esses itens servem para negociar com o fornecedor vencedor.
+        """
+        if not hasattr(self, '_venc_idx'):
+            return []
+
+        itens_neg = []
+        fi_venc = self._venc_idx
+        nomes = [e.text().strip() or f"Fornecedor {i+1}" for i, e in enumerate(self._e_forn)]
+
+        for it in self._itens:
+            melhor_idx = it.melhor_idx()
+            if melhor_idx is None:
+                continue
+
+            # Se o vencedor geral já venceu este item, não entra na negociação
+            if melhor_idx == fi_venc:
+                continue
+
+            preco_vencedor = it.precos[fi_venc]
+            preco_melhor = it.precos[melhor_idx]
+
+            if preco_vencedor is None or preco_melhor is None:
+                continue
+
+            try:
+                qtd = float(it.quantidade or 0)
+                diff_unit = float(preco_vencedor) - float(preco_melhor)
+                diff_total = diff_unit * qtd
+            except Exception:
+                continue
+
+            # Só entra se realmente houver economia
+            if diff_total <= 0:
+                continue
+
+            itens_neg.append({
+                "descricao": it.descricao,
+                "quantidade": it.quantidade,
+                "unidade": it.unidade,
+                "fornecedor_vencedor": nomes[fi_venc],
+                "preco_vencedor": preco_vencedor,
+                "fornecedor_melhor": nomes[melhor_idx],
+                "preco_melhor": preco_melhor,
+                "diferenca_unitaria": diff_unit,
+                "diferenca_total": diff_total,
+            })
+
+        return itens_neg
+
+    def _atualizar_negociacao(self):
+        """
+        Atualiza o card de negociação no dashboard.
+        """
+        if not hasattr(self, '_frame_neg'):
+            return
+
+        if not hasattr(self, '_venc_idx'):
+            self._frame_neg.setVisible(False)
+            return
+
+        itens = self._coletar_itens_negociacao()
+        self._itens_negociacao = itens
+
+        if not itens:
+            self._frame_neg.setVisible(True)
+            self._lbl_neg_titulo.setText("Itens para Negociação")
+            self._lbl_neg_resumo.setText("Nenhum item encontrado para negociar com o fornecedor vencedor.")
+            self._lbl_neg_stats.setText("0 itens • Economia potencial: R$ 0,00")
+            self._btn_negociar.setEnabled(False)
+            return
+
+        economia = sum(x["diferenca_total"] for x in itens)
+        qtd_itens = len(itens)
+
+        vencedor = self._e_forn[self._venc_idx].text().strip() or f"Fornecedor {self._venc_idx+1}"
+
+        self._frame_neg.setVisible(True)
+        self._lbl_neg_titulo.setText(f"Itens para Negociação — {vencedor.upper()}")
+        self._lbl_neg_resumo.setText(
+            f"Foram encontrados {qtd_itens} item(ns) onde outro fornecedor apresentou preço melhor."
+        )
+        self._lbl_neg_stats.setText(
+            f"{qtd_itens} item(ns) • Economia potencial: R$ {self._f(economia)}"
+        )
+        self._btn_negociar.setEnabled(True)
+
+    def _gerar_texto_negociacao(self, itens):
+        """Monta texto profissional para WhatsApp/E-mail."""
+        if not itens:
+            return "Nenhum item encontrado para negociação."
+
+        obra = self._cb_obra.currentText().strip()
+        obra = "" if obra.startswith("—") else obra
+        vencedor = itens[0]["fornecedor_vencedor"]
+        economia_total = sum(item["diferenca_total"] for item in itens)
+        total_atual = self._resultados[self._venc_idx].total_final if hasattr(self, '_resultados') and hasattr(self, '_venc_idx') else 0.0
+        novo_total = max(0.0, total_atual - economia_total)
+
+        linhas = []
+        linhas.append("Prezado,")
+        linhas.append("")
+        linhas.append(
+            "Na análise comparativa da cotação{} , identificamos alguns itens em que há ofertas mais competitivas no mercado.".format(
+                f" da obra {obra}" if obra else ""
+            )
+        )
+        linhas.append("")
+        linhas.append(f"Segue abaixo para revisão de preços com {vencedor}:")
+        linhas.append("")
+
+        for item in itens:
+            linhas.append(
+                f"- {item['descricao']} | Qtd: {self._fn(item['quantidade'])} {item['unidade']} | "
+                f"Atual: R$ {self._f(item['preco_vencedor'])} | "
+                f"Concorrente ({item['fornecedor_melhor']}): R$ {self._f(item['preco_melhor'])} | "
+                f"Dif.: R$ {self._f(item['diferenca_total'])}"
+            )
+
+        linhas.append("")
+        linhas.append(f"Economia potencial total: R$ {self._f(economia)}")
+        linhas.append(f"Novo total possível: R$ {self._f(novo_total)}")
+        linhas.append("")
+        linhas.append("Consegue revisar esses valores para avançarmos?")
+
+        return "\n".join(linhas)
+    def _copiar_negociacao(self):
+        itens = getattr(self, "_itens_negociacao", None)
+        if not itens:
+            itens = self._coletar_itens_negociacao()
+
+        if not itens:
+            QMessageBox.information(self, "Negociação", "Nenhum item encontrado para negociação.")
+            return
+
+        texto = self._gerar_texto_negociacao(itens)
+        QApplication.clipboard().setText(texto)
+        QMessageBox.information(
+            self,
+            "Texto copiado",
+            "✅ Texto de negociação copiado para a área de transferência."
+        )
+
+    def _mostrar_previa_negociacao(self, itens):
+        """
+        Gera uma prévia em texto para revisão rápida.
+        """
+        if not itens:
+            QMessageBox.information(self, "Negociação", "Não há itens para negociação.")
+            return
+
+        linhas = []
+        linhas.append("ITENS PARA NEGOCIAÇÃO")
+        linhas.append("")
+
+        economia_total = 0.0
+        for i, item in enumerate(itens, start=1):
+            economia_total += item["diferenca_total"]
+            linhas.append(
+                f"{i}. {item['descricao']}\n"
+                f"   Qtd: {self._fn(item['quantidade'])} {item['unidade']}\n"
+                f"   Seu preço ({item['fornecedor_vencedor']}): R$ {self._f(item['preco_vencedor'])}\n"
+                f"   Melhor concorrente ({item['fornecedor_melhor']}): R$ {self._f(item['preco_melhor'])}\n"
+                f"   Diferença unitária: R$ {self._f(item['diferenca_unitaria'])}\n"
+                f"   Diferença total: R$ {self._f(item['diferenca_total'])}\n"
+            )
+
+        linhas.append("")
+        linhas.append(f"ECONOMIA POTENCIAL TOTAL: R$ {self._f(economia_total)}")
+
+        QMessageBox.information(
+            self,
+            "Prévia de Negociação",
+            "\n".join(linhas)
+        )
+
+    def _negociar(self):
+        """
+        Primeira versão: abre uma prévia dos itens para negociação.
+        Depois podemos evoluir para PDF/Excel.
+        """
+        itens = getattr(self, "_itens_negociacao", None)
+        if not itens:
+            itens = self._coletar_itens_negociacao()
+
+        if not itens:
+            QMessageBox.information(
+                self,
+                "Negociação",
+                "Nenhum item encontrado para negociação."
+            )
+            return
+
+        self._mostrar_previa_negociacao(itens)
 
     # ══════════════════════════════════════════════════════════════════════════
     # GERAR PEDIDO
     # ══════════════════════════════════════════════════════════════════════════
 
     def _gerar_pedido(self):
-        if not hasattr(self,'_venc_idx'): return
-        fi = self._venc_idx; nome = self._e_forn[fi].text().strip()
-        if not nome: QMessageBox.warning(self,"Atenção","Preencha o nome do fornecedor vencedor."); return
-        itens = [{"descricao":it.descricao,"quantidade":it.quantidade,"unidade":it.unidade,
-                  "valor_unitario":it.precos[fi],"valor_total":it.subtotal(fi)}
-                 for it in self._itens if it.subtotal(fi) is not None]
-        if not itens: QMessageBox.warning(self,"Atenção",f"'{nome}' não tem preços preenchidos."); return
+        if not hasattr(self, '_venc_idx'): return
+        fi = self._venc_idx
+        nome = self._e_forn[fi].text().strip()
+        if not nome:
+            QMessageBox.warning(self, "Atenção", "Preencha o nome do fornecedor vencedor.")
+            return
+        itens = [
+            {"descricao": it.descricao, "quantidade": it.quantidade, "unidade": it.unidade,
+             "valor_unitario": it.precos[fi], "valor_total": it.subtotal(fi)}
+            for it in self._itens if it.subtotal(fi) is not None
+        ]
+        if not itens:
+            QMessageBox.warning(self, "Atenção", f"'{nome}' não tem preços preenchidos.")
+            return
         self._abrir_form(nome, itens)
 
     def _gerar_item_item(self):
-        if not hasattr(self,'_resultados'): return
+        if not hasattr(self, '_resultados'): return
         grupos = {}
         for it in self._itens:
             mi = it.melhor_idx()
-            if mi is not None: grupos.setdefault(mi,[]).append(it)
-        if not grupos: QMessageBox.warning(self,"Atenção","Nenhum item com preço preenchido."); return
-        nomes = [e.text().strip() or f"Fornecedor {i+1}" for i,e in enumerate(self._e_forn)]
-        msg = "Serão gerados pedidos para:\n\n" + "\n".join(f"• {nomes[fi]}: {len(its)} item(s)" for fi,its in grupos.items()) + "\n\nContinuar?"
-        if QMessageBox.question(self,"Confirmar",msg,QMessageBox.Yes|QMessageBox.No) != QMessageBox.Yes: return
+            if mi is not None: grupos.setdefault(mi, []).append(it)
+        if not grupos:
+            QMessageBox.warning(self, "Atenção", "Nenhum item com preço preenchido.")
+            return
+        nomes = [e.text().strip() or f"Fornecedor {i+1}" for i, e in enumerate(self._e_forn)]
         for fi, its in grupos.items():
-            itens = [{"descricao":it.descricao,"quantidade":it.quantidade,"unidade":it.unidade,
-                      "valor_unitario":it.precos[fi],"valor_total":it.subtotal(fi)}
-                     for it in its if it.subtotal(fi) is not None]
+            itens = [
+                {"descricao": it.descricao, "quantidade": it.quantidade, "unidade": it.unidade,
+                 "valor_unitario": it.precos[fi], "valor_total": it.subtotal(fi)}
+                for it in its if it.subtotal(fi) is not None
+            ]
             if itens: self._abrir_form(nomes[fi], itens)
 
     def _abrir_form(self, fornecedor, itens):
-        obra = self._cb_obra.currentText(); obra = "" if obra.startswith("—") else obra
+        obra = self._cb_obra.currentText()
+        obra = "" if obra.startswith("—") else obra
         emp  = self._cb_emp.currentText()
         try:
             mw = self.window()
-            if hasattr(mw,'_pages') and 'pedido' in mw._pages:
+            if hasattr(mw, '_pages') and 'pedido' in mw._pages:
                 pw = mw._pages['pedido']
-                if hasattr(pw,'preencher_da_cotacao'):
+                if hasattr(pw, 'preencher_da_cotacao'):
                     pw.preencher_da_cotacao(fornecedor=fornecedor, obra=obra, empresa=emp, itens=itens)
-                    if hasattr(mw,'_nav'): mw._nav('pedido')
-                    QMessageBox.information(self,"Formulário preenchido!",
-                        f"✅  Pedido para <b>{fornecedor}</b> pré-preenchido.<br>Revise na aba <b>Pedido de Compra</b>.")
+                    if hasattr(mw, '_nav'): mw._nav('pedido')
+                    QMessageBox.information(self, "Formulário preenchido!",
+                        f"✅  Pedido para <b>{fornecedor}</b> pré-preenchido.<br>"
+                        f"Revise na aba <b>Pedido de Compra</b>.")
                     return
-        except Exception as e: print(f"[Cotação] {e}")
-        QMessageBox.information(self,"Pronto",
+        except Exception as e:
+            print(f"[Cotação] {e}")
+        QMessageBox.information(self, "Pronto",
             f"Fornecedor: {fornecedor}\nObra: {obra or '—'}\nItens: {len(itens)}\n\nVá para Pedido de Compra.")
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # PDF
-    # ══════════════════════════════════════════════════════════════════════════
-
-    def _importar_pdf(self, fi):
-        nome = self._e_forn[fi].text().strip() or f"Fornecedor {fi+1}"
-        cam, _ = QFileDialog.getOpenFileName(self, f"Orçamento — {nome}",
-                                              os.path.expanduser("~"), "PDF (*.pdf)")
-        if not cam: return
-        self._progress = QProgressDialog("Lendo PDF...", None, 0, 0, self)
-        self._progress.setWindowTitle("Importando orçamento")
-        self._progress.setWindowModality(Qt.WindowModal)
-        self._progress.setMinimumWidth(320); self._progress.setMinimumDuration(0)
-        self._progress.setValue(0); self._progress.show(); QApplication.processEvents()
-
-        self._thr = PDFExtractorThread(cam, fi)
-        self._thr.progresso.connect(lambda m: self._progress.setLabelText(m))
-        self._thr.resultado.connect(lambda its: self._pdf_ok(its, fi, nome))
-        self._thr.texto_extraido.connect(lambda txt: self._pdf_visual(txt, fi, nome))
-        self._thr.erro.connect(self._pdf_err)
-        self._thr.finished.connect(lambda: self._progress.close() if self._progress else None)
-        self._thr.start()
-
-    def _pdf_ok(self, itens, fi, nome):
-        self._progress.close()
-        prev = "\n".join(f"  • {it['descricao'][:45]}  {it['quantidade']} {it['unidade']}  R$ {it['preco_unitario']:.2f}" for it in itens[:8])
-        if len(itens)>8: prev += f"\n  ... e mais {len(itens)-8} itens"
-        if QMessageBox.question(self, f"✅  {len(itens)} itens detectados",
-                f"<b>{nome}</b><br><br>Encontrei <b>{len(itens)} itens</b>.<br>"
-                f"<pre style='font-size:10px;'>{prev}</pre><br>Aplicar na cotação?",
-                QMessageBox.Yes|QMessageBox.No, QMessageBox.Yes) != QMessageBox.Yes: return
-        while len(self._itens) < len(itens): self._itens.append(ItemCotacao())
-        for i, it in enumerate(itens):
-            item = self._itens[i]
-            if not item.descricao:
-                item.descricao=str(it.get("descricao","")).upper()
-                item.quantidade=float(it.get("quantidade") or 1)
-                item.unidade=str(it.get("unidade","UNID.")).upper()
-            item.precos[fi] = float(it.get("preco_unitario") or 0)
-        self._rebuild(); self._atualizar_dashboard()
-        QMessageBox.information(self,"Importado!",f"✅  {len(itens)} itens aplicados.\nRevise e clique em ⚡ Calcular.")
-
-    def _pdf_visual(self, texto, fi, nome):
-        self._progress.close()
-        QMessageBox.information(self,"Modo Visual",
-            f"<b>{nome}</b><br><br>Não detectei padrão automático.<br>"
-            f"Abrindo Modo Visual: veja o orçamento à esquerda e preencha os preços à direita.",
-            QMessageBox.Ok)
-        dlg = PDFVisualDialog(texto, fi, nome, self._itens, self)
-        if dlg.exec() == QDialog.Accepted:
-            for i, p in dlg.precos.items():
-                if i < len(self._itens) and p: self._itens[i].precos[fi] = p
-            self._rebuild(); self._atualizar_dashboard()
-
-    def _pdf_err(self, msg):
-        if self._progress: self._progress.close()
-        QMessageBox.warning(self, "Erro na importação", msg)
 
     # ══════════════════════════════════════════════════════════════════════════
     # NOVA COTAÇÃO
     # ══════════════════════════════════════════════════════════════════════════
 
     def _nova_cotacao(self):
-        if QMessageBox.question(self,"Nova cotação","Deseja limpar todos os dados?",
-                QMessageBox.Yes|QMessageBox.No, QMessageBox.No) != QMessageBox.Yes: return
+        if QMessageBox.question(self, "Nova cotação", "Deseja limpar todos os dados?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return
         self._itens = []
         for e in self._e_forn: e.clear()
         for e in self._e_frete: e.setText("0,00")
         for e in self._e_desc:  e.setText("0,00")
-        self._fretes=[0.0,0.0,0.0]; self._descontos=[0.0,0.0,0.0]
-        self._lbl_ven.setText("—"); self._lbl_mot.setText("Preencha os preços e clique em Calcular")
+        self._fretes = [0.0, 0.0, 0.0]; self._descontos = [0.0, 0.0, 0.0]
+        self._lbl_ven.setText("—")
+        self._lbl_mot.setText("Preencha os preços e clique em Calcular")
         self._btn_ven.setEnabled(False); self._btn_ii.setEnabled(False)
         self._adicionar_item()
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # INTEGRAÇÃO: preencher da cotação (chamado pela aba Cotação)
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def preencher_da_cotacao(self, fornecedor="", obra="", empresa="", itens=None):
+        """Pré-preenche o formulário de pedido a partir da cotação."""
+        pass  # implementado no formulario_pedido.py
 
     # ══════════════════════════════════════════════════════════════════════════
     # HELPERS
@@ -1091,12 +1453,15 @@ class CotacaoWidget(QWidget):
     @staticmethod
     def _vsep():
         s = QFrame(); s.setFrameShape(QFrame.VLine)
-        s.setStyleSheet("background:#CCC;border:none;"); s.setFixedWidth(1); s.setFixedHeight(38); return s
+        s.setStyleSheet("background:#CCC;border:none;")
+        s.setFixedWidth(1); s.setFixedHeight(38)
+        return s
 
     @staticmethod
     def _pn(txt):
         if not txt: return None
-        try: return float(str(txt).replace("R$","").replace(" ","").replace(".","").replace(",","."))
+        try:
+            return float(str(txt).replace("R$","").replace(" ","").replace(".","").replace(",","."))
         except: return None
 
     @staticmethod
@@ -1113,7 +1478,7 @@ class CotacaoWidget(QWidget):
     def _fn(v):
         try:
             f = float(v)
-            return str(int(f)) if f==int(f) else f"{f:.3f}".rstrip("0")
+            return str(int(f)) if f == int(f) else f"{f:.3f}".rstrip("0")
         except: return "1"
 
     def showEvent(self, e):
