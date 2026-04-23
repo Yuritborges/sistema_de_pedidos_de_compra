@@ -36,7 +36,7 @@ _LOGO_NOMES = {
 
 
 def _logo_path(empresa: str):
-    # Retorna o caminho da logo ou None se o arquivo não existir.
+    """Retorna o caminho da logo ou None se o arquivo não existir."""
     nome = _LOGO_NOMES.get(empresa, "")
     p    = os.path.join(_LOGOS_DIR, nome)
     return p if (nome and os.path.exists(p)) else None
@@ -52,7 +52,7 @@ def _montar_observacao(emp: dict, obs_usuario: str) -> str:
 
 
 def _cep_empresa(emp: dict) -> str:
-    # Extrai o CEP do endereço da empresa (último token com 8-9 dígitos).
+    """Extrai o CEP do endereço da empresa (último token com 8-9 dígitos)."""
     end = emp.get("endereco", "")
     for token in reversed(end.replace(",", " ").split()):
         t = token.strip()
@@ -63,12 +63,24 @@ def _cep_empresa(emp: dict) -> str:
 
 def _cidade_uf_empresa(emp: dict):
     """
-    Tenta extrair cidade e UF do endereço no padrão 'Cidade, UF - CEP'.
-    Retorna ('', '') se não conseguir.
+    Tenta extrair cidade e UF do endereço da empresa.
+    Suporta formatos: 'Cidade, UF - CEP', 'Cidade/UF', 'Cidade, UF'
     """
+    # Primeiro verifica se a empresa tem campos diretos
+    cidade = emp.get("cidade", "").strip()
+    uf     = emp.get("uf", "").strip()
+    if cidade and uf:
+        return cidade, uf
+
     end = emp.get("endereco", "")
     try:
-        m = re.search(r'([A-Za-zÀ-ÿ\s]+),?\s+([A-Z]{2})\s*[-–]', end)
+        # Formato: Cidade/UF (ex: São Paulo/SP)
+        m = re.search(r'([A-Za-zÀ-ÿ\s]+)/([A-Z]{2})', end)
+        if m:
+            return m.group(1).strip(), m.group(2).strip()
+
+        # Formato: Cidade, UF - ou Cidade, UF (fim)
+        m = re.search(r'([A-Za-zÀ-ÿ\s]+),\s*([A-Z]{2})(?:\s*[-–]|$)', end)
         if m:
             return m.group(1).strip(), m.group(2).strip()
     except Exception:
@@ -122,7 +134,7 @@ class PedidoCompraGenerator:
         n_itens    = len(dto.itens)
 
         def _calc_blocos(escala):
-            # Calcula alturas de todos os blocos com fator de escala (1.0=normal, <1=compacto).
+            """Calcula alturas de todos os blocos com fator de escala (1.0=normal, <1=compacto)."""
             e = escala
             ht      = 28*mm*e
             hdf     = 7*mm*e
@@ -254,7 +266,7 @@ class PedidoCompraGenerator:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _bloco_topo(self, c, dto, emp, y, alt, num_pag=1, total_pag=1):
-        # Logo + dados da empresa + número do pedido.
+        """Logo + dados da empresa + número do pedido."""
         c.setStrokeColor(C_LINHA); c.setLineWidth(0.5)
         c.rect(M, y-alt, CW, alt, fill=0, stroke=1)
 
@@ -293,7 +305,7 @@ class PedidoCompraGenerator:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _faixa_data(self, c, dto, y, alt):
-        # Faixa cinza com data, prazo e vencimento.
+        """Faixa cinza com data, prazo e vencimento."""
         c.setFillColor(C_FUNDO)
         c.rect(M, y-alt, CW, alt, fill=1, stroke=0)
         c.setStrokeColor(C_LINHA); c.setLineWidth(0.3)
@@ -352,13 +364,22 @@ class PedidoCompraGenerator:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _bloco_cob(self, c, dto, emp, y, alt):
-        # Endereço de cobrança — lê cidade/UF do config.py.
+        """Endereço de cobrança — lê cidade/UF do config.py."""
         c.setStrokeColor(C_LINHA); c.setLineWidth(0.5)
         c.rect(M, y-alt, CW, alt, fill=0, stroke=1)
 
-        end_cob  = emp.get("endereco", "")
-        cep_cob  = _cep_empresa(emp)
-        cidade_emp, uf_emp = _cidade_uf_empresa(emp)
+        # Endereço de cobrança = endereço da empresa faturadora (config.py)
+        end_cob = emp.get("endereco", "")
+        cep_cob = emp.get("cep", "") or _cep_empresa(emp)
+
+        # Extrai cidade e UF do config.py diretamente se disponível,
+        # senão tenta parsear do campo endereco
+        cidade = emp.get("cidade", "")
+        uf     = emp.get("uf", "")
+        if not cidade or not uf:
+            cidade_p, uf_p = _cidade_uf_empresa(emp)
+            if not cidade: cidade = cidade_p
+            if not uf:     uf     = uf_p
 
         def par(lbl, val, x, yy):
             c.setFont("Helvetica-Bold", 7.5); c.setFillColor(C_ESCURO)
@@ -367,11 +388,11 @@ class PedidoCompraGenerator:
             off = c.stringWidth(lbl, "Helvetica-Bold", 7.5) + 2
             c.drawString(x+off, yy, str(val or "—")[:50])
 
-        par("Endereço de Cobrança:", end_cob[:52], M+3*mm,       y-5*mm)
-        par("CEP:",      cep_cob,   M+CW*0.75, y-5*mm)
-        par("Cidade:",   cidade_emp, M+3*mm,   y-11*mm)
-        par("UF:",       uf_emp,    M+CW*0.5,  y-11*mm)
-        par("Comprador:", dto.comprador, M+CW*0.72, y-11*mm)
+        par("Endereço de Cobrança:", end_cob[:52], M+3*mm,    y-5*mm)
+        par("CEP:",      cep_cob,   M+CW*0.75,                y-5*mm)
+        par("Cidade:",   cidade,    M+3*mm,                    y-11*mm)
+        par("UF:",       uf,        M+CW*0.5,                  y-11*mm)
+        par("Comprador:", dto.comprador, M+CW*0.72,            y-11*mm)
 
         return y - alt - 1*mm
 
@@ -469,7 +490,7 @@ class PedidoCompraGenerator:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _bloco_ent(self, c, dto, y, alt):
-        # Endereço de entrega (obra).
+        """Endereço de entrega (obra)."""
         c.setStrokeColor(C_LINHA); c.setLineWidth(0.5)
         c.rect(M, y-alt, CW, alt, fill=0, stroke=1)
 
@@ -631,7 +652,7 @@ class PedidoCompraGenerator:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _rodape(self, c, emp):
-        # Rodapé com instruções, e-mails e horários de recebimento.
+        """Rodapé com instruções, e-mails e horários de recebimento."""
         y = 20*mm
         c.setStrokeColor(C_LINHA); c.setLineWidth(0.5)
         c.line(M, y, W-M, y)
@@ -660,12 +681,12 @@ class PedidoCompraGenerator:
 
     @staticmethod
     def _fmt_val(v: float) -> str:
-        # Formata R$: 1234.5 → '1.234,50'
+        """Formata R$: 1234.5 → '1.234,50'"""
         return f"{v:,.2f}".replace(",","X").replace(".",",").replace("X",".")
 
     @staticmethod
     def _fmt_num(v: float) -> str:
-        # Formata quantidade: 2.0 → '2' | 2.5 → '2,5'
+        """Formata quantidade: 2.0 → '2' | 2.5 → '2,5'"""
         try:
             if float(v) == int(float(v)): return str(int(v))
             return f"{float(v):.2f}".replace(".", ",")
@@ -674,7 +695,7 @@ class PedidoCompraGenerator:
 
     @staticmethod
     def _nome_arquivo(dto: PedidoDTO) -> str:
-        # Gera nome do arquivo: PC-2582-BRASUL-NOME_DA_OBRA.pdf
+        """Gera nome do arquivo: PC-2582-BRASUL-NOME_DA_OBRA.pdf"""
         obra = "".join(
             ch for ch in dto.obra if ch.isalnum() or ch in " _-"
         )[:28].strip().replace(" ", "_")

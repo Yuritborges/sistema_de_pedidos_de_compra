@@ -1410,7 +1410,65 @@ class PedidoWidget(QWidget):
     # GERAR PDF
     # ══════════════════════════════════════════════════════════════════════════
 
+    def _validar_visual(self):
+        # Destaca campos obrigatórios vazios em vermelho e retorna lista de erros
+        CSS_ERRO = f"""
+            QLineEdit {{
+                color:{TXT}; background:#FFF0F0;
+                border:2px solid {RED}; border-radius:5px;
+                padding:4px 10px; font-size:12px; min-height:30px;
+            }}
+        """
+        CSS_ERRO_COMBO = f"""
+            QComboBox {{
+                color:{TXT}; background:#FFF0F0;
+                border:2px solid {RED}; border-radius:5px;
+                padding:4px 10px; font-size:12px; min-height:30px;
+            }}
+        """
+        erros = []
+
+        # Reseta todos para o estilo normal primeiro
+        for campo in [self.e_num, self.e_obra, self.e_fn]:
+            if hasattr(campo, 'setStyleSheet'):
+                campo.setStyleSheet(CSS_INPUT if isinstance(campo, QLineEdit) else CSS_COMBO)
+
+        # Valida número do pedido
+        if not self.e_num.text().strip():
+            self.e_num.setStyleSheet(CSS_ERRO)
+            erros.append("Número do pedido")
+
+        # Valida obra
+        obra = self.e_obra.currentText().strip()
+        if not obra or obra.startswith("--"):
+            self.e_obra.setStyleSheet(CSS_ERRO_COMBO)
+            erros.append("Obra")
+
+        # Valida fornecedor
+        if not self.e_fn.text().strip():
+            self.e_fn.setStyleSheet(CSS_ERRO)
+            erros.append("Fornecedor")
+
+        # Valida itens
+        tem_item = any(
+            self.tabela.item(r, 0) and self.tabela.item(r, 0).text().strip()
+            for r in range(self.tabela.rowCount())
+        )
+        if not tem_item:
+            erros.append("Itens do pedido (adicione ao menos um)")
+
+        return erros
+
     def _gerar(self, empresa):
+        # Valida visualmente antes de tentar gerar
+        erros = self._validar_visual()
+        if erros:
+            QMessageBox.warning(
+                self, "Campos obrigatórios",
+                "Preencha os campos destacados em vermelho:\n\n• " + "\n• ".join(erros)
+            )
+            return
+
         try:
             dto  = self._montar_dto(empresa)
             path = self._service.gerar_pdf(dto)
@@ -1423,6 +1481,10 @@ class PedidoWidget(QWidget):
             b_open = msg.addButton(" Abrir PDF ", QMessageBox.ActionRole)
             msg.addButton("OK", QMessageBox.AcceptRole); msg.exec()
             if msg.clickedButton() == b_open: self._abrir_arquivo(path)
+            # Reseta estilos dos campos após sucesso
+            for campo in [self.e_num, self.e_fn]:
+                campo.setStyleSheet(CSS_INPUT)
+            self.e_obra.setStyleSheet(CSS_COMBO)
             self.e_num.setText(proximo_numero_pedido())
         except ValueError as e:
             QMessageBox.warning(self,"Campos obrigatórios",str(e))

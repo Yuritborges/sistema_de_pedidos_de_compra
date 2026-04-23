@@ -167,7 +167,26 @@ class HistoricoWidget(QWidget):
         vl_busca.addWidget(self._e_busca)
         hl.addLayout(vl_busca)
 
+        hl.addWidget(self._vsep())
+
+        # Fornecedor
+        vl_forn = QVBoxLayout(); vl_forn.setSpacing(4)
+        vl_forn.addWidget(lbl("FORNECEDOR"))
+        self._cb_forn = QComboBox()
+        self._cb_forn.setMinimumWidth(160)
+        self._cb_forn.setStyleSheet(CSS_COMBO)
+        self._cb_forn.addItem("Todos")
+        vl_forn.addWidget(self._cb_forn)
+        hl.addLayout(vl_forn)
+
         hl.addStretch()
+
+        # Botão exportar Excel
+        from app.ui.style import GREEN
+        btn_excel = btn_solid("📊  Exportar Excel", GREEN)
+        btn_excel.setToolTip("Exporta os pedidos filtrados para Excel")
+        btn_excel.clicked.connect(self._exportar_excel)
+        hl.addWidget(btn_excel)
 
         # Botão limpar
         btn_clear = btn_outline("✕  Limpar filtros")
@@ -178,6 +197,7 @@ class HistoricoWidget(QWidget):
         self._cb_ano.currentTextChanged.connect(self._aplicar_filtros)
         self._cb_emp.currentTextChanged.connect(self._aplicar_filtros)
         self._cb_obra.currentTextChanged.connect(self._aplicar_filtros)
+        self._cb_forn.currentTextChanged.connect(self._aplicar_filtros)
         self._e_busca.textChanged.connect(self._aplicar_filtros)
 
         return box
@@ -356,7 +376,7 @@ class HistoricoWidget(QWidget):
         self._aplicar_filtros()
 
     def _atualizar_combos(self):
-                # Preenche os combos de Ano e Obra com os dados reais do banco.
+        # Preenche os combos de Ano, Obra e Fornecedor com os dados reais do banco.
         anos = sorted({
             self._extrair_ano(p["data_pedido"])
             for p in self._todos
@@ -365,18 +385,20 @@ class HistoricoWidget(QWidget):
 
         obras = sorted({
             str(p["obra_nome"] or "").strip()
-            for p in self._todos
-            if p["obra_nome"]
+            for p in self._todos if p["obra_nome"]
+        })
+
+        fornecedores = sorted({
+            str(p["fornecedor_nome"] or "").strip()
+            for p in self._todos if p.get("fornecedor_nome")
         })
 
         # Ano
         self._cb_ano.blockSignals(True)
-        ano_sel = self._cb_ano.currentText()
         self._cb_ano.clear()
         self._cb_ano.addItem("Todos os anos")
         for a in anos:
             self._cb_ano.addItem(str(a))
-        # Seleciona o ano atual por padrão
         idx = self._cb_ano.findText(str(datetime.now().year))
         self._cb_ano.setCurrentIndex(idx if idx >= 0 else 0)
         self._cb_ano.blockSignals(False)
@@ -391,6 +413,17 @@ class HistoricoWidget(QWidget):
         idx2 = self._cb_obra.findText(obra_sel)
         self._cb_obra.setCurrentIndex(idx2 if idx2 >= 0 else 0)
         self._cb_obra.blockSignals(False)
+
+        # Fornecedor
+        self._cb_forn.blockSignals(True)
+        forn_sel = self._cb_forn.currentText()
+        self._cb_forn.clear()
+        self._cb_forn.addItem("Todos")
+        for f in fornecedores:
+            self._cb_forn.addItem(f)
+        idx3 = self._cb_forn.findText(forn_sel)
+        self._cb_forn.setCurrentIndex(idx3 if idx3 >= 0 else 0)
+        self._cb_forn.blockSignals(False)
 
     # ══════════════════════════════════════════════════════════════════════════
     # FILTROS
@@ -426,6 +459,13 @@ class HistoricoWidget(QWidget):
                 if (p.get("obra_nome") or "").strip() == obra_str
             ]
 
+        forn_str = self._cb_forn.currentText()
+        if forn_str and forn_str != "Todos":
+            resultado = [
+                p for p in resultado
+                if (p.get("fornecedor_nome") or "").strip() == forn_str
+            ]
+
         if termo:
             resultado = [
                 p for p in resultado
@@ -447,6 +487,7 @@ class HistoricoWidget(QWidget):
 
         self._cb_emp.setCurrentIndex(0)
         self._cb_obra.setCurrentIndex(0)
+        self._cb_forn.setCurrentIndex(0)
         self._e_busca.clear()
         self._aplicar_filtros()
 
@@ -676,6 +717,113 @@ class HistoricoWidget(QWidget):
             return f"{v:.0f}"
         except Exception:
             return "0"
+
+    def _exportar_excel(self):
+        # Exporta os pedidos filtrados para Excel com 2 abas: Resumo e Pedidos
+        if not self._filtrados:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "Exportar Excel",
+                "Nenhum pedido para exportar com os filtros atuais.")
+            return
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            from PySide6.QtWidgets import QFileDialog, QMessageBox
+        except ImportError:
+            QMessageBox.warning(self, "Dependência ausente",
+                "Instale openpyxl:\n\npip install openpyxl")
+            return
+
+        caminho, _ = QFileDialog.getSaveFileName(
+            self, "Salvar Excel",
+            f"historico_pedidos_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            "Excel (*.xlsx)"
+        )
+        if not caminho:
+            return
+
+        try:
+            wb = openpyxl.Workbook()
+
+            # ── Aba 1: Pedidos ───────────────────────────────────────────────
+            ws = wb.active
+            ws.title = "Pedidos"
+
+            vermelho  = PatternFill("solid", fgColor="C0392B")
+            cinza_hdr = PatternFill("solid", fgColor="2C2C2C")
+            alt_row   = PatternFill("solid", fgColor="FBF7F7")
+            fonte_hdr = Font(bold=True, color="FFFFFF", size=10)
+            fonte_num = Font(bold=True, color="C0392B", size=10)
+            centro    = Alignment(horizontal="center", vertical="center")
+            borda_fina = Border(
+                bottom=Side(style="thin", color="E8DEDE")
+            )
+
+            cabecalho = ["Nº Pedido", "Data", "Obra", "Fornecedor", "Empresa", "Valor Total"]
+            larguras  = [12, 12, 40, 35, 15, 16]
+            for col, (titulo, larg) in enumerate(zip(cabecalho, larguras), start=1):
+                cel = ws.cell(row=1, column=col, value=titulo)
+                cel.font      = fonte_hdr
+                cel.fill      = cinza_hdr
+                cel.alignment = centro
+                ws.column_dimensions[cel.column_letter].width = larg
+
+            ws.row_dimensions[1].height = 22
+
+            for i, p in enumerate(self._filtrados, start=2):
+                bg = alt_row if i % 2 == 0 else None
+                dados_row = [
+                    f"#{p.get('numero','—')}",
+                    str(p.get("data_pedido") or "—"),
+                    str(p.get("obra_nome") or "—"),
+                    str(p.get("fornecedor_nome") or "—"),
+                    (p.get("empresa_faturadora") or "—").upper(),
+                    self._val(p),
+                ]
+                for col, val in enumerate(dados_row, start=1):
+                    cel = ws.cell(row=i, column=col, value=val)
+                    cel.border    = borda_fina
+                    cel.alignment = centro if col in (1, 2, 5) else Alignment(vertical="center")
+                    if bg: cel.fill = bg
+                    if col == 1: cel.font = fonte_num
+                    if col == 6:
+                        cel.number_format = 'R$ #,##0.00'
+                ws.row_dimensions[i].height = 18
+
+            # Linha de total
+            linha_tot = len(self._filtrados) + 2
+            total_v   = sum(self._val(p) for p in self._filtrados)
+            ws.cell(row=linha_tot, column=5, value="TOTAL").font = Font(bold=True, color="C0392B")
+            cel_tot = ws.cell(row=linha_tot, column=6, value=total_v)
+            cel_tot.font   = Font(bold=True, color="1E8449")
+            cel_tot.number_format = 'R$ #,##0.00'
+            cel_tot.fill   = PatternFill("solid", fgColor="D5F5E3")
+
+            # ── Aba 2: Resumo ────────────────────────────────────────────────
+            ws2 = wb.create_sheet("Resumo")
+            ws2.column_dimensions["A"].width = 28
+            ws2.column_dimensions["B"].width = 20
+
+            resumo = [
+                ("Gerado em",          datetime.now().strftime("%d/%m/%Y %H:%M")),
+                ("Total de pedidos",   len(self._filtrados)),
+                ("Valor total",        f"R$ {self._fmt(total_v)}"),
+                ("Obras distintas",    len({str(p.get('obra_nome') or '') for p in self._filtrados if p.get('obra_nome')})),
+                ("Fornecedores",       len({str(p.get('fornecedor_nome') or '') for p in self._filtrados if p.get('fornecedor_nome')})),
+            ]
+            for linha, (chave, valor) in enumerate(resumo, start=1):
+                ws2.cell(row=linha, column=1, value=chave).font = Font(bold=True, color="6B5555")
+                ws2.cell(row=linha, column=2, value=valor)
+
+            wb.save(caminho)
+            import os, sys, subprocess
+            if sys.platform == "win32":
+                os.startfile(caminho)
+            QMessageBox.information(self, "Exportado!",
+                f"✅  Excel gerado com sucesso:\n{caminho}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Erro ao exportar", str(e))
 
     def showEvent(self, event):
         super().showEvent(event)

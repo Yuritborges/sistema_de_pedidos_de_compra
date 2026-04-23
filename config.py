@@ -1,4 +1,4 @@
-# config.py
+ # config.py
 # Configurações gerais do sistema: empresas, caminhos, categorias etc.
 
 import os

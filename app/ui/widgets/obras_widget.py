@@ -75,6 +75,20 @@ class EditarObraDialog(QDialog):
         self._uf       = fld(dados.get("uf", "SP"))
         self._contrato = fld(dados.get("contrato", "0"))
 
+        from PySide6.QtWidgets import QTextEdit
+        self._obs = QTextEdit()
+        self._obs.setPlaceholderText("Anotações internas sobre a obra (não aparece nos PDFs)...")
+        self._obs.setFixedHeight(64)
+        self._obs.setPlainText(dados.get("observacao", ""))
+        self._obs.setStyleSheet(f"""
+            QTextEdit {{
+                color:{TXT}; background:{WHITE};
+                border:1.5px solid {BDR}; border-radius:5px;
+                padding:6px 10px; font-size:12px;
+            }}
+            QTextEdit:focus {{ border:1.5px solid {BDR_F}; }}
+        """)
+
         form.addRow(lbl("Nome da Obra"),         self._nome)
         form.addRow(lbl("Escola / Descrição"),   self._escola)
         form.addRow(lbl("Faturamento"),          self._fat)
@@ -84,6 +98,7 @@ class EditarObraDialog(QDialog):
         form.addRow(lbl("Cidade"),               self._cidade)
         form.addRow(lbl("UF"),                   self._uf)
         form.addRow(lbl("Nº Contrato"),          self._contrato)
+        form.addRow(lbl("Observação"),           self._obs)
 
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept); bb.rejected.connect(self.reject)
@@ -104,6 +119,7 @@ class EditarObraDialog(QDialog):
             "cidade":      self._cidade.text().strip(),
             "uf":          self._uf.text().strip() or "SP",
             "contrato":    self._contrato.text().strip() or "0",
+            "observacao":  self._obs.toPlainText().strip(),
         }
 
 
@@ -224,6 +240,23 @@ class ObrasWidget(QWidget):
             f"font-size:11px; color:{TXT_S}; background:transparent; line-height:1.6;")
         self._lbl_dados_obra.setWordWrap(True)
         vl.addWidget(self._lbl_dados_obra)
+
+        # Observação da obra
+        self._lbl_obs_titulo = QLabel("OBSERVAÇÃO")
+        self._lbl_obs_titulo.setStyleSheet(
+            f"font-size:9px; font-weight:700; color:{TXT_S}; "
+            f"background:transparent; letter-spacing:1px;")
+        self._lbl_obs_titulo.setVisible(False)
+        vl.addWidget(self._lbl_obs_titulo)
+
+        self._lbl_obs_obra = QLabel("")
+        self._lbl_obs_obra.setStyleSheet(
+            f"font-size:11px; color:{TXT}; background:#FFFBF0; "
+            f"border-left:3px solid #F39C12; border-radius:4px; "
+            f"padding:6px 10px;")
+        self._lbl_obs_obra.setWordWrap(True)
+        self._lbl_obs_obra.setVisible(False)
+        vl.addWidget(self._lbl_obs_obra)
 
         sep2 = QFrame(); sep2.setFrameShape(QFrame.HLine)
         sep2.setStyleSheet(f"background:#E8DEDE;"); sep2.setFixedHeight(1)
@@ -399,6 +432,13 @@ class ObrasWidget(QWidget):
         if dados.get("contrato"):    info.append(f"Contrato Nº: {dados['contrato']}")
         if dados.get("faturamento"): info.append(f"Faturamento: {dados['faturamento']}")
         self._lbl_dados_obra.setText("\n".join(info) if info else "Sem dados cadastrados.")
+
+        # Exibe observação se houver
+        obs = dados.get("observacao", "").strip()
+        self._lbl_obs_obra.setVisible(bool(obs))
+        self._lbl_obs_titulo.setVisible(bool(obs))
+        if obs:
+            self._lbl_obs_obra.setText(obs)
 
         pedidos = []
         try:

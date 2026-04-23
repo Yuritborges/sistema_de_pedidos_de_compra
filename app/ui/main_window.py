@@ -4,10 +4,11 @@
 import os
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QPushButton, QLabel, QStackedWidget, QFrame, QSpacerItem, QSizePolicy
+    QPushButton, QLabel, QStackedWidget, QFrame,
+    QSplashScreen, QApplication,
 )
-from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QPixmap, QIcon, QFont, QShortcut, QKeySequence
+from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtGui import QPixmap, QIcon, QFont, QShortcut, QKeySequence, QColor, QPainter
 
 from app.ui.widgets.formulario_pedido import PedidoWidget
 from app.ui.widgets.obras_widget      import ObrasWidget
@@ -27,8 +28,60 @@ S_TEXT = "#6B5555"
 S_ATXT = "#C0392B"
 C_BG   = "#F0EDED"
 
-# Ordem das abas — usada pelos atalhos Ctrl+1..5
+# Ordem das abas para atalhos Ctrl+1..5
 ORDEM_ABAS = ["pedido", "pedidos", "cotacao", "obras", "historico"]
+
+
+def criar_splash():
+    # Cria a tela de splash enquanto o sistema carrega
+    logo_path = os.path.normpath(
+        os.path.join(_HERE, '..', '..', 'assets', 'logos', 'logo_brasul.png')
+    )
+
+    # Cria pixmap base da splash (500x280)
+    pix = QPixmap(500, 280)
+    pix.fill(QColor("#FFFFFF"))
+
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    # Fundo com gradiente lateral vermelho
+    painter.fillRect(0, 0, 8, 280, QColor("#C0392B"))
+
+    # Logo se existir
+    if os.path.exists(logo_path):
+        logo = QPixmap(logo_path).scaled(
+            220, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        x = (500 - logo.width()) // 2
+        painter.drawPixmap(x, 60, logo)
+        y_texto = 165
+    else:
+        fonte_nome = QFont("Arial", 28, QFont.Bold)
+        painter.setFont(fonte_nome)
+        painter.setPen(QColor("#C0392B"))
+        painter.drawText(pix.rect(), Qt.AlignCenter, "BRASUL")
+        y_texto = 180
+
+    # Texto "Carregando..."
+    fonte_sub = QFont("Arial", 11)
+    painter.setFont(fonte_sub)
+    painter.setPen(QColor("#6B5555"))
+    painter.drawText(0, y_texto, 500, 30, Qt.AlignCenter, "Sistema de Pedidos")
+
+    fonte_carr = QFont("Arial", 9)
+    painter.setFont(fonte_carr)
+    painter.setPen(QColor("#AAAAAA"))
+    painter.drawText(0, y_texto + 32, 500, 24, Qt.AlignCenter, "Carregando...")
+
+    # Borda suave embaixo
+    painter.setPen(QColor("#E8DEDE"))
+    painter.drawLine(20, 270, 480, 270)
+
+    painter.end()
+
+    splash = QSplashScreen(pix, Qt.WindowStaysOnTopHint)
+    splash.setFont(QFont("Arial", 9))
+    return splash
 
 
 class MainWindow(QMainWindow):
@@ -71,7 +124,7 @@ class MainWindow(QMainWindow):
         self._nav("pedido")
 
     def _registrar_atalhos(self):
-        # Ctrl+1 a Ctrl+5 navegam entre as abas
+        # Ctrl+1 a Ctrl+5 navegam entre abas
         for i, key in enumerate(ORDEM_ABAS, start=1):
             atalho = QShortcut(QKeySequence(f"Ctrl+{i}"), self)
             atalho.activated.connect(lambda k=key: self._nav(k))
@@ -116,7 +169,7 @@ class MainWindow(QMainWindow):
         )
         vl.addWidget(sec)
 
-        # Botões de navegação com dica do atalho
+        # Botões de navegação
         self._btns = {}
         nav = [
             ("pedido",    "Pedido de Compra", "●"),
@@ -190,7 +243,7 @@ class MainWindow(QMainWindow):
             b.setChecked(k == key)
         self._stack.setCurrentWidget(self._pages[key])
 
-        # Se a aba tem método de atualização, chama ao entrar
+        # Recarrega dados ao trocar de aba
         widget = self._pages[key]
         if hasattr(widget, '_carregar'):
             widget._carregar()

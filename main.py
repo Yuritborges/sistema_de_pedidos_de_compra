@@ -5,13 +5,11 @@
 import sys
 import os
 
-# Adiciona a pasta raiz ao path para os imports funcionarem
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.data.database import init_db
-from app.ui.main_window import MainWindow
+from app.ui.main_window import MainWindow, criar_splash
 
-# CSS global: garante texto legível independente do tema do Windows
 GLOBAL_CSS = """
     QWidget                { color: #111827; }
     QLineEdit              { color: #111827; background: #FFFFFF;
@@ -48,8 +46,16 @@ def main():
         app.setStyle("Fusion")
         app.setStyleSheet(GLOBAL_CSS)
 
+        # Mostra splash enquanto a janela carrega
+        splash = criar_splash()
+        splash.show()
+        app.processEvents()
+
         window = MainWindow()
-        window.show()
+
+        # Fecha a splash e mostra a janela principal depois de 1.5s
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(1500, lambda: (splash.finish(window), window.show()))
 
         sys.exit(app.exec())
 
@@ -59,7 +65,6 @@ def main():
 
 
 def _demo_cli():
-    # Modo de teste sem interface gráfica
     from app.core.services.pedido_service import PedidoService
     from app.core.dto.pedido_dto import PedidoDTO, ItemPedidoDTO
 
@@ -78,10 +83,6 @@ def _demo_cli():
         itens=[
             ItemPedidoDTO("AREIA GROSSA MD MT", 2.0, "M3", 153.09),
             ItemPedidoDTO("CIMENTO 50KG VOTORAN CPII", 10.0, "SACO", 39.90),
-            ItemPedidoDTO("TABUA PINUS BRUTA 20CM X 3.00MT", 10.0, "UNID.", 15.50),
-            ItemPedidoDTO("PREGO GERDAU 17X21 COM CABECA", 1.0, "KG", 15.50),
-            ItemPedidoDTO("TABUA PINUS BRUTA 05CM X 3.00MT", 10.0, "UNID.", 4.24),
-            ItemPedidoDTO("MEIO METRO PEDRA I MT", 0.5, "M3", 130.80),
         ]
     )
     service = PedidoService()

@@ -405,14 +405,18 @@ class PedidosWidget(QWidget):
             self.tabela.setItem(r, 4, _it(dados["empresa"], Qt.AlignVCenter|Qt.AlignCenter, bold=True, cor=cor_e))
 
             cell = QWidget(); cell.setStyleSheet(f"background:{bg};")
-            hl = QHBoxLayout(cell); hl.setContentsMargins(8,6,8,6); hl.setSpacing(8)
+            hl = QHBoxLayout(cell); hl.setContentsMargins(8,6,8,6); hl.setSpacing(6)
             ba = btn_solid("📄 Abrir", BLUE, h=30)
             p  = dados["caminho"]
             ba.clicked.connect(lambda _, x=p: self._abrir_pdf(x))
             be = btn_solid("💾 Exportar", GREEN, h=30)
             n  = dados["nome"]
             be.clicked.connect(lambda _, x=p, y=n: self._exportar(x, y))
-            hl.addWidget(ba); hl.addWidget(be)
+            br = btn_solid("🖨 Reimprimir", "#8E44AD", h=30)
+            num = dados["numero"]
+            br.setToolTip(f"Regera o PDF do pedido #{num}")
+            br.clicked.connect(lambda _, x=num: self._reimprimir(x))
+            hl.addWidget(ba); hl.addWidget(be); hl.addWidget(br)
             self.tabela.setCellWidget(r, 5, cell)
 
         total = len(registros)
@@ -632,6 +636,81 @@ class PedidosWidget(QWidget):
             return f"{float(v):,.2f}".replace(",","X").replace(".",",").replace("X",".")
         except Exception:
             return "0,00"
+
+    def _reimprimir(self, numero):
+        # Busca os dados do pedido no banco e regera o PDF
+        try:
+            from app.data.database import get_connection
+            from app.core.services.pedido_service import PedidoService
+            from app.core.dto.pedido_dto import PedidoDTO, ItemPedidoDTO
+
+            with get_connection() as conn:
+                ped = conn.execute(
+                    "SELECT * FROM pedidos WHERE numero = ?", (numero,)
+                ).fetchone()
+                if not ped:
+                    QMessageBox.warning(self, "Não encontrado",
+                        f"Pedido #{numero} não encontrado no banco.\n"
+                        "Só é possível reimprimir pedidos gerados por este sistema.")
+                    return
+
+                itens_db = conn.execute(
+                    "SELECT descricao, quantidade, unidade, valor_unitario "
+                    "FROM itens_pedido WHERE pedido_id = ?", (ped["id"],)
+                ).fetchall()
+
+            itens = [
+                ItemPedidoDTO(
+                    descricao=i["descricao"],
+                    quantidade=float(i["quantidade"] or 1),
+                    unidade=i["unidade"] or "UNID.",
+                    valor_unitario=float(i["valor_unitario"] or 0),
+                )
+                for i in itens_db
+            ]
+
+            if not itens:
+                QMessageBox.warning(self, "Sem itens",
+                    f"O pedido #{numero} não tem itens registrados no banco.")
+                return
+
+            dto = PedidoDTO(
+                numero=str(ped["numero"]),
+                data_pedido=str(ped["data_pedido"] or ""),
+                empresa_faturadora=str(ped["empresa_faturadora"] or "BRASUL"),
+                comprador=str(ped["comprador"] or ""),
+                obra=str(ped["obra_nome"] or ""),
+                escola=str(ped["escola"] or ""),
+                endereco_entrega="", bairro_entrega="",
+                cep_entrega="", cidade_entrega="", uf_entrega="SP",
+                fornecedor_nome=str(ped["fornecedor_nome"] or ""),
+                fornecedor_razao=str(ped["fornecedor_razao"] or ""),
+                condicao_pagamento=str(ped["condicao_pagamento"] or ""),
+                forma_pagamento=str(ped["forma_pagamento"] or ""),
+                prazo_entrega=int(ped["prazo_entrega"] or 0),
+                itens=itens,
+            )
+
+            service = PedidoService()
+            path = service._generator.gerar(dto)
+
+            msg = QMessageBox(self)
+            msg.setWindowTitle(f"Pedido #{numero} reimpresso!")
+            msg.setText(f"PDF gerado em:\n{path}")
+            msg.setIcon(QMessageBox.Information)
+            b_abrir = msg.addButton("📄 Abrir PDF", QMessageBox.ActionRole)
+            msg.addButton("OK", QMessageBox.AcceptRole)
+            msg.exec()
+            if msg.clickedButton() == b_abrir:
+                import os, sys, subprocess
+                if sys.platform == "win32":
+                    os.startfile(path)
+                else:
+                    subprocess.run(["xdg-open", path])
+            self._carregar()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Erro ao reimprimir", str(e))
 
     def showEvent(self, event):
         super().showEvent(event)
