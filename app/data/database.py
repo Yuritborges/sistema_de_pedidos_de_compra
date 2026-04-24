@@ -206,13 +206,21 @@ def atualizar_numero_pedido(numero):
 # ============================================================
 def sincronizar_com_rede(silencioso=True):
     """
-    Espelha o banco local para a pasta da rede do comprador atual.
-    Não bloqueia o sistema. Se a rede estiver fora, falha silenciosamente.
+    Se o banco principal já está na rede, não copia nada.
+    Evita corromper ou tentar espelhar o arquivo nele mesmo.
     """
     if not REDE_DB_PATH:
         return False
 
     try:
+        origem = os.path.abspath(DATABASE_PATH).lower()
+        destino = os.path.abspath(REDE_DB_PATH).lower()
+
+        if origem == destino:
+            if not silencioso:
+                print("[REDE] Banco principal já está na rede. Sincronização ignorada.")
+            return True
+
         pasta_rede = os.path.dirname(REDE_DB_PATH)
         os.makedirs(pasta_rede, exist_ok=True)
 

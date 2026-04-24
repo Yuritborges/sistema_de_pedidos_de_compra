@@ -4,13 +4,19 @@
 *.xls
 *.csv
 
-# Banco de dados — fica local, não vai para o repositório
-database/cotacao.db
-database/backup/
+# Banco de dados — nunca subir
+*.db
+database/
+backup/
+*.backup
 
 # PDFs gerados e cotações salvas
+*.pdf
 pedidos_gerados/
 assets/cotacoes_salvas/
+
+# Pastas da rede
+Z:/
 
 # Python
 __pycache__/
@@ -30,3 +36,8 @@ venv/
 .idea/
 *.swp
 *.swo
+
+# Scripts/atalhos locais de execução
+*.vbs
+*.bat
+*.lnk

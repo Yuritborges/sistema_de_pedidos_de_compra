@@ -2,6 +2,8 @@
 # Janela principal do sistema com sidebar de navegação.
 
 import os
+import traceback
+
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QLabel, QStackedWidget, QFrame,
@@ -11,25 +13,39 @@ from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QPixmap, QIcon, QFont, QShortcut, QKeySequence, QColor, QPainter
 
 from app.ui.widgets.formulario_pedido import PedidoWidget
-from app.ui.widgets.obras_widget      import ObrasWidget
-from app.ui.widgets.cotacao_widget    import CotacaoWidget
-from app.ui.widgets.historico_widget  import HistoricoWidget
-from app.ui.widgets.pedidos_widget    import PedidosWidget
-from app.ui.widgets.consulta_patrao_widget import ConsultaPatraoWidget
+from app.ui.widgets.obras_widget import ObrasWidget
+from app.ui.widgets.cotacao_widget import CotacaoWidget
+from app.ui.widgets.historico_widget import HistoricoWidget
+from app.ui.widgets.pedidos_widget import PedidosWidget
+from PySide6.QtGui import QIcon
+
+
+# Nova aba de manutenção de cadastros
+try:
+    from app.ui.widgets.cadastros_widget import CadastrosWidget
+except Exception as e:
+    CadastrosWidget = None
+    CADASTROS_IMPORT_ERROR = e
+    CADASTROS_IMPORT_TRACEBACK = traceback.format_exc()
+else:
+    CADASTROS_IMPORT_ERROR = None
+    CADASTROS_IMPORT_TRACEBACK = ""
+
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
 # Cores da sidebar
-S_BG   = "#F0EDED"
+S_BG = "#F0EDED"
 S_ITEM = "#E8DEDE"
-S_SEL  = "#FDECEA"
+S_SEL = "#FDECEA"
 S_EDGE = "#C0392B"
 S_LINE = "#DCCECE"
 S_TEXT = "#6B5555"
 S_ATXT = "#C0392B"
-C_BG   = "#F0EDED"
+C_BG = "#F0EDED"
 
-# Ordem das abas para atalhos Ctrl+1..5
-ORDEM_ABAS = ["pedido", "pedidos", "cotacao", "obras", "historico"]
+# Ordem das abas para atalhos Ctrl+1..6
+ORDEM_ABAS = ["pedido", "pedidos", "cotacao", "obras", "historico", "cadastros"]
 
 
 def criar_splash():
@@ -88,6 +104,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        icon_path = os.path.join(base_dir, "assets", "logo.ico")
+        self.setWindowIcon(QIcon(icon_path))
         self.setWindowTitle("Sistema de Pedidos — Brasul Construtora")
         self.setMinimumSize(1100, 700)
         self.resize(1300, 820)
@@ -102,6 +121,7 @@ class MainWindow(QMainWindow):
     def _build(self):
         root = QWidget()
         self.setCentralWidget(root)
+
         lay = QHBoxLayout(root)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
@@ -112,19 +132,47 @@ class MainWindow(QMainWindow):
         lay.addWidget(self._stack, 1)
 
         self._pages = {
-            "pedido":    PedidoWidget(),
-            "pedidos":   PedidosWidget(),
-            "cotacao":   CotacaoWidget(),
-            "obras":     ObrasWidget(),
+            "pedido": PedidoWidget(),
+            "pedidos": PedidosWidget(),
+            "cotacao": CotacaoWidget(),
+            "obras": ObrasWidget(),
             "historico": HistoricoWidget(),
+            "cadastros": self._criar_pagina_cadastros(),
         }
+
         for p in self._pages.values():
             self._stack.addWidget(p)
 
         self._nav("pedido")
 
+    def _criar_pagina_cadastros(self):
+        if CadastrosWidget is not None:
+            return CadastrosWidget()
+
+        # Página de fallback para o programa abrir mesmo se o widget de cadastros tiver erro
+        page = QWidget()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(30, 30, 30, 30)
+
+        title = QLabel("Erro ao carregar a aba Cadastros")
+        title.setStyleSheet("font-size:18px; font-weight:bold; color:#C0392B;")
+
+        msg = QLabel(
+            "O sistema abriu, mas a aba Cadastros não pôde ser carregada.\n\n"
+            "Verifique se o arquivo existe em:\n"
+            "app/ui/widgets/cadastros_widget.py\n\n"
+            f"Erro:\n{CADASTROS_IMPORT_ERROR}"
+        )
+        msg.setWordWrap(True)
+        msg.setStyleSheet("font-size:12px; color:#333;")
+
+        lay.addWidget(title)
+        lay.addWidget(msg)
+        lay.addStretch()
+        return page
+
     def _registrar_atalhos(self):
-        # Ctrl+1 a Ctrl+5 navegam entre abas
+        # Ctrl+1 a Ctrl+6 navegam entre abas
         for i, key in enumerate(ORDEM_ABAS, start=1):
             atalho = QShortcut(QKeySequence(f"Ctrl+{i}"), self)
             atalho.activated.connect(lambda k=key: self._nav(k))
@@ -133,6 +181,7 @@ class MainWindow(QMainWindow):
         side = QFrame()
         side.setFixedWidth(220)
         side.setStyleSheet(f"QFrame{{background:{S_BG};border-right:1px solid {S_LINE};}}")
+
         vl = QVBoxLayout(side)
         vl.setContentsMargins(0, 0, 0, 0)
         vl.setSpacing(0)
@@ -141,6 +190,7 @@ class MainWindow(QMainWindow):
         top = QWidget()
         top.setFixedHeight(96)
         top.setStyleSheet("background:#FFFFFF; border-bottom:3px solid #C0392B;")
+
         tl = QVBoxLayout(top)
         tl.setContentsMargins(12, 10, 12, 10)
         tl.setAlignment(Qt.AlignCenter)
@@ -151,6 +201,7 @@ class MainWindow(QMainWindow):
         logo_path = os.path.normpath(
             os.path.join(_HERE, '..', '..', 'assets', 'logos', 'logo_brasul.png')
         )
+
         if os.path.exists(logo_path):
             pix = QPixmap(logo_path).scaled(190, 72, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             lbl.setPixmap(pix)
@@ -172,12 +223,14 @@ class MainWindow(QMainWindow):
         # Botões de navegação
         self._btns = {}
         nav = [
-            ("pedido",    "Pedido de Compra", "●"),
-            ("pedidos",   "Pedidos Gerados",  "📁"),
-            ("cotacao",   "Cotação",          "◆"),
-            ("obras",     "Obras",            "◉"),
-            ("historico", "Histórico",        "≡"),
+            ("pedido", "Pedido de Compra", "●"),
+            ("pedidos", "Pedidos Gerados", "📁"),
+            ("cotacao", "Cotação", "◆"),
+            ("obras", "Obras", "◉"),
+            ("historico", "Histórico", "≡"),
+            ("cadastros", "Cadastros", "⚙"),
         ]
+
         for i, (key, label, ico) in enumerate(nav, start=1):
             btn = QPushButton()
             btn.setCheckable(True)
@@ -236,11 +289,16 @@ class MainWindow(QMainWindow):
             f"border-top:1px solid {S_LINE}; background:transparent;"
         )
         vl.addWidget(rodape)
+
         return side
 
     def _nav(self, key):
+        if key not in self._pages:
+            return
+
         for k, b in self._btns.items():
             b.setChecked(k == key)
+
         self._stack.setCurrentWidget(self._pages[key])
 
         # Recarrega dados ao trocar de aba
@@ -249,3 +307,5 @@ class MainWindow(QMainWindow):
             widget._carregar()
         elif hasattr(widget, 'carregar_dados'):
             widget.carregar_dados()
+        elif hasattr(widget, '_carregar_tudo'):
+            widget._carregar_tudo()

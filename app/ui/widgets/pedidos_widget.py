@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
     QFileDialog, QLineEdit, QFrame, QGraphicsDropShadowEffect,
-    QDialog, QDialogButtonBox, QDateEdit, QSizePolicy,
+    QDialog, QDialogButtonBox, QDateEdit, QSizePolicy, QApplication,
 )
 from PySide6.QtCore import Qt, QTimer, QDate
 from PySide6.QtGui import QColor, QFont
@@ -188,7 +188,7 @@ class PedidosWidget(QWidget):
         hh.setSectionResizeMode(2, QHeaderView.Stretch)
         hh.setSectionResizeMode(3, QHeaderView.Stretch)
         hh.setSectionResizeMode(4, QHeaderView.Fixed);  self.tabela.setColumnWidth(4, 115)
-        hh.setSectionResizeMode(5, QHeaderView.Fixed);  self.tabela.setColumnWidth(5, 195)
+        hh.setSectionResizeMode(5, QHeaderView.Fixed);  self.tabela.setColumnWidth(5, 430)
         cvl.addWidget(self.tabela)
         vl.addWidget(container, 1)
 
@@ -406,17 +406,33 @@ class PedidosWidget(QWidget):
 
             cell = QWidget(); cell.setStyleSheet(f"background:{bg};")
             hl = QHBoxLayout(cell); hl.setContentsMargins(8,6,8,6); hl.setSpacing(6)
+
             ba = btn_solid("📄 Abrir", BLUE, h=30)
             p  = dados["caminho"]
+            ba.setMinimumWidth(78)
             ba.clicked.connect(lambda _, x=p: self._abrir_pdf(x))
+
             be = btn_solid("💾 Exportar", GREEN, h=30)
             n  = dados["nome"]
+            be.setMinimumWidth(92)
             be.clicked.connect(lambda _, x=p, y=n: self._exportar(x, y))
+
             br = btn_solid("🖨 Reimprimir", "#8E44AD", h=30)
             num = dados["numero"]
+            br.setMinimumWidth(108)
             br.setToolTip(f"Regera o PDF do pedido #{num}")
             br.clicked.connect(lambda _, x=num: self._reimprimir(x))
-            hl.addWidget(ba); hl.addWidget(be); hl.addWidget(br)
+
+            bed = btn_solid("✏️ Editar", "#F39C12", h=30)
+            bed.setMinimumWidth(82)
+            bed.setToolTip(f"Carrega o pedido #{num} na aba Pedido de Compra para edição")
+            bed.clicked.connect(lambda _, x=num: self._editar_pedido(x))
+
+            hl.addWidget(ba)
+            hl.addWidget(be)
+            hl.addWidget(br)
+            hl.addWidget(bed)
+            hl.addStretch()
             self.tabela.setCellWidget(r, 5, cell)
 
         total = len(registros)
@@ -636,6 +652,84 @@ class PedidosWidget(QWidget):
             return f"{float(v):,.2f}".replace(",","X").replace(".",",").replace("X",".")
         except Exception:
             return "0,00"
+
+    def _editar_pedido(self, numero):
+        """
+        Carrega um pedido já gerado de volta na aba Pedido de Compra.
+
+        Regra desta primeira versão:
+        - O pedido é aberto como edição usando o mesmo número.
+        - Ao gerar novamente, o PedidoService atualiza o registro existente
+          e recria os itens/PDF com os novos dados.
+        """
+        try:
+            from app.data.database import get_connection
+
+            with get_connection() as conn:
+                pedido = conn.execute(
+                    "SELECT * FROM pedidos WHERE numero = ?",
+                    (str(numero),)
+                ).fetchone()
+
+                if not pedido:
+                    QMessageBox.warning(
+                        self,
+                        "Pedido não encontrado",
+                        f"Pedido #{numero} não foi encontrado no banco."
+                    )
+                    return
+
+                itens = conn.execute(
+                    """
+                    SELECT descricao, quantidade, unidade, valor_unitario, valor_total, categoria
+                    FROM itens_pedido
+                    WHERE pedido_id = ?
+                    ORDER BY id
+                    """,
+                    (pedido["id"],)
+                ).fetchall()
+
+            if not itens:
+                resp = QMessageBox.question(
+                    self,
+                    "Pedido sem itens",
+                    f"O pedido #{numero} não possui itens registrados.\n\n"
+                    "Deseja abrir mesmo assim para edição?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if resp != QMessageBox.Yes:
+                    return
+
+            janela = self.window()
+            pedido_widget = None
+
+            if hasattr(janela, "_pages") and "pedido" in getattr(janela, "_pages", {}):
+                pedido_widget = janela._pages["pedido"]
+                if hasattr(janela, "_nav"):
+                    janela._nav("pedido")
+                elif hasattr(janela, "_stack"):
+                    janela._stack.setCurrentWidget(pedido_widget)
+
+            if pedido_widget is None or not hasattr(pedido_widget, "carregar_pedido_existente"):
+                QMessageBox.warning(
+                    self,
+                    "Não foi possível editar",
+                    "Não encontrei a aba Pedido de Compra para carregar este pedido."
+                )
+                return
+
+            pedido_widget.carregar_pedido_existente(pedido, itens)
+
+            QMessageBox.information(
+                self,
+                "Pedido carregado para edição",
+                f"Pedido #{numero} carregado na aba Pedido de Compra.\n\n"
+                "Faça os ajustes e clique novamente no botão da empresa para gerar o PDF atualizado."
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Erro ao editar pedido", str(e))
 
     def _reimprimir(self, numero):
         # Busca os dados do pedido no banco e regera o PDF

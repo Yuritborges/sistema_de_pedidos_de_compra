@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
     QDoubleSpinBox, QGroupBox, QScrollArea, QSpinBox, QCompleter,
     QDialog, QFormLayout, QDialogButtonBox, QTextEdit, QAbstractItemView,
+    QFileDialog,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeyEvent
@@ -25,6 +26,7 @@ _ASSETS = os.path.normpath(
 _OBR = os.path.join(_ASSETS, 'obras.json')
 _FOR = os.path.join(_ASSETS, 'fornecedores.json')
 _EMP = os.path.join(_ASSETS, 'empresas_extra.json')  # empresas cadastradas pelo usuário
+_PED_RASC = os.path.join(_ASSETS, 'pedidos_salvos')  # rascunhos de pedidos salvos pelo usuário
 
 
 def _load(p):
@@ -648,6 +650,8 @@ class PedidoWidget(QWidget):
         self._service = PedidoService()
         # Estado interno do desconto
         self._desconto_tipo = "%"   # "%" ou "R$"
+        self._arquivo_pedido_atual = None  # caminho do rascunho carregado/salvo
+        self._pedido_editando_numero = None  # número do pedido aberto pela tela Pedidos Gerados
         self._build()
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1072,6 +1076,36 @@ class PedidoWidget(QWidget):
 
         br.addStretch()
 
+        btn_salvar_rasc = QPushButton("💾  Salvar Pedido")
+        btn_salvar_rasc.setFixedHeight(46); btn_salvar_rasc.setMinimumWidth(150)
+        btn_salvar_rasc.setToolTip("Salva o pedido atual como rascunho para continuar depois.")
+        btn_salvar_rasc.setStyleSheet("""
+            QPushButton {
+                background:#1E8449; color:white; font-size:12px;
+                font-weight:bold; border-radius:8px;
+                border:none; letter-spacing:0.3px;
+            }
+            QPushButton:hover   { background:#196F3D; }
+            QPushButton:pressed { background:#145A32; }
+        """)
+        btn_salvar_rasc.clicked.connect(self._salvar_pedido_rascunho)
+        br.addWidget(btn_salvar_rasc)
+
+        btn_carregar_rasc = QPushButton("📂  Carregar Pedido")
+        btn_carregar_rasc.setFixedHeight(46); btn_carregar_rasc.setMinimumWidth(160)
+        btn_carregar_rasc.setToolTip("Carrega um pedido salvo anteriormente.")
+        btn_carregar_rasc.setStyleSheet("""
+            QPushButton {
+                background:#2874A6; color:white; font-size:12px;
+                font-weight:bold; border-radius:8px;
+                border:none; letter-spacing:0.3px;
+            }
+            QPushButton:hover   { background:#21618C; }
+            QPushButton:pressed { background:#1B4F72; }
+        """)
+        btn_carregar_rasc.clicked.connect(self._carregar_pedido_rascunho)
+        br.addWidget(btn_carregar_rasc)
+
         btn_limpar = QPushButton("🗑  Limpar / Novo Pedido")
         btn_limpar.setFixedHeight(46); btn_limpar.setMinimumWidth(180)
         btn_limpar.setToolTip("Limpa todos os campos para um novo pedido.")
@@ -1441,6 +1475,356 @@ class PedidoWidget(QWidget):
         QMessageBox.information(self,"Salvo!",f"'{nome}' cadastrado com sucesso.")
 
     # ══════════════════════════════════════════════════════════════════════════
+    # SALVAR / CARREGAR RASCUNHO DO PEDIDO
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _nome_rascunho_padrao(self):
+        """Gera um nome amigável para o arquivo JSON do rascunho."""
+        obra = (self.e_obra.currentText() or "SEM_OBRA").strip()
+        fornecedor = (self.e_fn.text() or self.e_fsel.currentText() or "SEM_FORNECEDOR").strip()
+        numero = (self.e_num.text() or "SEM_NUMERO").strip()
+
+        bruto = f"PEDIDO_{numero}_{obra}_{fornecedor}".upper()
+        permitido = []
+        for ch in bruto:
+            if ch.isalnum() or ch in (" ", "_", "-"):
+                permitido.append(ch)
+            else:
+                permitido.append("_")
+        nome = "".join(permitido).replace(" ", "_")
+        while "__" in nome:
+            nome = nome.replace("__", "_")
+        return f"{nome}.json"
+
+    def _coletar_rascunho_pedido(self):
+        """Coleta todos os campos da tela em um dicionário serializável."""
+        itens = []
+        for r in range(self.tabela.rowCount()):
+            desc_item = self.tabela.item(r, 0)
+            wq = self.tabela.cellWidget(r, 1)
+            wu = self.tabela.cellWidget(r, 2)
+            wv = self.tabela.cellWidget(r, 3)
+
+            descricao = desc_item.text().strip() if desc_item else ""
+            quantidade = wq.value() if wq else 0.0
+            unidade = wu.currentText() if wu else "UNID."
+            valor_unitario = wv.value() if wv else 0.0
+
+            # Salva também linhas vazias parcialmente preenchidas.
+            if descricao or quantidade or valor_unitario:
+                itens.append({
+                    "descricao": descricao,
+                    "quantidade": quantidade,
+                    "unidade": unidade,
+                    "valor_unitario": valor_unitario,
+                })
+
+        return {
+            "versao": 1,
+            "salvo_em": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            "numero": self.e_num.text().strip(),
+            "data_pedido": self.e_data.text().strip(),
+            "prazo_entrega": self.e_prazo.value(),
+            "condicao_pagamento": self.e_cond.currentText(),
+            "forma_pagamento": self.e_forma.currentText(),
+            "comprador": self._comprador_atual,
+
+            "obra": self.e_obra.currentText(),
+            "empresa_faturamento": self.e_fat.currentText(),
+            "escola": self.e_escola.text(),
+            "endereco": self.e_end.text(),
+            "bairro": self.e_bairro.text(),
+            "cep": self.e_cep.text(),
+            "cidade": self.e_cidade.text(),
+            "uf": self.e_uf.text(),
+            "contrato": self.e_contrato.text(),
+
+            "fornecedor_combo": self.e_fsel.currentText(),
+            "fornecedor_nome": self.e_fn.text(),
+            "fornecedor_razao": self.e_fraz.text(),
+            "fornecedor_email": self.e_fem.text(),
+            "fornecedor_vendedor": self.e_fvend.text(),
+            "fornecedor_telefone": self.e_ftel.text(),
+
+            "desconto_tipo": self._desconto_tipo,
+            "desconto_valor": self.spin_desconto.value(),
+            "observacao": self.e_obs.toPlainText(),
+
+            "itens": itens,
+        }
+
+    def _salvar_pedido_rascunho(self):
+        """Salva o pedido atual em JSON para continuar depois."""
+        os.makedirs(_PED_RASC, exist_ok=True)
+
+        caminho_padrao = self._arquivo_pedido_atual
+        if not caminho_padrao:
+            caminho_padrao = os.path.join(_PED_RASC, self._nome_rascunho_padrao())
+
+        caminho, _ = QFileDialog.getSaveFileName(
+            self,
+            "Salvar pedido para continuar depois",
+            caminho_padrao,
+            "Pedidos salvos (*.json)"
+        )
+        if not caminho:
+            return
+
+        if not caminho.lower().endswith(".json"):
+            caminho += ".json"
+
+        try:
+            dados = self._coletar_rascunho_pedido()
+            with open(caminho, "w", encoding="utf-8") as f:
+                json.dump(dados, f, ensure_ascii=False, indent=2)
+
+            self._arquivo_pedido_atual = caminho
+            QMessageBox.information(
+                self,
+                "Pedido salvo",
+                f"✅ Pedido salvo com sucesso para continuar depois.\n\n{caminho}"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Erro ao salvar",
+                f"Não foi possível salvar o pedido.\n\n{e}"
+            )
+
+    def _carregar_pedido_rascunho(self):
+        """Carrega um pedido salvo em JSON."""
+        os.makedirs(_PED_RASC, exist_ok=True)
+
+        caminho, _ = QFileDialog.getOpenFileName(
+            self,
+            "Carregar pedido salvo",
+            self._arquivo_pedido_atual or _PED_RASC,
+            "Pedidos salvos (*.json)"
+        )
+        if not caminho:
+            return
+
+        try:
+            with open(caminho, "r", encoding="utf-8") as f:
+                dados = json.load(f)
+
+            self._aplicar_rascunho_pedido(dados)
+            self._arquivo_pedido_atual = caminho
+
+            QMessageBox.information(
+                self,
+                "Pedido carregado",
+                f"✅ Pedido carregado com sucesso.\n\n{caminho}"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Erro ao carregar",
+                f"Não foi possível carregar o pedido salvo.\n\n{e}"
+            )
+
+    def _set_combo_text(self, combo, texto):
+        """Seleciona texto existente ou define texto digitável em combo editável."""
+        texto = "" if texto is None else str(texto)
+        idx = combo.findText(texto)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+        else:
+            combo.setCurrentText(texto)
+
+    def _aplicar_rascunho_pedido(self, dados):
+        """Aplica na tela os dados carregados do JSON."""
+        # Dados do pedido
+        self.e_num.setText(str(dados.get("numero", proximo_numero_pedido())))
+        self.e_data.setText(str(dados.get("data_pedido", datetime.now().strftime("%d/%m/%Y"))))
+        self.e_prazo.setValue(int(dados.get("prazo_entrega", 5) or 5))
+
+        self._set_combo_text(self.e_cond, dados.get("condicao_pagamento", ""))
+        self._set_combo_text(self.e_forma, dados.get("forma_pagamento", ""))
+
+        self._comprador_atual = str(dados.get("comprador", COMPRADOR_PADRAO) or COMPRADOR_PADRAO)
+        self.btn_comprador.setText(f"👤  {self._comprador_atual}")
+
+        # Obra e dados de entrega
+        self.e_obra.blockSignals(True)
+        self._set_combo_text(self.e_obra, dados.get("obra", ""))
+        self.e_obra.blockSignals(False)
+
+        self._set_combo_text(self.e_fat, dados.get("empresa_faturamento", ""))
+        self.e_escola.setText(str(dados.get("escola", "")))
+        self.e_end.setText(str(dados.get("endereco", "")))
+        self.e_bairro.setText(str(dados.get("bairro", "")))
+        self.e_cep.setText(str(dados.get("cep", "")))
+        self.e_cidade.setText(str(dados.get("cidade", "")))
+        self.e_uf.setText(str(dados.get("uf", "SP")))
+        self.e_contrato.setText(str(dados.get("contrato", "0")))
+
+        # Fornecedor
+        self.e_fsel.blockSignals(True)
+        self._set_combo_text(self.e_fsel, dados.get("fornecedor_combo", ""))
+        self.e_fsel.blockSignals(False)
+
+        self.e_fn.setText(str(dados.get("fornecedor_nome", "")))
+        self.e_fraz.setText(str(dados.get("fornecedor_razao", "")))
+        self.e_fem.setText(str(dados.get("fornecedor_email", "")))
+        self.e_fvend.setText(str(dados.get("fornecedor_vendedor", "")))
+        self.e_ftel.setText(str(dados.get("fornecedor_telefone", "")))
+
+        # Itens
+        self.tabela.setRowCount(0)
+        for item in dados.get("itens", []):
+            self._add_row()
+            r = self.tabela.rowCount() - 1
+
+            it_desc = self.tabela.item(r, 0)
+            if it_desc:
+                it_desc.setText(str(item.get("descricao", "")).upper())
+
+            wq = self.tabela.cellWidget(r, 1)
+            wu = self.tabela.cellWidget(r, 2)
+            wv = self.tabela.cellWidget(r, 3)
+
+            if wq:
+                wq.setValue(float(item.get("quantidade", 0) or 0))
+            if wu:
+                unidade = str(item.get("unidade", "UNID."))
+                idx_u = wu.findText(unidade)
+                if idx_u >= 0:
+                    wu.setCurrentIndex(idx_u)
+                else:
+                    wu.setCurrentText(unidade)
+            if wv:
+                wv.setValue(float(item.get("valor_unitario", 0) or 0))
+
+        # Desconto e observação
+        tipo = str(dados.get("desconto_tipo", "%") or "%")
+        valor = float(dados.get("desconto_valor", 0) or 0)
+
+        if tipo != self._desconto_tipo:
+            self._set_tipo_desconto(tipo)
+
+        self.spin_desconto.blockSignals(True)
+        self.spin_desconto.setValue(valor)
+        self.spin_desconto.blockSignals(False)
+        self._desconto_tipo = tipo
+        self.lbl_sufixo.setText("R$" if tipo == "R$" else "%")
+        if tipo == "R$":
+            self.btn_val.setStyleSheet(self._css_btn_ativo)
+            self.btn_pct.setStyleSheet(self._css_btn_inativo)
+            self.btn_val.setChecked(True)
+            self.btn_pct.setChecked(False)
+        else:
+            self.btn_pct.setStyleSheet(self._css_btn_ativo)
+            self.btn_val.setStyleSheet(self._css_btn_inativo)
+            self.btn_pct.setChecked(True)
+            self.btn_val.setChecked(False)
+
+        self.e_obs.setPlainText(str(dados.get("observacao", "")))
+        self._recalc()
+
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # EDITAR PEDIDO EXISTENTE
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def carregar_pedido_existente(self, pedido, itens):
+        """
+        Carrega um pedido já salvo no banco para edição na tela Pedido de Compra.
+
+        Observação:
+        - Ao gerar novamente usando o mesmo número, o PedidoService atualiza
+          o registro existente e recria os itens daquele pedido.
+        - Campos que não existem no banco antigo são preenchidos pelo cadastro
+          da obra/fornecedor quando possível.
+        """
+        try:
+            self._pedido_editando_numero = str(pedido["numero"])
+
+            # Dados principais
+            self.e_num.setText(str(pedido["numero"] or ""))
+            self.e_data.setText(str(pedido["data_pedido"] or datetime.now().strftime("%d/%m/%Y")))
+            self.e_prazo.setValue(int(pedido["prazo_entrega"] or 0))
+
+            self._set_combo_text(self.e_cond, str(pedido["condicao_pagamento"] or ""))
+            self._set_combo_text(self.e_forma, str(pedido["forma_pagamento"] or ""))
+
+            comprador = str(pedido["comprador"] or COMPRADOR_PADRAO)
+            self._comprador_atual = comprador
+            self.btn_comprador.setText(f"👤  {comprador}")
+
+            # Obra
+            obra = str(pedido["obra_nome"] or "")
+            self.e_obra.blockSignals(True)
+            self._set_combo_text(self.e_obra, obra)
+            self.e_obra.blockSignals(False)
+            self._fill_obra(obra)
+
+            if pedido["escola"]:
+                self.e_escola.setText(str(pedido["escola"] or ""))
+
+            empresa = str(pedido["empresa_faturadora"] or "")
+            if empresa:
+                self._set_combo_text(self.e_fat, empresa)
+                self._atualizar_obs_padrao()
+
+            # Fornecedor
+            fornecedor = str(pedido["fornecedor_nome"] or "")
+            self.e_fsel.blockSignals(True)
+            self._set_combo_text(self.e_fsel, fornecedor)
+            self.e_fsel.blockSignals(False)
+            self._fill_forn(fornecedor)
+
+            self.e_fn.setText(fornecedor)
+            self.e_fraz.setText(str(pedido["fornecedor_razao"] or ""))
+
+            # Itens
+            self.tabela.setRowCount(0)
+
+            for item in itens:
+                self._add_row()
+                row = self.tabela.rowCount() - 1
+
+                desc = self.tabela.item(row, 0)
+                if desc:
+                    desc.setText(str(item["descricao"] or "").upper())
+
+                qtd = self.tabela.cellWidget(row, 1)
+                if qtd:
+                    qtd.setValue(float(item["quantidade"] or 0))
+
+                un = self.tabela.cellWidget(row, 2)
+                if un:
+                    unidade = str(item["unidade"] or "UNID.")
+                    idx = un.findText(unidade)
+                    if idx >= 0:
+                        un.setCurrentIndex(idx)
+                    else:
+                        un.setCurrentText(unidade)
+
+                vl = self.tabela.cellWidget(row, 3)
+                if vl:
+                    vl.setValue(float(item["valor_unitario"] or 0))
+
+            # Desconto e observações não existem em todos os bancos antigos.
+            self._desconto_tipo = "%"
+            self.spin_desconto.setValue(0.0)
+            self._set_tipo_desconto("%")
+
+            self._arquivo_pedido_atual = None
+            self._recalc()
+
+            QMessageBox.information(
+                self,
+                "Modo edição",
+                f"Pedido Nº {self._pedido_editando_numero} carregado para edição.\n\n"
+                "Após alterar, clique no botão da empresa para gerar novamente."
+            )
+
+        except Exception as e:
+            QMessageBox.critical(self, "Erro ao carregar pedido", str(e))
+
+
+    # ══════════════════════════════════════════════════════════════════════════
     # GERAR PDF
     # ══════════════════════════════════════════════════════════════════════════
 
@@ -1457,6 +1841,7 @@ class PedidoWidget(QWidget):
             b_open = msg.addButton(" Abrir PDF ", QMessageBox.ActionRole)
             msg.addButton("OK", QMessageBox.AcceptRole); msg.exec()
             if msg.clickedButton() == b_open: self._abrir_arquivo(path)
+            self._arquivo_pedido_atual = None
             self.e_num.setText(proximo_numero_pedido())
         except ValueError as e:
             QMessageBox.warning(self,"Campos obrigatórios",str(e))

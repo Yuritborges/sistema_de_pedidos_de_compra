@@ -1,19 +1,18 @@
- # config.py
-# Configurações gerais do sistema: empresas, caminhos, categorias etc.
+# config.py
+# Configurações gerais do sistema: empresas, caminhos, constantes etc.
 
 import os
 
 # Caminhos principais do projeto
-BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
-DATABASE_PATH = r"Z:\0 OBRAS\brasul_pedidos\Iury\cotacao_iury.db"
-PEDIDOS_DIR   = os.path.join(BASE_DIR, "pedidos_gerados")
-ASSETS_DIR    = os.path.join(BASE_DIR, "assets")
-LOGOS_DIR     = os.path.join(ASSETS_DIR, "logos")
-COTACOES_DIR  = os.path.join(ASSETS_DIR, "cotacoes_salvas")
-BACKUP_DIR    = os.path.join(BASE_DIR, "database", "backup")
+DATABASE_PATH = r"Z:\0 OBRAS\brasul_pedidos\cotacao_rede.db"
+PEDIDOS_DIR = r"Z:\0 OBRAS\brasul_pedidos\Iury\pdfs de pedidos"
+COTACOES_DIR = r"Z:\0 OBRAS\brasul_pedidos\Iury\cotações_salvas"
+BACKUP_DIR = r"Z:\0 OBRAS\brasul_pedidos\Iury\backup"
+RELACOES_DIR = r"Z:\0 OBRAS\brasul_pedidos\Iury\relações"
+
 
 # Cria as pastas necessárias automaticamente
-for _pasta in [PEDIDOS_DIR, COTACOES_DIR, BACKUP_DIR]:
+for _pasta in [PEDIDOS_DIR, COTACOES_DIR, RELACOES_DIR, BACKUP_DIR]:
     os.makedirs(_pasta, exist_ok=True)
 
 # Dados de cada empresa faturadora
@@ -65,7 +64,7 @@ EMPRESAS_FATURADORAS = {
     },
 }
 
-COMPRADOR_PADRAO = "THAMYRES"
+COMPRADOR_PADRAO = "IURY"
 
 CATEGORIAS_ITEM = [
     "FUNDAÇÃO / ESTRUTURA",
