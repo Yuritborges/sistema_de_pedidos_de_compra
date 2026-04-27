@@ -17,7 +17,7 @@ from config import (EMPRESAS_FATURADORAS, UNIDADES,
                     CONDICOES_PAGAMENTO, FORMAS_PAGAMENTO, COMPRADOR_PADRAO)
 from app.core.dto.pedido_dto import PedidoDTO, ItemPedidoDTO
 from app.core.services.pedido_service import PedidoService
-from app.data.database import proximo_numero_pedido
+from app.data.database import proximo_numero_pedido, incrementar_numero_pedido
 
 # ── Caminhos dos arquivos JSON ─────────────────────────────────────────────────
 _ASSETS = os.path.normpath(
@@ -652,6 +652,8 @@ class PedidoWidget(QWidget):
         self._desconto_tipo = "%"   # "%" ou "R$"
         self._arquivo_pedido_atual = None  # caminho do rascunho carregado/salvo
         self._pedido_editando_numero = None  # número do pedido aberto pela tela Pedidos Gerados
+        self._fornecedor_pix = ""
+        self._fornecedor_favorecido = ""
         self._build()
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1435,12 +1437,21 @@ class PedidoWidget(QWidget):
 
     def _fill_forn(self, txt):
         d = self._forns.get(txt, {})
-        if not d: return
+        if not d:
+            self._fornecedor_pix = ""
+            self._fornecedor_favorecido = ""
+            return
         self.e_fn.setText(txt)
         self.e_fraz.setText(d.get('razao',''))
         self.e_fem.setText(d.get('email',''))
         self.e_fvend.setText(d.get('vendedor',''))
         self.e_ftel.setText(d.get('telefone',''))
+        self._fornecedor_pix = (
+            d.get('pix') or d.get('PIX') or d.get('cnpj_pix') or d.get('chave_pix') or ""
+        )
+        self._fornecedor_favorecido = (
+            d.get('favorecido') or d.get('dados_bancarios') or d.get('dados bancários') or d.get('banco') or ""
+        )
 
     def _atualizar_obs_padrao(self):
         """
@@ -1830,23 +1841,32 @@ class PedidoWidget(QWidget):
 
     def _gerar(self, empresa):
         try:
-            dto  = self._montar_dto(empresa)
+            dto = self._montar_dto(empresa)
             path = self._service.gerar_pdf(dto)
-            msg  = QMessageBox(self)
+
+            incrementar_numero_pedido()
+
+            msg = QMessageBox(self)
             msg.setWindowTitle("Pedido gerado!")
             msg.setText(
                 f"<b>Pedido Nº {dto.numero} — {empresa}</b><br><br>"
-                f"Salvo em:<br><code>{path}</code>")
+                f"Salvo em:<br><code>{path}</code>"
+            )
             msg.setIcon(QMessageBox.Information)
             b_open = msg.addButton(" Abrir PDF ", QMessageBox.ActionRole)
-            msg.addButton("OK", QMessageBox.AcceptRole); msg.exec()
-            if msg.clickedButton() == b_open: self._abrir_arquivo(path)
+            msg.addButton("OK", QMessageBox.AcceptRole)
+            msg.exec()
+
+            if msg.clickedButton() == b_open:
+                self._abrir_arquivo(path)
+
             self._arquivo_pedido_atual = None
             self.e_num.setText(proximo_numero_pedido())
+
         except ValueError as e:
-            QMessageBox.warning(self,"Campos obrigatórios",str(e))
+            QMessageBox.warning(self, "Campos obrigatórios", str(e))
         except Exception as e:
-            QMessageBox.critical(self,"Erro",str(e))
+            QMessageBox.critical(self, "Erro", str(e))
 
     def _montar_dto(self, empresa):
         """
@@ -1868,6 +1888,26 @@ class PedidoWidget(QWidget):
             ))
         subtotal = sum(i.valor_total for i in itens)
         desconto_reais = self._calcular_desconto_reais(subtotal)
+
+        fornecedor_chave = self.e_fsel.currentText().strip()
+        fornecedor_dados = self._forns.get(fornecedor_chave, {})
+        fornecedor_pix = (
+            self._fornecedor_pix
+            or fornecedor_dados.get('pix')
+            or fornecedor_dados.get('PIX')
+            or fornecedor_dados.get('cnpj_pix')
+            or fornecedor_dados.get('chave_pix')
+            or ""
+        )
+        fornecedor_favorecido = (
+            self._fornecedor_favorecido
+            or fornecedor_dados.get('favorecido')
+            or fornecedor_dados.get('dados_bancarios')
+            or fornecedor_dados.get('dados bancários')
+            or fornecedor_dados.get('banco')
+            or ""
+        )
+
         return PedidoDTO(
             numero=self.e_num.text().strip(),
             data_pedido=self.e_data.text(),
@@ -1886,6 +1926,8 @@ class PedidoWidget(QWidget):
             fornecedor_email=self.e_fem.text(),
             fornecedor_vendedor=self.e_fvend.text(),
             fornecedor_telefone=self.e_ftel.text(),
+            fornecedor_pix=fornecedor_pix,
+            fornecedor_favorecido=fornecedor_favorecido,
             prazo_entrega=self.e_prazo.value(),
             condicao_pagamento=self.e_cond.currentText(),
             forma_pagamento=self.e_forma.currentText(),

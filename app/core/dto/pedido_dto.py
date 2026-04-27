@@ -43,11 +43,13 @@ class PedidoDTO:
     contrato_obra:    str = "0"
 
     # Fornecedor
-    fornecedor_nome:     str = ""
-    fornecedor_razao:    str = ""
-    fornecedor_email:    str = ""
-    fornecedor_vendedor: str = ""
-    fornecedor_telefone: str = ""
+    fornecedor_nome:       str = ""
+    fornecedor_razao:      str = ""
+    fornecedor_email:      str = ""
+    fornecedor_vendedor:   str = ""
+    fornecedor_telefone:   str = ""
+    fornecedor_pix:        str = ""
+    fornecedor_favorecido: str = ""
 
     # Condições comerciais
     prazo_entrega:      int   = 5

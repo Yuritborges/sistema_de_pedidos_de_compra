@@ -143,7 +143,10 @@ class PedidoCompraGenerator:
             hf      = 28*mm*e
             hcob    = 14*mm*e
             hrod    = max(18*mm, 22*mm*e)
-            hfat    = 14*mm*e
+            forma_pix = "PIX" in str(getattr(dto, "forma_pagamento", "")).upper()
+            tem_pix = bool(str(getattr(dto, "fornecedor_pix", "")).strip())
+            tem_fav = bool(str(getattr(dto, "fornecedor_favorecido", "")).strip())
+            hfat    = (22*mm*e if (forma_pix and (tem_pix or tem_fav)) else 14*mm*e)
             hent    = 18*mm*e
             hdr_h   = max(5*mm, 7*mm*e)
             tot_h   = max(14*mm, 18*mm*e)
@@ -437,6 +440,27 @@ class PedidoCompraGenerator:
         c.setFont("Helvetica-Bold", 10); c.setFillColor(C_PRETO)
         cx_data = W - M - 28*mm + 12.5*mm
         c.drawCentredString(cx_data, y-11*mm, dto.data_prevista_entrega)
+
+        # Linha extra de pagamento quando a forma for PIX.
+        # Isso evita que o financeiro precise adivinhar a chave PIX do fornecedor.
+        if "PIX" in str(forma).upper():
+            pix = str(getattr(dto, "fornecedor_pix", "") or "").strip()
+            favorecido = str(getattr(dto, "fornecedor_favorecido", "") or "").strip()
+
+            if pix or favorecido:
+                c.setStrokeColor(C_LINHA); c.setLineWidth(0.3)
+                c.line(M+2*mm, y-15.5*mm, W-M-2*mm, y-15.5*mm)
+
+                c.setFont("Helvetica-Bold", 7.5); c.setFillColor(C_ESCURO)
+                c.drawString(M+3*mm, y-19.5*mm, "PIX:")
+                c.setFont("Helvetica-Bold", 8); c.setFillColor(C_PRETO)
+                c.drawString(M+15*mm, y-19.5*mm, pix[:75] if pix else "—")
+
+                if favorecido:
+                    c.setFont("Helvetica-Bold", 7.5); c.setFillColor(C_ESCURO)
+                    c.drawString(M+105*mm, y-19.5*mm, "FAVORECIDO:")
+                    c.setFont("Helvetica", 7.5); c.setFillColor(C_PRETO)
+                    c.drawString(M+130*mm, y-19.5*mm, favorecido[:35])
 
         return y - alt - 1*mm
 

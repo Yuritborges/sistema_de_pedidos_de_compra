@@ -1,0 +1,48 @@
+{
+  "versao": 1,
+  "salvo_em": "24/04/2026 17:30:31",
+  "numero": "2595",
+  "data_pedido": "24/04/2026",
+  "prazo_entrega": 0,
+  "condicao_pagamento": "28",
+  "forma_pagamento": "BOLETO",
+  "comprador": "IURY",
+  "obra": "JOSE NARCISO",
+  "empresa_faturamento": "INTERIORANA",
+  "escola": "EE JOSE NARCISO VIEIRA EHRENBERG PADRE",
+  "endereco": "RUA CAMPOS SALES 350",
+  "bairro": "JOAO ARANHA",
+  "cep": "13145-684",
+  "cidade": "PAULINIA",
+  "uf": "SP",
+  "contrato": "0",
+  "fornecedor_combo": "ITA AÇOS",
+  "fornecedor_nome": "ITA AÇOS",
+  "fornecedor_razao": "AÇOS ITAPETININGA LTDA",
+  "fornecedor_email": "sebachvocal@gmail.com",
+  "fornecedor_vendedor": "Erik Maluf",
+  "fornecedor_telefone": "(15) 3259-8333",
+  "desconto_tipo": "%",
+  "desconto_valor": 0.0,
+  "observacao": "",
+  "itens": [
+    {
+      "descricao": "KIT PORTAO BASC.N 1-COMPL-ROLDANA 3",
+      "quantidade": 1.0,
+      "unidade": "UNID.",
+      "valor_unitario": 126.0
+    },
+    {
+      "descricao": "11.5A-TRAVESSAO 200 X 100 - CH 16 - 22,00 KG 18\n6022 - PERFIL CAIXARIA CHAPA 16",
+      "quantidade": 22.0,
+      "unidade": "KG",
+      "valor_unitario": 10.13
+    },
+    {
+      "descricao": "11.8- GUIA 55X45 3,0M CH14 7,30 KG 18\n6024 - PERFIL CAIXARIA CHAPA 14",
+      "quantidade": 7.3,
+      "unidade": "KG",
+      "valor_unitario": 10.13
+    }
+  ]
+}

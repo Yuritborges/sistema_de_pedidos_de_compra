@@ -1964,5 +1964,15 @@
     "cidade": "Campinas",
     "uf": "SP",
     "contrato": "0"
+  },
+  "JOSE NARCISO": {
+    "escola": "EE JOSE NARCISO VIEIRA EHRENBERG PADRE",
+    "faturamento": "BRASUL",
+    "endereco": "RUA CAMPOS SALES 350",
+    "bairro": "JOAO ARANHA",
+    "cep": "13145-684",
+    "cidade": "PAULINIA",
+    "uf": "SP",
+    "contrato": "0"
   }
 }

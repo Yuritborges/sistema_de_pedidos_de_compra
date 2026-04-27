@@ -19,10 +19,7 @@ from app.ui.style import (
     btn_solid, btn_outline, btn_filtro, make_card, card_container,
 )
 
-try:
-    from config import PEDIDOS_DIR
-except ImportError:
-    PEDIDOS_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'pedidos_gerados')
+from config import PEDIDOS_DIR, COMPRADOR_PADRAO
 
 
 class PedidosWidget(QWidget):
@@ -77,7 +74,7 @@ class PedidosWidget(QWidget):
         tv = QVBoxLayout(); tv.setSpacing(2)
         titulo = QLabel("Pedidos Gerados")
         titulo.setStyleSheet(f"font-size:20px; font-weight:bold; color:{GRAY}; background:transparent;")
-        sub = QLabel("Histórico de PDFs gerados pelo sistema")
+        sub = QLabel(f"Pedidos registrados no banco — comprador: {COMPRADOR_PADRAO}")
         sub.setStyleSheet(f"font-size:11px; color:{TXT_S}; background:transparent;")
         tv.addWidget(titulo); tv.addWidget(sub)
         hl_topo.addLayout(tv)
@@ -188,7 +185,7 @@ class PedidosWidget(QWidget):
         hh.setSectionResizeMode(2, QHeaderView.Stretch)
         hh.setSectionResizeMode(3, QHeaderView.Stretch)
         hh.setSectionResizeMode(4, QHeaderView.Fixed);  self.tabela.setColumnWidth(4, 115)
-        hh.setSectionResizeMode(5, QHeaderView.Fixed);  self.tabela.setColumnWidth(5, 430)
+        hh.setSectionResizeMode(5, QHeaderView.Fixed);  self.tabela.setColumnWidth(5, 530)
         cvl.addWidget(self.tabela)
         vl.addWidget(container, 1)
 
@@ -202,69 +199,118 @@ class PedidosWidget(QWidget):
     # ══════════════════════════════════════════════════════════════════════════
 
     def _carregar(self):
+        """
+        Carrega pedidos SOMENTE do banco de dados.
+
+        Correção importante:
+        - Antes esta tela varria a pasta de PDFs e montava a lista por arquivo.
+        - Isso criava "pedido fantasma": PDF existia, mas o pedido não existia no banco.
+        - Agora a tela lista apenas pedidos gravados na tabela pedidos.
+
+        Resultado:
+        - Botão Editar nunca aparece para pedido inexistente.
+        - Relação de pedidos usa a mesma origem confiável: banco.
+        - PDFs soltos na pasta não entram mais no financeiro.
+        - Carrega somente o comprador atual (IURY ou THAMYRES).
+        - Limita aos últimos 300 pedidos para evitar travamento.
+        """
         self._todos = []
         os.makedirs(PEDIDOS_DIR, exist_ok=True)
 
-        db_dados = {}
+        def _parse_data(data_txt):
+            txt = str(data_txt or "").strip()
+            for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    return datetime.strptime(txt, fmt)
+                except Exception:
+                    pass
+            return datetime.now()
+
+        def _achar_pdf(numero, caminho_db):
+            # Primeiro usa o caminho registrado no banco, se existir.
+            caminho = str(caminho_db or "").strip()
+            if caminho and os.path.exists(caminho):
+                return caminho, os.path.basename(caminho)
+
+            # Fallback: procura PDF com o número do pedido na pasta.
+            # Isso NÃO cria pedido fantasma, porque só roda para pedido que já existe no banco.
+            try:
+                prefixo = f"PC-{numero}-".upper()
+                for nome in os.listdir(PEDIDOS_DIR):
+                    if nome.lower().endswith(".pdf") and nome.upper().startswith(prefixo):
+                        caminho2 = os.path.join(PEDIDOS_DIR, nome)
+                        if os.path.exists(caminho2):
+                            return caminho2, nome
+            except Exception:
+                pass
+
+            return "", f"PC-{numero}.pdf"
+
         try:
             from app.data.database import get_connection
+
             with get_connection() as conn:
-                rows = conn.execute(
-                    "SELECT numero, fornecedor_nome, valor_total, obra_nome, "
-                    "empresa_faturadora, condicao_pagamento, forma_pagamento "
-                    "FROM pedidos"
-                ).fetchall()
-                for row in rows:
-                    db_dados[str(row["numero"])] = {
-                        "fornecedor":         row["fornecedor_nome"] or "—",
-                        "valor":              row["valor_total"] or 0.0,
-                        "obra_db":            row["obra_nome"] or "",
-                        "empresa_faturadora": row["empresa_faturadora"] or "—",
-                        "condicao_pagamento": row["condicao_pagamento"] or "—",
-                        "forma_pagamento":    row["forma_pagamento"] or "—",
-                    }
+                rows = conn.execute("""
+                    SELECT
+                        id,
+                        numero,
+                        data_pedido,
+                        obra_nome,
+                        fornecedor_nome,
+                        fornecedor_razao,
+                        empresa_faturadora,
+                        condicao_pagamento,
+                        forma_pagamento,
+                        valor_total,
+                        caminho_pdf,
+                        comprador
+                    FROM pedidos
+                    WHERE UPPER(COALESCE(comprador, '')) = UPPER(?)
+                    ORDER BY CAST(numero AS INTEGER) DESC, id DESC
+                    LIMIT 300
+                """, (COMPRADOR_PADRAO,)).fetchall()
+
+            for row in rows:
+                numero = str(row["numero"] or "").strip()
+                if not numero:
+                    continue
+
+                caminho, nome_pdf = _achar_pdf(numero, row["caminho_pdf"])
+                data_dt = _parse_data(row["data_pedido"])
+                empresa = str(row["empresa_faturadora"] or "—").upper()
+                obra = str(row["obra_nome"] or "—")
+                fornecedor = str(row["fornecedor_nome"] or row["fornecedor_razao"] or "—")
+
+                try:
+                    valor_total = float(row["valor_total"] or 0)
+                except Exception:
+                    valor_total = 0.0
+
+                self._todos.append({
+                    "id":                 row["id"],
+                    "nome":               nome_pdf,
+                    "caminho":            caminho,
+                    "numero":             numero,
+                    "obra":               obra,
+                    "fornecedor":         fornecedor,
+                    "empresa":            empresa,
+                    "data":               data_dt,
+                    "valor_total":        valor_total,
+                    "empresa_faturadora": empresa,
+                    "condicao_pagamento": row["condicao_pagamento"] or "—",
+                    "forma_pagamento":    row["forma_pagamento"] or "—",
+                    "obra_nome":          obra,
+                    "fornecedor_nome":    fornecedor,
+                    "comprador":          row["comprador"] or "",
+                })
+
         except Exception as e:
-            print(f"[PedidosWidget] Aviso ao consultar banco: {e}")
+            QMessageBox.critical(
+                self,
+                "Erro ao carregar pedidos",
+                f"Não foi possível carregar os pedidos do banco.\n\n{e}"
+            )
 
-        for nome in sorted(
-                os.listdir(PEDIDOS_DIR),
-                key=lambda n: os.path.getmtime(os.path.join(PEDIDOS_DIR, n)),
-                reverse=True
-        ):
-            if not nome.lower().endswith(".pdf"):
-                continue
-            caminho = os.path.join(PEDIDOS_DIR, nome)
-            try:
-                stat = os.stat(caminho)
-                data_mod = datetime.fromtimestamp(stat.st_mtime)
-            except OSError:
-                continue
-            empresa, numero, obra = self._parse_nome(nome)
-            extra = db_dados.get(numero, {})
-            fornecedor = extra.get("fornecedor", "—")
-            obra_db    = extra.get("obra_db", "")
-            if obra_db:
-                obra = obra_db
-            if extra.get("empresa_faturadora") and extra["empresa_faturadora"] != "—":
-                empresa = extra["empresa_faturadora"]
-
-            self._todos.append({
-                "nome":               nome,
-                "caminho":            caminho,
-                "numero":             numero,
-                "obra":               obra,
-                "fornecedor":         fornecedor,
-                "empresa":            empresa,
-                "data":               data_mod,
-                "valor_total":        extra.get("valor", 0.0),
-                "empresa_faturadora": extra.get("empresa_faturadora", empresa),
-                "condicao_pagamento": extra.get("condicao_pagamento", "—"),
-                "forma_pagamento":    extra.get("forma_pagamento", "—"),
-                "obra_nome":          obra,
-                "fornecedor_nome":    fornecedor,
-            })
-
-        # Respeita o filtro ativo ao recarregar
         self._aplicar_filtros()
         self._atualizar_cards()
 
@@ -428,10 +474,16 @@ class PedidosWidget(QWidget):
             bed.setToolTip(f"Carrega o pedido #{num} na aba Pedido de Compra para edição")
             bed.clicked.connect(lambda _, x=num: self._editar_pedido(x))
 
+            bx = btn_solid("🗑 Excluir", "#C0392B", h=30)
+            bx.setMinimumWidth(86)
+            bx.setToolTip(f"Remove o pedido #{num} do banco e da relação")
+            bx.clicked.connect(lambda _, x=num: self._excluir_pedido(x))
+
             hl.addWidget(ba)
             hl.addWidget(be)
             hl.addWidget(br)
             hl.addWidget(bed)
+            hl.addWidget(bx)
             hl.addStretch()
             self.tabela.setCellWidget(r, 5, cell)
 
@@ -602,6 +654,14 @@ class PedidosWidget(QWidget):
     # ══════════════════════════════════════════════════════════════════════════
 
     def _abrir_pdf(self, caminho):
+        if not caminho or not os.path.exists(caminho):
+            QMessageBox.warning(
+                self,
+                "PDF não encontrado",
+                "Este pedido existe no banco, mas o arquivo PDF não foi encontrado.\n\n"
+                "Use o botão 'Reimprimir' para gerar o PDF novamente."
+            )
+            return
         try:
             if sys.platform == "win32":    os.startfile(caminho)
             elif sys.platform == "darwin": subprocess.run(["open", caminho])
@@ -610,6 +670,15 @@ class PedidosWidget(QWidget):
             QMessageBox.warning(self, "Erro ao abrir", str(e))
 
     def _exportar(self, caminho_origem, nome_arquivo):
+        if not caminho_origem or not os.path.exists(caminho_origem):
+            QMessageBox.warning(
+                self,
+                "PDF não encontrado",
+                "Não encontrei o PDF deste pedido para exportar.\n\n"
+                "Use 'Reimprimir' primeiro para gerar o arquivo novamente."
+            )
+            return
+
         pasta = QFileDialog.getExistingDirectory(
             self, "Escolha a pasta onde salvar a cópia do PDF",
             os.path.expanduser("~"),
@@ -652,6 +721,82 @@ class PedidosWidget(QWidget):
             return f"{float(v):,.2f}".replace(",","X").replace(".",",").replace("X",".")
         except Exception:
             return "0,00"
+
+    def _excluir_pedido(self, numero):
+        """
+        Exclui um pedido do banco com confirmação.
+
+        Importante:
+        - Remove primeiro os itens vinculados em itens_pedido.
+        - Depois remove o pedido da tabela pedidos.
+        - Não apaga o PDF automaticamente; o PDF fica como arquivo histórico/backup.
+        - Como a tela agora lista apenas banco, o pedido some da tela e das relações.
+        """
+        numero = str(numero).strip()
+
+        resp = QMessageBox.question(
+            self,
+            "Confirmar exclusão",
+            f"Tem certeza que deseja excluir o pedido #{numero}?\n\n"
+            "Ele será removido do banco e não aparecerá mais em Pedidos Gerados nem nas Relações.\n\n"
+            "O arquivo PDF não será apagado automaticamente.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if resp != QMessageBox.Yes:
+            return
+
+        try:
+            from app.data.database import get_connection
+
+            with get_connection() as conn:
+                pedido = conn.execute(
+                    "SELECT id, caminho_pdf FROM pedidos WHERE numero = ?",
+                    (numero,)
+                ).fetchone()
+
+                if not pedido:
+                    QMessageBox.information(
+                        self,
+                        "Pedido não encontrado",
+                        f"O pedido #{numero} não existe mais no banco."
+                    )
+                    self._carregar()
+                    return
+
+                pedido_id = pedido["id"]
+
+                conn.execute(
+                    "DELETE FROM itens_pedido WHERE pedido_id = ?",
+                    (pedido_id,)
+                )
+                conn.execute(
+                    "DELETE FROM pedidos WHERE id = ?",
+                    (pedido_id,)
+                )
+
+            try:
+                from app.data.database import sincronizar_com_rede
+                sincronizar_com_rede(silencioso=True)
+            except Exception:
+                pass
+
+            QMessageBox.information(
+                self,
+                "Pedido excluído",
+                f"Pedido #{numero} removido com sucesso.\n\n"
+                "Ele não aparecerá mais na lista nem nas relações."
+            )
+
+            self._carregar()
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Erro ao excluir pedido",
+                f"Não foi possível excluir o pedido #{numero}.\n\n{e}"
+            )
 
     def _editar_pedido(self, numero):
         """

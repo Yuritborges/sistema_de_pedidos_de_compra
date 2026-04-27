@@ -9,8 +9,8 @@ import os
 import shutil
 import sqlite3
 from datetime import datetime
-
 from config import DATABASE_PATH, BACKUP_DIR
+
 
 try:
     from config import COMPRADOR_PADRAO
@@ -179,13 +179,14 @@ def proximo_numero_pedido():
         ).fetchone()
 
         proximo = (row["ultimo"] if row else 2548) + 1
+        return str(proximo)
 
+
+def incrementar_numero_pedido():
+    with get_connection() as conn:
         conn.execute(
-            "UPDATE contador_pedidos SET ultimo = ? WHERE id = 1",
-            (proximo,)
+            "UPDATE contador_pedidos SET ultimo = ultimo + 1 WHERE id = 1"
         )
-
-    return str(proximo)
 
 
 def atualizar_numero_pedido(numero):
