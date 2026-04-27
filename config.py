@@ -5,10 +5,10 @@ import os
 
 # Caminhos principais do projeto
 DATABASE_PATH = r"Z:\0 OBRAS\brasul_pedidos\cotacao_rede.db"
-PEDIDOS_DIR = r"Z:\0 OBRAS\brasul_pedidos\Iury\pdfs de pedidos"
-COTACOES_DIR = r"Z:\0 OBRAS\brasul_pedidos\Iury\cotações_salvas"
-BACKUP_DIR = r"Z:\0 OBRAS\brasul_pedidos\Iury\backup"
-RELACOES_DIR = r"Z:\0 OBRAS\brasul_pedidos\Iury\relações"
+PEDIDOS_DIR = r"Z:\0 OBRAS\brasul_pedidos\Thamyres\pdfs de pedidos"
+COTACOES_DIR = r"Z:\0 OBRAS\brasul_pedidos\Thamyres\cotações_salvas"
+BACKUP_DIR = r"Z:\0 OBRAS\brasul_pedidos\Thamyres\backup"
+RELACOES_DIR = r"Z:\0 OBRAS\brasul_pedidos\Thamyres\relações"
 
 
 # Cria as pastas necessárias automaticamente
@@ -64,7 +64,7 @@ EMPRESAS_FATURADORAS = {
     },
 }
 
-COMPRADOR_PADRAO = "IURY"
+COMPRADOR_PADRAO = "THAMYRES"
 
 CATEGORIAS_ITEM = [
     "FUNDAÇÃO / ESTRUTURA",

@@ -1,7 +1,6 @@
 # app/core/services/pedido_service.py
 # Responsável por validar o pedido, gerar o PDF e salvar no banco.
 
-from app.core.dto.pedido_dto import PedidoDTO
 from app.infrastructure.pdf_generator import PedidoCompraGenerator
 
 
@@ -16,8 +15,19 @@ class PedidoService:
         Retorna o caminho do arquivo gerado.
         """
         self._validar(dto)
+
         caminho = self._generator.gerar(dto)
-        self._salvar_no_banco(dto, caminho)
+
+        try:
+            self._salvar_no_banco(dto, caminho)
+        except Exception as e:
+            raise RuntimeError(
+                f"O PDF foi gerado, mas o pedido NÃO foi salvo no banco.\n\n"
+                f"Pedido: {getattr(dto, 'numero', '')}\n"
+                f"PDF: {caminho}\n\n"
+                f"Erro real:\n{e}"
+            )
+
         return caminho
 
     def _validar(self, dto):
@@ -39,10 +49,6 @@ class PedidoService:
             raise ValueError("\n".join(erros))
 
     def _calcular_total_seguro(self, dto):
-        """
-        Calcula o total do pedido de forma blindada.
-        Evita salvar R$ 0,00 no banco quando o DTO vier incompleto.
-        """
         try:
             total_liquido = getattr(dto, "total_liquido", None)
             if total_liquido not in (None, ""):
@@ -74,134 +80,126 @@ class PedidoService:
         return round(total_itens - desconto, 2)
 
     def _salvar_no_banco(self, dto, caminho_pdf):
-        """
-        Se o pedido já existe, atualiza.
-        Se não existe, insere novo.
-        Depois recria os itens vinculados ao pedido.
-        """
-        try:
-            from app.data.database import get_connection
+        from app.data.database import get_connection
+        from config import COMPRADOR_PADRAO
 
-            with get_connection() as conn:
-                existente = conn.execute(
-                    "SELECT id FROM pedidos WHERE numero = ?",
-                    (dto.numero,)
-                ).fetchone()
+        numero = str(getattr(dto, "numero", "")).strip()
+        comprador = str(getattr(dto, "comprador", "") or COMPRADOR_PADRAO).strip().upper()
+        total = self._calcular_total_seguro(dto)
 
-                total = self._calcular_total_seguro(dto)
+        with get_connection() as conn:
+            existente = conn.execute(
+                "SELECT id FROM pedidos WHERE numero = ?",
+                (numero,)
+            ).fetchone()
 
-                print(
-                    f"[PEDIDO] Salvando pedido {dto.numero} | "
-                    f"Fornecedor: {dto.fornecedor_nome} | "
-                    f"Obra: {dto.obra} | "
-                    f"Total: {total}"
-                )
+            if existente:
+                pedido_id = existente["id"]
 
-                if existente:
-                    conn.execute("""
-                        UPDATE pedidos SET
-                            data_pedido        = ?,
-                            obra_nome          = ?,
-                            escola             = ?,
-                            fornecedor_nome    = ?,
-                            fornecedor_razao   = ?,
-                            empresa_faturadora = ?,
-                            condicao_pagamento = ?,
-                            forma_pagamento    = ?,
-                            prazo_entrega      = ?,
-                            comprador          = ?,
-                            valor_total        = ?,
-                            caminho_pdf        = ?,
-                            status             = 'emitido'
-                        WHERE numero = ?
-                    """, (
-                        dto.data_pedido,
-                        dto.obra,
-                        dto.escola,
-                        dto.fornecedor_nome,
-                        dto.fornecedor_razao,
-                        dto.empresa_faturadora,
-                        dto.condicao_pagamento,
-                        dto.forma_pagamento,
-                        dto.prazo_entrega,
-                        dto.comprador,
-                        total,
-                        caminho_pdf,
-                        dto.numero,
-                    ))
+                conn.execute("""
+                    UPDATE pedidos SET
+                        data_pedido        = ?,
+                        obra_nome          = ?,
+                        escola             = ?,
+                        fornecedor_nome    = ?,
+                        fornecedor_razao   = ?,
+                        empresa_faturadora = ?,
+                        condicao_pagamento = ?,
+                        forma_pagamento    = ?,
+                        prazo_entrega      = ?,
+                        comprador          = ?,
+                        valor_total        = ?,
+                        caminho_pdf        = ?,
+                        status             = 'emitido'
+                    WHERE id = ?
+                """, (
+                    getattr(dto, "data_pedido", ""),
+                    getattr(dto, "obra", ""),
+                    getattr(dto, "escola", ""),
+                    getattr(dto, "fornecedor_nome", ""),
+                    getattr(dto, "fornecedor_razao", ""),
+                    getattr(dto, "empresa_faturadora", ""),
+                    getattr(dto, "condicao_pagamento", ""),
+                    getattr(dto, "forma_pagamento", ""),
+                    getattr(dto, "prazo_entrega", 0),
+                    comprador,
+                    total,
+                    caminho_pdf,
+                    pedido_id,
+                ))
 
-                    pedido_id = existente["id"]
-                    conn.execute(
-                        "DELETE FROM itens_pedido WHERE pedido_id = ?",
-                        (pedido_id,)
-                    )
+                conn.execute("DELETE FROM itens_pedido WHERE pedido_id = ?", (pedido_id,))
 
-                else:
-                    cursor = conn.execute("""
-                        INSERT INTO pedidos (
-                            numero,
-                            data_pedido,
-                            obra_nome,
-                            escola,
-                            fornecedor_nome,
-                            fornecedor_razao,
-                            empresa_faturadora,
-                            condicao_pagamento,
-                            forma_pagamento,
-                            prazo_entrega,
-                            comprador,
-                            valor_total,
-                            caminho_pdf,
-                            status
-                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'emitido')
-                    """, (
-                        dto.numero,
-                        dto.data_pedido,
-                        dto.obra,
-                        dto.escola,
-                        dto.fornecedor_nome,
-                        dto.fornecedor_razao,
-                        dto.empresa_faturadora,
-                        dto.condicao_pagamento,
-                        dto.forma_pagamento,
-                        dto.prazo_entrega,
-                        dto.comprador,
-                        total,
-                        caminho_pdf,
-                    ))
-
-                    pedido_id = cursor.lastrowid
-
-                for item in dto.itens:
-                    try:
-                        quantidade = float(getattr(item, "quantidade", 0) or 0)
-                        valor_unitario = float(getattr(item, "valor_unitario", 0) or 0)
-                        valor_total = round(quantidade * valor_unitario, 2)
-                    except Exception:
-                        quantidade = 0.0
-                        valor_unitario = 0.0
-                        valor_total = 0.0
-
-                    conn.execute("""
-                        INSERT INTO itens_pedido (
-                            pedido_id,
-                            descricao,
-                            quantidade,
-                            unidade,
-                            valor_unitario,
-                            valor_total
-                        ) VALUES (?,?,?,?,?,?)
-                    """, (
-                        pedido_id,
-                        getattr(item, "descricao", ""),
-                        quantidade,
-                        getattr(item, "unidade", ""),
-                        valor_unitario,
+            else:
+                cur = conn.execute("""
+                    INSERT INTO pedidos (
+                        numero,
+                        data_pedido,
+                        obra_nome,
+                        escola,
+                        fornecedor_nome,
+                        fornecedor_razao,
+                        empresa_faturadora,
+                        condicao_pagamento,
+                        forma_pagamento,
+                        prazo_entrega,
+                        comprador,
                         valor_total,
-                    ))
+                        caminho_pdf,
+                        status
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'emitido')
+                """, (
+                    numero,
+                    getattr(dto, "data_pedido", ""),
+                    getattr(dto, "obra", ""),
+                    getattr(dto, "escola", ""),
+                    getattr(dto, "fornecedor_nome", ""),
+                    getattr(dto, "fornecedor_razao", ""),
+                    getattr(dto, "empresa_faturadora", ""),
+                    getattr(dto, "condicao_pagamento", ""),
+                    getattr(dto, "forma_pagamento", ""),
+                    getattr(dto, "prazo_entrega", 0),
+                    comprador,
+                    total,
+                    caminho_pdf,
+                ))
 
-        except Exception as e:
-            raise RuntimeError(f"Erro ao salvar pedido no banco: {e}")
+                pedido_id = cur.lastrowid
+
+            for item in getattr(dto, "itens", []) or []:
+                quantidade = float(getattr(item, "quantidade", 0) or 0)
+                valor_unitario = float(getattr(item, "valor_unitario", 0) or 0)
+                valor_total = round(quantidade * valor_unitario, 2)
+
+                conn.execute("""
+                    INSERT INTO itens_pedido (
+                        pedido_id,
+                        descricao,
+                        quantidade,
+                        unidade,
+                        valor_unitario,
+                        valor_total
+                    ) VALUES (?,?,?,?,?,?)
+                """, (
+                    pedido_id,
+                    getattr(item, "descricao", ""),
+                    quantidade,
+                    getattr(item, "unidade", ""),
+                    valor_unitario,
+                    valor_total,
+                ))
+
+            conn.commit()
+
+            conferido = conn.execute(
+                "SELECT id FROM pedidos WHERE numero = ? AND UPPER(TRIM(comprador)) = UPPER(TRIM(?))",
+                (numero, comprador)
+            ).fetchone()
+
+            if not conferido:
+                raise RuntimeError(
+                    f"Falha crítica: pedido {numero} não apareceu no banco após salvar."
+                )
 
         try:
             from app.data.database import sincronizar_com_rede
