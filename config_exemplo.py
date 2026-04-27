@@ -3,12 +3,27 @@
 
 import os
 
-# Caminhos principais do projeto
+COMPRADOR_PADRAO = "SEU_NOME"
+PASTA_COMPRADOR = "SuaPasta"
+
+COMPRADOR_PADRAO = COMPRADOR_PADRAO.strip().upper()
+PASTA_COMPRADOR = PASTA_COMPRADOR.strip()
+
+if not COMPRADOR_PADRAO or COMPRADOR_PADRAO == "SEU_NOME":
+    raise ValueError("Defina COMPRADOR_PADRAO com seu nome (ex: IURY, THAMYRES, JOAO)")
+
+if not PASTA_COMPRADOR or PASTA_COMPRADOR == "SuaPasta":
+    raise ValueError("Defina PASTA_COMPRADOR com o nome da pasta (ex: Iury, Thamyres, Joao)")
+
+raise ValueError(
+    "Arquivo de exemplo. Copie para config.py e configure antes de rodar o sistema."
+)
+
 DATABASE_PATH = r"Z:\0 OBRAS\brasul_pedidos\cotacao_rede.db"
-PEDIDOS_DIR = r"Z:\0 OBRAS\brasul_pedidos\Thamyres\pdfs de pedidos"
-COTACOES_DIR = r"Z:\0 OBRAS\brasul_pedidos\Thamyres\cotações_salvas"
-BACKUP_DIR = r"Z:\0 OBRAS\brasul_pedidos\Thamyres\backup"
-RELACOES_DIR = r"Z:\0 OBRAS\brasul_pedidos\Thamyres\relações"
+PEDIDOS_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\pdfs de pedidos"
+COTACOES_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\cotações_salvas"
+BACKUP_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\backup"
+RELACOES_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\relações"
 
 
 # Cria as pastas necessárias automaticamente
@@ -63,8 +78,6 @@ EMPRESAS_FATURADORAS = {
         "cor_header":   (50, 50, 130),
     },
 }
-
-COMPRADOR_PADRAO = "THAMYRES"
 
 CATEGORIAS_ITEM = [
     "FUNDAÇÃO / ESTRUTURA",
