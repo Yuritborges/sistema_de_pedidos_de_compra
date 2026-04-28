@@ -17,7 +17,7 @@ from config import (EMPRESAS_FATURADORAS, UNIDADES,
                     CONDICOES_PAGAMENTO, FORMAS_PAGAMENTO, COMPRADOR_PADRAO)
 from app.core.dto.pedido_dto import PedidoDTO, ItemPedidoDTO
 from app.core.services.pedido_service import PedidoService
-from app.data.database import proximo_numero_pedido, incrementar_numero_pedido
+from app.data.database import proximo_numero_pedido, incrementar_numero_pedido, atualizar_numero_pedido
 
 # ── Caminhos dos arquivos JSON ─────────────────────────────────────────────────
 _ASSETS = os.path.normpath(
@@ -696,6 +696,7 @@ class PedidoWidget(QWidget):
         hl  = QHBoxLayout(); hl.setSpacing(12)
         self.e_num = _fld(proximo_numero_pedido())
         self.e_num.setToolTip("Gerado automaticamente. Pode editar manualmente.")
+        self.e_num.editingFinished.connect(self._num_digitado_manualmente)
         self.e_data = _fld(datetime.now().strftime("%d/%m/%Y"))
         self.e_prazo = QSpinBox()
         self.e_prazo.setRange(0,365); self.e_prazo.setValue(5)
@@ -750,6 +751,18 @@ class PedidoWidget(QWidget):
         if dlg.exec() and dlg.comprador_selecionado:
             self._comprador_atual = dlg.comprador_selecionado
             self.btn_comprador.setText(f"👤  {self._comprador_atual}")
+
+    def _num_digitado_manualmente(self):
+        """
+        Chamado quando o usuário edita o campo Nº Pedido e sai dele.
+        Atualiza o contador do banco para que o próximo número seja
+        o digitado + 1 — sem avançar automaticamente sem motivo.
+        """
+        try:
+            n = int(self.e_num.text().strip())
+            atualizar_numero_pedido(n - 1)  # salva n-1 para que proximo = n
+        except Exception:
+            pass
 
     # ── Seção 2: Obra ─────────────────────────────────────────────────────────
 
@@ -1844,7 +1857,12 @@ class PedidoWidget(QWidget):
             dto = self._montar_dto(empresa)
             path = self._service.gerar_pdf(dto)
 
-            incrementar_numero_pedido()
+            # Avança o contador baseado no número que foi realmente gerado
+            # (seja o automático ou o que o usuário digitou manualmente)
+            try:
+                atualizar_numero_pedido(int(dto.numero))
+            except Exception:
+                incrementar_numero_pedido()
 
             msg = QMessageBox(self)
             msg.setWindowTitle("Pedido gerado!")

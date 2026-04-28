@@ -24,14 +24,18 @@ from config import PEDIDOS_DIR, COMPRADOR_PADRAO
 
 class PedidosWidget(QWidget):
 
+    _PAGE_SIZE = 50  # quantos pedidos renderizar por vez
+
     def __init__(self):
         super().__init__()
-        self._todos         = []
-        self._filtro_ativo  = None
-        self._data_inicio   = None
-        self._data_fim      = None
+        self._todos             = []
+        self._filtrados         = []   # resultado após filtros (paginação age sobre isso)
+        self._pagina_atual      = 0    # quantas páginas já foram renderizadas
+        self._filtro_ativo      = None
+        self._data_inicio       = None
+        self._data_fim          = None
         self._build()
-        self._set_filtro_data("todos")  # inicia com Todos marcado
+        self._set_filtro_data("todos")
         self._carregar()
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -189,6 +193,19 @@ class PedidosWidget(QWidget):
         cvl.addWidget(self.tabela)
         vl.addWidget(container, 1)
 
+        # ── Rodapé paginação ───────────────────────────────────────────────────
+        hl_pag = QHBoxLayout(); hl_pag.setSpacing(12)
+        self._lbl_pagina = QLabel("")
+        self._lbl_pagina.setStyleSheet(f"font-size:11px; color:{TXT_S}; background:transparent;")
+        self._btn_mais = btn_outline("⬇  Carregar mais 50")
+        self._btn_mais.setFixedHeight(32)
+        self._btn_mais.setVisible(False)
+        self._btn_mais.clicked.connect(self._carregar_mais)
+        hl_pag.addWidget(self._lbl_pagina)
+        hl_pag.addStretch()
+        hl_pag.addWidget(self._btn_mais)
+        vl.addLayout(hl_pag)
+
         rodape = QLabel(f"📌  {PEDIDOS_DIR}")
         rodape.setStyleSheet(f"font-size:10px; color:{TXT_S}; background:transparent;")
         rodape.setWordWrap(True)
@@ -250,25 +267,49 @@ class PedidosWidget(QWidget):
             from app.data.database import get_connection
 
             with get_connection() as conn:
-                rows = conn.execute("""
-                    SELECT
-                        id,
-                        numero,
-                        data_pedido,
-                        obra_nome,
-                        fornecedor_nome,
-                        fornecedor_razao,
-                        empresa_faturadora,
-                        condicao_pagamento,
-                        forma_pagamento,
-                        valor_total,
-                        caminho_pdf,
-                        comprador
-                    FROM pedidos
-                    WHERE UPPER(COALESCE(comprador, '')) = UPPER(?)
-                    ORDER BY CAST(numero AS INTEGER) DESC, id DESC
-                    LIMIT 300
-                """, (COMPRADOR_PADRAO,)).fetchall()
+                # MODO ADMIN:
+                # Se COMPRADOR_PADRAO = "ADMIN", carrega TODOS os pedidos do banco.
+                # Para qualquer outro comprador, mantém o filtro normal por comprador.
+                comprador_atual = str(COMPRADOR_PADRAO or "").strip().upper()
+
+                if comprador_atual == "ADMIN":
+                    rows = conn.execute("""
+                        SELECT
+                            id,
+                            numero,
+                            data_pedido,
+                            obra_nome,
+                            fornecedor_nome,
+                            fornecedor_razao,
+                            empresa_faturadora,
+                            condicao_pagamento,
+                            forma_pagamento,
+                            valor_total,
+                            caminho_pdf,
+                            comprador
+                        FROM pedidos
+                        ORDER BY CAST(numero AS INTEGER) DESC, id DESC
+                    """).fetchall()
+                else:
+                    rows = conn.execute("""
+                        SELECT
+                            id,
+                            numero,
+                            data_pedido,
+                            obra_nome,
+                            fornecedor_nome,
+                            fornecedor_razao,
+                            empresa_faturadora,
+                            condicao_pagamento,
+                            forma_pagamento,
+                            valor_total,
+                            caminho_pdf,
+                            comprador
+                        FROM pedidos
+                        WHERE UPPER(TRIM(COALESCE(comprador, ''))) = UPPER(TRIM(?))
+                        ORDER BY CAST(numero AS INTEGER) DESC, id DESC
+                        LIMIT 300
+                    """, (comprador_atual,)).fetchall()
 
             for row in rows:
                 numero = str(row["numero"] or "").strip()
@@ -406,7 +447,48 @@ class PedidosWidget(QWidget):
             resultado = [r for r in resultado if
                          self._data_inicio <= r["data"].date() <= self._data_fim]
 
-        self._preencher_tabela(resultado)
+        # Armazena resultado filtrado e reseta paginação
+        self._filtrados    = resultado
+        self._pagina_atual = 0
+        self.tabela.setRowCount(0)
+        self._renderizar_pagina()
+
+    def _renderizar_pagina(self):
+        """Renderiza a próxima fatia de _PAGE_SIZE registros na tabela."""
+        inicio = self._pagina_atual * self._PAGE_SIZE
+        fim    = inicio + self._PAGE_SIZE
+        fatia  = self._filtrados[inicio:fim]
+
+        self.tabela.setUpdatesEnabled(False)
+        for dados in fatia:
+            self._inserir_linha(dados)
+        self.tabela.setUpdatesEnabled(True)
+
+        self._pagina_atual += 1
+        total    = len(self._filtrados)
+        exibidos = min(self._pagina_atual * self._PAGE_SIZE, total)
+
+        self._lbl_cont.setText(f"{total} pedido{'s' if total != 1 else ''}")
+        self._lbl_pagina.setText(f"Exibindo {exibidos} de {total} pedidos")
+        tem_mais = exibidos < total
+        self._btn_mais.setVisible(tem_mais)
+        if tem_mais:
+            restantes = total - exibidos
+            self._btn_mais.setText(f"⬇  Carregar mais {min(self._PAGE_SIZE, restantes)}")
+
+        # Estado vazio
+        if total == 0:
+            self.tabela.setRowCount(1)
+            self.tabela.setSpan(0, 0, 1, 6)
+            it = QTableWidgetItem("Nenhum pedido encontrado.")
+            it.setTextAlignment(Qt.AlignCenter)
+            it.setForeground(QColor(TXT_S))
+            self.tabela.setItem(0, 0, it)
+            self._lbl_pagina.setText("")
+
+    def _carregar_mais(self):
+        """Carrega a próxima página de pedidos na tabela."""
+        self._renderizar_pagina()
 
     # ══════════════════════════════════════════════════════════════════════════
     # CARDS
@@ -427,74 +509,63 @@ class PedidosWidget(QWidget):
     # TABELA
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _preencher_tabela(self, registros):
-        self.tabela.setRowCount(0)
+    def _inserir_linha(self, dados):
+        """Insere uma única linha na tabela. Usado pela paginação."""
+        r = self.tabela.rowCount()
+        self.tabela.insertRow(r)
+        self.tabela.setRowHeight(r, 48)
+        bg = WHITE if r % 2 == 0 else "#FBF7F7"
 
-        for dados in registros:
-            r = self.tabela.rowCount()
-            self.tabela.insertRow(r)
-            self.tabela.setRowHeight(r, 48)
-            bg = WHITE if r % 2 == 0 else "#FBF7F7"
+        def _it(txt, align=Qt.AlignVCenter|Qt.AlignLeft, bold=False, cor=None):
+            it = QTableWidgetItem(str(txt)); it.setTextAlignment(align)
+            it.setBackground(QColor(bg))
+            if bold: f = QFont(); f.setBold(True); it.setFont(f)
+            if cor:  it.setForeground(QColor(cor))
+            return it
 
-            def _it(txt, align=Qt.AlignVCenter|Qt.AlignLeft, bold=False, cor=None):
-                it = QTableWidgetItem(str(txt)); it.setTextAlignment(align)
-                it.setBackground(QColor(bg))
-                if bold: f = QFont(); f.setBold(True); it.setFont(f)
-                if cor:  it.setForeground(QColor(cor))
-                return it
+        self.tabela.setItem(r, 0, _it(f"#{dados['numero']}", Qt.AlignVCenter|Qt.AlignCenter, bold=True, cor=RED))
+        self.tabela.setItem(r, 1, _it(dados["data"].strftime("%d/%m/%Y"), Qt.AlignVCenter|Qt.AlignCenter, cor=TXT_S))
+        self.tabela.setItem(r, 2, _it(dados["obra"], bold=True))
+        self.tabela.setItem(r, 3, _it(dados.get("fornecedor", "—"), cor=TXT_S))
+        cor_e = CORES_EMPRESA.get(dados["empresa"], TXT_S)
+        self.tabela.setItem(r, 4, _it(dados["empresa"], Qt.AlignVCenter|Qt.AlignCenter, bold=True, cor=cor_e))
 
-            self.tabela.setItem(r, 0, _it(f"#{dados['numero']}", Qt.AlignVCenter|Qt.AlignCenter, bold=True, cor=RED))
-            self.tabela.setItem(r, 1, _it(dados["data"].strftime("%d/%m/%Y"), Qt.AlignVCenter|Qt.AlignCenter, cor=TXT_S))
-            self.tabela.setItem(r, 2, _it(dados["obra"], bold=True))
-            self.tabela.setItem(r, 3, _it(dados.get("fornecedor", "—"), cor=TXT_S))
-            cor_e = CORES_EMPRESA.get(dados["empresa"], TXT_S)
-            self.tabela.setItem(r, 4, _it(dados["empresa"], Qt.AlignVCenter|Qt.AlignCenter, bold=True, cor=cor_e))
+        cell = QWidget(); cell.setStyleSheet(f"background:{bg};")
+        hl = QHBoxLayout(cell); hl.setContentsMargins(8,6,8,6); hl.setSpacing(6)
 
-            cell = QWidget(); cell.setStyleSheet(f"background:{bg};")
-            hl = QHBoxLayout(cell); hl.setContentsMargins(8,6,8,6); hl.setSpacing(6)
+        ba = btn_solid("📄 Abrir", BLUE, h=30)
+        p  = dados["caminho"]
+        ba.setMinimumWidth(78)
+        ba.clicked.connect(lambda _, x=p: self._abrir_pdf(x))
 
-            ba = btn_solid("📄 Abrir", BLUE, h=30)
-            p  = dados["caminho"]
-            ba.setMinimumWidth(78)
-            ba.clicked.connect(lambda _, x=p: self._abrir_pdf(x))
+        be = btn_solid("💾 Exportar", GREEN, h=30)
+        n  = dados["nome"]
+        be.setMinimumWidth(92)
+        be.clicked.connect(lambda _, x=p, y=n: self._exportar(x, y))
 
-            be = btn_solid("💾 Exportar", GREEN, h=30)
-            n  = dados["nome"]
-            be.setMinimumWidth(92)
-            be.clicked.connect(lambda _, x=p, y=n: self._exportar(x, y))
+        br = btn_solid("🖨 Reimprimir", "#8E44AD", h=30)
+        num = dados["numero"]
+        br.setMinimumWidth(108)
+        br.setToolTip(f"Regera o PDF do pedido #{num}")
+        br.clicked.connect(lambda _, x=num: self._reimprimir(x))
 
-            br = btn_solid("🖨 Reimprimir", "#8E44AD", h=30)
-            num = dados["numero"]
-            br.setMinimumWidth(108)
-            br.setToolTip(f"Regera o PDF do pedido #{num}")
-            br.clicked.connect(lambda _, x=num: self._reimprimir(x))
+        bed = btn_solid("✏️ Editar", "#F39C12", h=30)
+        bed.setMinimumWidth(82)
+        bed.setToolTip(f"Carrega o pedido #{num} na aba Pedido de Compra para edição")
+        bed.clicked.connect(lambda _, x=num: self._editar_pedido(x))
 
-            bed = btn_solid("✏️ Editar", "#F39C12", h=30)
-            bed.setMinimumWidth(82)
-            bed.setToolTip(f"Carrega o pedido #{num} na aba Pedido de Compra para edição")
-            bed.clicked.connect(lambda _, x=num: self._editar_pedido(x))
+        bx = btn_solid("🗑 Excluir", "#C0392B", h=30)
+        bx.setMinimumWidth(86)
+        bx.setToolTip(f"Remove o pedido #{num} do banco e da relação")
+        bx.clicked.connect(lambda _, x=num: self._excluir_pedido(x))
 
-            bx = btn_solid("🗑 Excluir", "#C0392B", h=30)
-            bx.setMinimumWidth(86)
-            bx.setToolTip(f"Remove o pedido #{num} do banco e da relação")
-            bx.clicked.connect(lambda _, x=num: self._excluir_pedido(x))
-
-            hl.addWidget(ba)
-            hl.addWidget(be)
-            hl.addWidget(br)
-            hl.addWidget(bed)
-            hl.addWidget(bx)
-            hl.addStretch()
-            self.tabela.setCellWidget(r, 5, cell)
-
-        total = len(registros)
-        self._lbl_cont.setText(f"{total} pedido{'s' if total!=1 else ''}")
-
-        if total == 0:
-            self.tabela.setRowCount(1); self.tabela.setSpan(0, 0, 1, 6)
-            it = QTableWidgetItem("Nenhum pedido encontrado. Gere um pedido na aba 'Pedido de Compra'.")
-            it.setTextAlignment(Qt.AlignCenter); it.setForeground(QColor(TXT_S))
-            self.tabela.setItem(0, 0, it)
+        hl.addWidget(ba)
+        hl.addWidget(be)
+        hl.addWidget(br)
+        hl.addWidget(bed)
+        hl.addWidget(bx)
+        hl.addStretch()
+        self.tabela.setCellWidget(r, 5, cell)
 
     # ══════════════════════════════════════════════════════════════════════════
     # IMPRESSÃO — RELAÇÃO DE PEDIDOS
