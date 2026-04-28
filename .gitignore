@@ -14,6 +14,7 @@ backup/
 *.pdf
 pedidos_gerados/
 assets/cotacoes_salvas/
+assets/pedidos_salvos/
 
 Z:/
 
@@ -28,9 +29,13 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+releases/
 .env
 venv/
 .venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # =========================
 # EDITOR
@@ -47,8 +52,20 @@ venv/
 *.bat
 *.lnk
 startup.log
+startup_v2.log
 
 # =========================
 # CONFIG LOCAL
 # =========================
 config.py
+
+# =========================
+# SISTEMA OPERACIONAL
+# =========================
+Thumbs.db
+.DS_Store
+
+# =========================
+# EMPACOTAMENTO
+# =========================
+*.spec
