@@ -702,11 +702,13 @@ class PedidoWidget(QWidget):
         self.e_num.editingFinished.connect(self._num_digitado_manualmente)
         self.e_data = _fld(datetime.now().strftime("%d/%m/%Y"))
         self.e_prazo = QSpinBox()
-        self.e_prazo.setRange(0,365); self.e_prazo.setValue(5)
+        self.e_prazo.setRange(0,365); self.e_prazo.setValue(0)
         self.e_prazo.setSuffix(" dias"); self.e_prazo.setStyleSheet(CSS_INPUT)
-        self.e_cond = _combo(CONDICOES_PAGAMENTO)
+        self.e_cond = _combo([""] + list(CONDICOES_PAGAMENTO))
         self.e_cond.setEditable(True); self.e_cond.setInsertPolicy(QComboBox.NoInsert)
         self.e_cond.lineEdit().setStyleSheet(CSS_INPUT)
+        self.e_cond.setCurrentIndex(0)
+        self.e_cond.lineEdit().setPlaceholderText("Selecione/Digite")
         self.e_cond.setToolTip("Selecione ou digite. Ex: 28/35/42  ou  À VISTA")
         self.e_forma = _combo(FORMAS_PAGAMENTO)
         self.e_forma.setEditable(True); self.e_forma.setInsertPolicy(QComboBox.NoInsert)
@@ -1860,6 +1862,13 @@ class PedidoWidget(QWidget):
 
     def _gerar(self, empresa):
         try:
+            prazo = int(self.e_prazo.value())
+            cond = (self.e_cond.currentText() or "").strip()
+            if prazo <= 0:
+                raise ValueError("Informe o prazo de entrega maior que 0 dias.")
+            if not cond:
+                raise ValueError("Informe a condição de pagamento antes de gerar o pedido.")
+
             dto = self._montar_dto(empresa)
             path = self._service.gerar_pdf(dto)
 
@@ -1978,7 +1987,7 @@ class PedidoWidget(QWidget):
 
         self.e_num.setText(proximo_numero_pedido())
         self.e_data.setText(datetime.now().strftime("%d/%m/%Y"))
-        self.e_prazo.setValue(5)
+        self.e_prazo.setValue(0)
         self.e_cond.setCurrentIndex(0); self.e_forma.setCurrentIndex(0)
         self._comprador_atual = COMPRADOR_PADRAO
         self.btn_comprador.setText(f"👤  {COMPRADOR_PADRAO}")
