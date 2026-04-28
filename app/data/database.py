@@ -26,21 +26,22 @@ REDE_BASE_DIR = r"Z:\0 OBRAS\brasul_pedidos"
 
 def _normalizar_nome_comprador(nome: str) -> str:
     nome = (nome or "").strip().upper()
-    if nome in ("IURY", "YURI"):
+    if not nome:
         return "IURY"
-    if nome == "THAMYRES":
-        return "THAMYRES"
-    return "IURY"
+    if nome == "YURI":
+        return "IURY"
+    return nome
 
 
 def _nome_pasta_comprador(nome: str) -> str:
     nome = _normalizar_nome_comprador(nome)
-    return "Thamyres" if nome == "THAMYRES" else "Iury"
+    return nome.title()
 
 
 def _nome_arquivo_db_rede(nome: str) -> str:
     nome = _normalizar_nome_comprador(nome)
-    return "cotacao_thamyres.db" if nome == "THAMYRES" else "cotacao_iury.db"
+    slug = "".join(ch.lower() for ch in nome if ch.isalnum()) or "usuario"
+    return f"cotacao_{slug}.db"
 
 
 def obter_rede_db_path() -> str:

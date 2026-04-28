@@ -1864,8 +1864,8 @@ class PedidoWidget(QWidget):
         try:
             prazo = int(self.e_prazo.value())
             cond = (self.e_cond.currentText() or "").strip()
-            if prazo <= 0:
-                raise ValueError("Informe o prazo de entrega maior que 0 dias.")
+            if prazo < 0:
+                raise ValueError("Informe um prazo de entrega válido (0 ou mais dias).")
             if not cond:
                 raise ValueError("Informe a condição de pagamento antes de gerar o pedido.")
 

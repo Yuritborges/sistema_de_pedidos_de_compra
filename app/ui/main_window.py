@@ -48,6 +48,18 @@ C_BG = "#F0EDED"
 ORDEM_ABAS = ["pedido", "pedidos", "cotacao", "obras", "historico", "cadastros"]
 
 
+def _icone_app_path():
+    base = os.path.normpath(os.path.join(_HERE, "..", ".."))
+    candidatos = [
+        os.path.join(base, "assets", "logos", "logo_brasul.ico"),
+        os.path.join(base, "assets", "iconebrasul2.ico"),
+        os.path.join(base, "assets", "logo.ico"),
+        os.path.join(base, "assets", "logos", "logo_brasul.png"),
+        os.path.join(base, "assets", "logo_brasul.png"),
+    ]
+    return next((p for p in candidatos if os.path.exists(p)), "")
+
+
 def criar_splash():
     # Cria a tela de splash enquanto o sistema carrega
     logo_path = os.path.normpath(
@@ -104,19 +116,19 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        icon_path = os.path.join(base_dir, "assets", "logo.ico")
-        self.setWindowIcon(QIcon(icon_path))
+        icon_path = _icone_app_path()
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
         self.setWindowTitle("Sistema de Pedidos — Brasul Construtora")
         self.setMinimumSize(1100, 700)
         self.resize(1300, 820)
         self._build()
         self._registrar_atalhos()
 
-        # Ícone da janela
-        ico = os.path.normpath(os.path.join(_HERE, '..', '..', 'assets', 'iconebrasul2.ico'))
-        if os.path.exists(ico):
-            self.setWindowIcon(QIcon(ico))
+        # Ícone da janela (mantém fallback único)
+        icon_path = _icone_app_path()
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
 
     def _build(self):
         root = QWidget()
