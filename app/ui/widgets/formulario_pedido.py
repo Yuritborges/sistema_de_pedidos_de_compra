@@ -6,7 +6,7 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QDoubleSpinBox, QGroupBox, QScrollArea, QSpinBox, QCompleter, QAbstractSpinBox,
+    QDoubleSpinBox, QGroupBox, QScrollArea, QSpinBox, QCompleter,
     QDialog, QFormLayout, QDialogButtonBox, QTextEdit, QAbstractItemView,
     QFileDialog,
 )
@@ -21,13 +21,12 @@ from app.data.database import (
     proximo_numero_pedido,
     atualizar_numero_pedido,
 )
+from app.data.cadastros_store import OBRAS_JSON as _OBR, FORNECEDORES_JSON as _FOR
 
 # ── Caminhos dos arquivos JSON ─────────────────────────────────────────────────
 _ASSETS = os.path.normpath(
     os.path.join(os.path.dirname(__file__), '..', '..', '..', 'assets')
 )
-_OBR = os.path.join(_ASSETS, 'obras.json')
-_FOR = os.path.join(_ASSETS, 'fornecedores.json')
 _EMP = os.path.join(_ASSETS, 'empresas_extra.json')  # empresas cadastradas pelo usuário
 _PED_RASC = os.path.join(_ASSETS, 'pedidos_salvos')  # rascunhos de pedidos salvos pelo usuário
 
@@ -56,7 +55,6 @@ RO_BG = "#F5F0F0"
 SEL   = "#FADBD8"
 HOV   = "#FEF0EF"
 GREEN = "#1E8449"
-DECIMAIS_ALTOS = 12
 
 # ── CSS ────────────────────────────────────────────────────────────────────────
 CSS_INPUT = f"""
@@ -213,14 +211,10 @@ class _SpinFoco(QDoubleSpinBox):
     Parâmetro decimais: quantas casas decimais mostrar (3 para qtd, 2 para valor)
     """
 
-    def __init__(self, decimais: int = DECIMAIS_ALTOS, casas_visiveis: int = 2, parent=None):
+    def __init__(self, decimais: int = 2, parent=None):
         super().__init__(parent)
-        self._casas_visiveis = max(0, int(casas_visiveis))
         self.setDecimals(decimais)
         self.setButtonSymbols(QDoubleSpinBox.NoButtons)  # sem setas
-        self.setStepType(QAbstractSpinBox.AdaptiveDecimalStepType)
-        self.setKeyboardTracking(False)
-        self.setAccelerated(False)
 
     def focusInEvent(self, event):
                 # Chamado pelo Qt quando o widget recebe foco (clique ou Tab).
@@ -231,16 +225,14 @@ class _SpinFoco(QDoubleSpinBox):
         QTimer.singleShot(0, self.selectAll)
 
     def wheelEvent(self, event):
-        # Evita alteração acidental ao rolar a página com o mouse.
+        # Nunca altera por roda do mouse (evita mudança acidental).
         event.ignore()
 
-    def textFromValue(self, value):
-        """
-        Mostra poucas casas na interface para não poluir,
-        mantendo precisão alta no valor interno.
-        """
-        s = f"{float(value):.{self._casas_visiveis}f}"
-        return s.replace(".", ",")
+
+class _ComboSemRoda(QComboBox):
+    def wheelEvent(self, event):
+        # Nunca altera por roda do mouse (evita troca acidental de unidade).
+        event.ignore()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -906,7 +898,7 @@ class PedidoWidget(QWidget):
         self.tabela.setItemDelegateForColumn(0, _UpperDelegate(self.tabela))
         hh = self.tabela.horizontalHeader()
         hh.setSectionResizeMode(0, QHeaderView.Stretch)
-        for col, w in [(1,110),(2,90),(3,200),(4,140)]:
+        for col, w in [(1,76),(2,76),(3,148),(4,118)]:
             hh.setSectionResizeMode(col, QHeaderView.Fixed)
             self.tabela.setColumnWidth(col, w)
         self.tabela.verticalHeader().setVisible(False)
@@ -1369,8 +1361,8 @@ class PedidoWidget(QWidget):
         item_desc.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsEditable)
         self.tabela.setItem(r, 0, item_desc)
 
-        # Col 1: quantidade — começa ZERADA, seleciona tudo ao focar
-        sq = _SpinFoco(decimais=DECIMAIS_ALTOS, casas_visiveis=3)
+        # Col 1: quantidade — alta precisão para orçamentos fracionados
+        sq = _SpinFoco(decimais=6)
         sq.setRange(0, 999_999)
         sq.setValue(0.0)
         sq.setStyleSheet(CSS_INPUT)
@@ -1378,14 +1370,14 @@ class PedidoWidget(QWidget):
         self.tabela.setCellWidget(r, 1, sq)
 
         # Col 2: unidade
-        cu = QComboBox(); cu.addItems(UNIDADES); cu.setStyleSheet(CSS_COMBO)
+        cu = _ComboSemRoda(); cu.addItems(UNIDADES); cu.setStyleSheet(CSS_COMBO)
         cu.view().setStyleSheet(
             f"color:{TXT};background:{WHITE};"
             f"selection-background-color:{SEL};selection-color:{GRAY};")
         self.tabela.setCellWidget(r, 2, cu)
 
-        # Col 3: valor unitário — começa ZERADO, seleciona tudo ao focar
-        sv = _SpinFoco(decimais=DECIMAIS_ALTOS, casas_visiveis=2)
+        # Col 3: valor unitário — alta precisão para casas decimais maiores
+        sv = _SpinFoco(decimais=6)
         sv.setRange(0, 9_999_999)
         sv.setValue(0.0)
         sv.setStyleSheet(CSS_INPUT)
@@ -1417,8 +1409,8 @@ class PedidoWidget(QWidget):
             wq = self.tabela.cellWidget(r, 1)
             wv = self.tabela.cellWidget(r, 3)
             if wq and wv:
-                vl = wq.value() * wv.value()
-                subtotal += vl
+                # Mantém precisão no cálculo; formatação para moeda ocorre na exibição.
+                vl = wq.value() * wv.value(); subtotal += vl
                 it = self.tabela.item(r, 4)
                 if it: it.setText(self._fmt(vl))
         self.tabela.blockSignals(False)

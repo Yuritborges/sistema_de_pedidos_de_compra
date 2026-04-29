@@ -3,11 +3,7 @@
 
 import os
 import json
-
-_ASSETS = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), '..', '..', 'assets')
-)
-_JSON = os.path.join(_ASSETS, 'funcionarios.json')
+from app.data.cadastros_store import FUNCIONARIOS_JSON as _JSON
 
 # Funcionários criados na primeira vez que o sistema rodar
 _PADRAO = ["IURY", "THAMYRES"]
@@ -27,7 +23,7 @@ def _carregar():
 
 
 def _salvar(lista):
-    os.makedirs(_ASSETS, exist_ok=True)
+    os.makedirs(os.path.dirname(_JSON), exist_ok=True)
     with open(_JSON, 'w', encoding='utf-8') as f:
         json.dump(lista, f, ensure_ascii=False, indent=2)
 

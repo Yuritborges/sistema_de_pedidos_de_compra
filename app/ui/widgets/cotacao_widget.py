@@ -4,6 +4,7 @@ import os, json
 from datetime import datetime
 from urllib.parse import quote
 from app.data.database import copiar_arquivo_para_rede
+from app.data.cadastros_store import OBRAS_JSON as _OBR_JSON
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
     QTableWidget, QTableWidgetItem, QHeaderView, QLineEdit,
@@ -22,7 +23,6 @@ from app.ui.style import (
 )
 
 _ASSETS   = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'assets'))
-_OBR_JSON = os.path.join(_ASSETS, 'obras.json')
 _COT_DIR  = os.path.join(_ASSETS, 'cotacoes_salvas')
 
 # Cores por fornecedor

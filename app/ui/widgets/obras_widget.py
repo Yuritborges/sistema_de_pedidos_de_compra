@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont
+from app.data.cadastros_store import OBRAS_JSON as _OBR
 
 # ── Estilo centralizado ───────────────────────────────────────────────────────
 from app.ui.style import (
@@ -23,7 +24,6 @@ from app.ui.style import (
 _ASSETS = os.path.normpath(
     os.path.join(os.path.dirname(__file__), '..', '..', '..', 'assets')
 )
-_OBR = os.path.join(_ASSETS, 'obras.json')
 
 
 def _load_json(p):

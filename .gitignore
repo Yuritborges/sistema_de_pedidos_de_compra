@@ -30,6 +30,8 @@ __pycache__/
 dist/
 build/
 releases/
+current/
+backups/
 .env
 venv/
 .venv/
