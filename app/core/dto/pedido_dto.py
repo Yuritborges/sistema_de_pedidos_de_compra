@@ -82,16 +82,30 @@ class PedidoDTO:
     def estimativa_vencimento(self):
         from datetime import datetime, timedelta
         try:
-            # pega o primeiro prazo (ex: "28/42" → 28)
-            primeiro = int(self.condicao_pagamento.split("/")[0])
+            # Extrai todos os prazos numéricos (ex.: "60/90/120" -> [60, 90, 120]).
+            # Mantém apenas valores válidos e preserva a ordem digitada.
+            prazos = []
+            for parte in str(self.condicao_pagamento or "").split("/"):
+                parte = parte.strip()
+                if not parte:
+                    continue
+                try:
+                    prazos.append(int(parte))
+                except ValueError:
+                    continue
+            if not prazos:
+                return ""
 
-            # usa a data prevista de entrega como base
+            # Usa a data prevista de entrega como base.
             data_base = self.data_prevista_entrega
-
             for fmt in ("%d/%m/%y", "%d/%m/%Y"):
                 try:
                     dt = datetime.strptime(data_base, fmt)
-                    return (dt + timedelta(days=primeiro)).strftime("%d/%m/%y")
+                    vencimentos = [
+                        (dt + timedelta(days=dias)).strftime("%d/%m/%y")
+                        for dias in prazos
+                    ]
+                    return " / ".join(vencimentos)
                 except ValueError:
                     continue
 
