@@ -1,0 +1,43 @@
+{
+  "versao": 1,
+  "arquivo_origem": "",
+  "obra": "ALAY CORREA",
+  "empresa_faturadora": "BRASUL",
+  "fornecedores": [
+    "teste 1",
+    "teste 2",
+    "teste 3"
+  ],
+  "fretes": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "descontos": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "itens": [
+    {
+      "descricao": "TESTES",
+      "quantidade": 1.0,
+      "unidade": "UNID.",
+      "precos": [
+        2.0,
+        4.0,
+        4.0
+      ]
+    },
+    {
+      "descricao": "TESTESSS",
+      "quantidade": 1.0,
+      "unidade": "UNID.",
+      "precos": [
+        21.0,
+        32.0,
+        33.0
+      ]
+    }
+  ]
+}

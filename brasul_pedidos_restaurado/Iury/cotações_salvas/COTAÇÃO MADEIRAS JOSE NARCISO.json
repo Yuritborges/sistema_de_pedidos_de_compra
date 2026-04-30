@@ -1,0 +1,63 @@
+{
+  "versao": 1,
+  "arquivo_origem": "",
+  "obra": "JOSE NARCISO",
+  "empresa_faturadora": "BRASUL",
+  "fornecedores": [
+    "MAD VERDE",
+    "MADEREIRA MORETTI",
+    ""
+  ],
+  "fretes": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "descontos": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "itens": [
+    {
+      "descricao": "CH. RESINADO 2,20 X 1,10 X 10M/M",
+      "quantidade": 20.0,
+      "unidade": "UNID.",
+      "precos": [
+        55.9,
+        52.11,
+        null
+      ]
+    },
+    {
+      "descricao": "PÇ. PONTALETE 6CM X 6CM PINUS C/3MTS",
+      "quantidade": 12.0,
+      "unidade": "UNID.",
+      "precos": [
+        15.69,
+        15.23,
+        null
+      ]
+    },
+    {
+      "descricao": "PÇ. SARRAFO 2CM X 7CM PINUS C/3MTS",
+      "quantidade": 30.0,
+      "unidade": "UNID.",
+      "precos": [
+        5.55,
+        5.33,
+        null
+      ]
+    },
+    {
+      "descricao": "KG. PREGO 17 X 21",
+      "quantidade": 1.0,
+      "unidade": "KG",
+      "precos": [
+        21.3,
+        15.02,
+        null
+      ]
+    }
+  ]
+}

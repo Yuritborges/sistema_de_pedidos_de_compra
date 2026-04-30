@@ -1,0 +1,93 @@
+{
+  "versao": 1,
+  "arquivo_origem": "",
+  "obra": "JOSE NARCISO",
+  "empresa_faturadora": "BRASUL",
+  "fornecedores": [
+    "DEP PADRAO",
+    "CASA DO LOJISTA",
+    "LONGAMETRAGEM"
+  ],
+  "fretes": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "descontos": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "itens": [
+    {
+      "descricao": "MARRETA TENACE C/CABO 1500GR",
+      "quantidade": 2.0,
+      "unidade": "UNID.",
+      "precos": [
+        53.78,
+        41.5,
+        65.0
+      ]
+    },
+    {
+      "descricao": "GIRICA CARRINHO DE MAO - 60 LITROS - EXTRA FORTE",
+      "quantidade": 1.0,
+      "unidade": "UNID.",
+      "precos": [
+        339.9,
+        585.0,
+        47900.0
+      ]
+    },
+    {
+      "descricao": "CADEADO CR45 - PAPAIZ",
+      "quantidade": 1.0,
+      "unidade": "UNID.",
+      "precos": [
+        49.67,
+        24.4,
+        35.9
+      ]
+    },
+    {
+      "descricao": "MARTELO UNHA 27MM POL PROF - COLLINS",
+      "quantidade": 1.0,
+      "unidade": "UNID.",
+      "precos": [
+        29.9,
+        25.0,
+        50.0
+      ]
+    },
+    {
+      "descricao": "PONTEIRO ACO LORD 3/4 X 12",
+      "quantidade": 2.0,
+      "unidade": "UNID.",
+      "precos": [
+        12.8,
+        21.9,
+        18.0
+      ]
+    },
+    {
+      "descricao": "TALHADEIRA ACO LORD 3/4 X 12",
+      "quantidade": 2.0,
+      "unidade": "UNID.",
+      "precos": [
+        13.9,
+        19.8,
+        18.0
+      ]
+    },
+    {
+      "descricao": "CORRENTE SOLD.S.RAPHAEL 3 MM 12.5K",
+      "quantidade": 1.0,
+      "unidade": "UNID.",
+      "precos": [
+        409.0,
+        409.0,
+        960.0
+      ]
+    }
+  ]
+}

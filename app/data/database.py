@@ -21,7 +21,7 @@ except Exception:
 # ============================================================
 # CONFIGURAÇÃO DE REDE
 # ============================================================
-REDE_BASE_DIR = r"Z:\0 OBRAS\brasul_pedidos"
+REDE_BASE_DIR = r"C:\Users\yurit\OneDrive\Documentos\sistema_pedido_de_compra\sistema_de_pedidos_de_compra\brasul_pedidos_restaurado\Iury\cotacao_iury\Iury"
 
 
 def _normalizar_nome_comprador(nome: str) -> str:

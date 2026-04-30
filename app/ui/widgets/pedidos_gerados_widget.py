@@ -2,11 +2,13 @@
 # Aba simples que lista todos os pedidos gerados e permite abrir o PDF.
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QPushButton, QHeaderView, QMessageBox
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
+    QPushButton, QHeaderView, QMessageBox,
 )
 from PySide6.QtCore import Qt
 import os
+
+from app.ui.style import btn_solid
 
 
 class PedidosGeradosWidget(QWidget):
@@ -50,7 +52,7 @@ class PedidosGeradosWidget(QWidget):
 
             with get_connection() as conn:
                 rows = conn.execute("""
-                    SELECT numero, data_pedido, obra_nome,
+                    SELECT id, numero, data_pedido, obra_nome,
                            fornecedor_nome, valor_total, caminho_pdf
                     FROM pedidos
                     ORDER BY id DESC
@@ -59,6 +61,7 @@ class PedidosGeradosWidget(QWidget):
             self.tabela.setRowCount(len(rows))
 
             for i, row in enumerate(rows):
+                pedido_id   = int(row["id"])
                 numero      = str(row["numero"] or "")
                 data        = str(row["data_pedido"] or "")
                 obra        = str(row["obra_nome"] or "")
@@ -74,12 +77,32 @@ class PedidosGeradosWidget(QWidget):
                 self.tabela.setItem(i, 3, QTableWidgetItem(fornecedor))
                 self.tabela.setItem(i, 4, QTableWidgetItem(valor_fmt))
 
-                btn = QPushButton("Abrir PDF")
-                btn.clicked.connect(lambda _, p=caminho_pdf: self.abrir_pdf(p))
-                self.tabela.setCellWidget(i, 5, btn)
+                acoes = QWidget()
+                hl = QHBoxLayout(acoes)
+                hl.setContentsMargins(4, 2, 4, 2)
+                hl.setSpacing(6)
+
+                btn_pdf = QPushButton("Abrir PDF")
+                btn_pdf.setFixedHeight(30)
+                btn_pdf.clicked.connect(lambda _, p=caminho_pdf: self.abrir_pdf(p))
+
+                btn_prazo = btn_solid("Prazo obra", "#25D366", h=30)
+                btn_prazo.setToolTip(
+                    "Gera imagem com prazo e itens para colar no WhatsApp da obra."
+                )
+                btn_prazo.clicked.connect(lambda _, pid=pedido_id: self._gerar_imagem_prazo(pid))
+
+                hl.addWidget(btn_pdf)
+                hl.addWidget(btn_prazo)
+                self.tabela.setCellWidget(i, 5, acoes)
 
         except Exception as e:
             QMessageBox.warning(self, "Erro", f"Não foi possível carregar os pedidos.\n\n{e}")
+
+    def _gerar_imagem_prazo(self, pedido_id: int):
+        from app.infrastructure.prazo_entrega_imagem import gerar_imagem_prazo_entrega
+
+        gerar_imagem_prazo_entrega(self, pedido_id)
 
     def abrir_pdf(self, caminho_pdf):
         if not caminho_pdf:

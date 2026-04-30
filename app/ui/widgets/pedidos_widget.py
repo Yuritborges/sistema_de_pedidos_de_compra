@@ -189,7 +189,7 @@ class PedidosWidget(QWidget):
         hh.setSectionResizeMode(2, QHeaderView.Stretch)
         hh.setSectionResizeMode(3, QHeaderView.Stretch)
         hh.setSectionResizeMode(4, QHeaderView.Fixed);  self.tabela.setColumnWidth(4, 115)
-        hh.setSectionResizeMode(5, QHeaderView.Fixed);  self.tabela.setColumnWidth(5, 530)
+        hh.setSectionResizeMode(5, QHeaderView.Fixed);  self.tabela.setColumnWidth(5, 380)
         cvl.addWidget(self.tabela)
         vl.addWidget(container, 1)
 
@@ -514,7 +514,7 @@ class PedidosWidget(QWidget):
         """Insere uma única linha na tabela. Usado pela paginação."""
         r = self.tabela.rowCount()
         self.tabela.insertRow(r)
-        self.tabela.setRowHeight(r, 48)
+        self.tabela.setRowHeight(r, 92)
         bg = WHITE if r % 2 == 0 else "#FBF7F7"
 
         def _it(txt, align=Qt.AlignVCenter|Qt.AlignLeft, bold=False, cor=None):
@@ -532,40 +532,63 @@ class PedidosWidget(QWidget):
         self.tabela.setItem(r, 4, _it(dados["empresa"], Qt.AlignVCenter|Qt.AlignCenter, bold=True, cor=cor_e))
 
         cell = QWidget(); cell.setStyleSheet(f"background:{bg};")
-        hl = QHBoxLayout(cell); hl.setContentsMargins(8,6,8,6); hl.setSpacing(6)
+        vl_acoes = QVBoxLayout(cell)
+        vl_acoes.setContentsMargins(10, 10, 10, 10)
+        vl_acoes.setSpacing(10)
+
+        num = dados["numero"]
+        p = dados["caminho"]
+        n = dados["nome"]
+        pid = int(dados["id"])
 
         ba = btn_solid("📄 Abrir", BLUE, h=30)
-        p  = dados["caminho"]
-        ba.setMinimumWidth(78)
+        ba.setMinimumWidth(72)
         ba.clicked.connect(lambda _, x=p: self._abrir_pdf(x))
 
         be = btn_solid("💾 Exportar", GREEN, h=30)
-        n  = dados["nome"]
-        be.setMinimumWidth(92)
+        be.setMinimumWidth(88)
         be.clicked.connect(lambda _, x=p, y=n: self._exportar(x, y))
 
         br = btn_solid("🖨 Reimprimir", "#8E44AD", h=30)
-        num = dados["numero"]
-        br.setMinimumWidth(108)
+        br.setMinimumWidth(100)
         br.setToolTip(f"Regera o PDF do pedido #{num}")
         br.clicked.connect(lambda _, x=num: self._reimprimir(x))
 
+        row1 = QHBoxLayout()
+        row1.setSpacing(10)
+        row1.setContentsMargins(0, 0, 0, 0)
+        row1.addWidget(ba)
+        row1.addWidget(be)
+        row1.addWidget(br)
+        row1.addStretch(1)
+
         bed = btn_solid("✏️ Editar", "#F39C12", h=30)
-        bed.setMinimumWidth(82)
+        bed.setMinimumWidth(78)
         bed.setToolTip(f"Carrega o pedido #{num} na aba Pedido de Compra para edição")
         bed.clicked.connect(lambda _, x=num: self._editar_pedido(x))
 
+        bpr = btn_solid("📅 Prazo obra", "#25D366", h=30)
+        bpr.setMinimumWidth(104)
+        bpr.setToolTip(
+            "Gera imagem com prazo de entrega e itens para colar no WhatsApp (Ctrl+V)."
+        )
+        bpr.clicked.connect(lambda _, x=pid: self._gerar_imagem_prazo_obra(x))
+
         bx = btn_solid("🗑 Excluir", "#C0392B", h=30)
-        bx.setMinimumWidth(86)
+        bx.setMinimumWidth(82)
         bx.setToolTip(f"Remove o pedido #{num} do banco e da relação")
         bx.clicked.connect(lambda _, x=num: self._excluir_pedido(x))
 
-        hl.addWidget(ba)
-        hl.addWidget(be)
-        hl.addWidget(br)
-        hl.addWidget(bed)
-        hl.addWidget(bx)
-        hl.addStretch()
+        row2 = QHBoxLayout()
+        row2.setSpacing(10)
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.addWidget(bed)
+        row2.addWidget(bpr)
+        row2.addWidget(bx)
+        row2.addStretch(1)
+
+        vl_acoes.addLayout(row1)
+        vl_acoes.addLayout(row2)
         self.tabela.setCellWidget(r, 5, cell)
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -869,6 +892,11 @@ class PedidosWidget(QWidget):
                 "Erro ao excluir pedido",
                 f"Não foi possível excluir o pedido #{numero}.\n\n{e}"
             )
+
+    def _gerar_imagem_prazo_obra(self, pedido_id: int):
+        from app.infrastructure.prazo_entrega_imagem import gerar_imagem_prazo_entrega
+
+        gerar_imagem_prazo_entrega(self, pedido_id)
 
     def _editar_pedido(self, numero):
         """
