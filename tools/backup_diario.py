@@ -14,6 +14,12 @@ DB_FILES = {
     "rede": os.path.join(BASE_REDE, "cotacao_rede.db"),
 }
 
+CADASTROS_FILES = {
+    "fornecedores": os.path.join(BASE_REDE, "cadastros_compartilhados", "fornecedores.json"),
+    "obras": os.path.join(BASE_REDE, "cadastros_compartilhados", "obras.json"),
+    "funcionarios": os.path.join(BASE_REDE, "cadastros_compartilhados", "funcionarios.json"),
+}
+
 CURRENT_DIR = os.path.join(BASE_PROJETO, "current")
 BACKUP_ROOT = os.path.join(BASE_PROJETO, "backups")
 
@@ -36,6 +42,17 @@ def _backup_bancos(ts: str, pasta_saida: str):
         destino = os.path.join(pasta_saida, f"{nome}_{ts}.db")
         _sqlite_safe_backup(origem, destino)
         print(f"[OK] Backup banco: {destino}")
+
+
+def _backup_cadastros(ts: str, pasta_saida: str):
+    os.makedirs(pasta_saida, exist_ok=True)
+    for nome, origem in CADASTROS_FILES.items():
+        if not os.path.exists(origem):
+            print(f"[AVISO] Cadastro não encontrado: {origem}")
+            continue
+        destino = os.path.join(pasta_saida, f"{nome}_{ts}.json")
+        shutil.copy2(origem, destino)
+        print(f"[OK] Backup cadastro: {destino}")
 
 
 def _zip_current(ts: str, pasta_saida: str):
@@ -71,6 +88,7 @@ def main():
 
     print(f"[INICIO] Backup diário {ts}")
     _backup_bancos(ts, diaria_dir)
+    _backup_cadastros(ts, diaria_dir)
     _zip_current(ts, diaria_dir)
     _limpar_antigos(diaria_dir, manter_dias=30)
     print(f"[FIM] Backup concluído em: {diaria_dir}")

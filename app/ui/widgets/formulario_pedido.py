@@ -41,6 +41,11 @@ def _save(p, d):
         json.dump(d, f, ensure_ascii=False, indent=2)
 
 
+def _texto_placeholder_combo(txt: str) -> bool:
+    t = (txt or "").strip().lower()
+    return (not t) or t.startswith("-- selecione")
+
+
 # ── Paleta ─────────────────────────────────────────────────────────────────────
 RED   = "#C0392B"
 GRAY  = "#2C2C2C"
@@ -1516,6 +1521,41 @@ class PedidoWidget(QWidget):
         if idx >= 0: self.e_fsel.setCurrentIndex(idx)
         QMessageBox.information(self,"Salvo!",f"'{nome}' cadastrado com sucesso.")
 
+    def _persistir_fornecedor_em_cadastro(self):
+        """
+        Garante que o fornecedor usado no pedido fique salvo no cadastro.
+        Isso evita perder fornecedor digitado direto no combo ao reabrir o app.
+        """
+        nome_combo = (self.e_fsel.currentText() or "").strip()
+        nome_campo = (self.e_fn.text() or "").strip()
+        nome = nome_campo or nome_combo
+        if _texto_placeholder_combo(nome):
+            return
+
+        atual = self._forns.get(nome, {})
+        novo = {
+            "razao": (self.e_fraz.text() or "").strip(),
+            "email": (self.e_fem.text() or "").strip(),
+            "vendedor": (self.e_fvend.text() or "").strip(),
+            "telefone": (self.e_ftel.text() or "").strip(),
+        }
+
+        # Mantém dados já existentes quando o campo atual estiver vazio.
+        merged = dict(atual)
+        for k, v in novo.items():
+            if v:
+                merged[k] = v
+            elif k not in merged:
+                merged[k] = ""
+
+        if nome not in self._forns or merged != atual:
+            self._forns[nome] = merged
+            _save(_FOR, self._forns)
+            self._reload_forns()
+            idx = self.e_fsel.findText(nome)
+            if idx >= 0:
+                self.e_fsel.setCurrentIndex(idx)
+
     # ══════════════════════════════════════════════════════════════════════════
     # SALVAR / CARREGAR RASCUNHO DO PEDIDO
     # ══════════════════════════════════════════════════════════════════════════
@@ -1881,6 +1921,7 @@ class PedidoWidget(QWidget):
 
             dto = self._montar_dto(empresa)
             path = self._service.gerar_pdf(dto)
+            self._persistir_fornecedor_em_cadastro()
 
             numero_gerado = str(dto.numero).strip()
             numero_em_edicao = str(self._pedido_editando_numero or "").strip()
