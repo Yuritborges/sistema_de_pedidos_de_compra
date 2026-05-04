@@ -10,7 +10,7 @@ import shutil
 import sqlite3
 import time
 from datetime import datetime
-from config import DATABASE_PATH, BACKUP_DIR
+from config import DATABASE_PATH, BACKUP_DIR, BASE_REDE_DIR
 
 
 try:
@@ -22,7 +22,7 @@ except Exception:
 # ============================================================
 # CONFIGURAÇÃO DE REDE
 # ============================================================
-REDE_BASE_DIR = r"C:\Users\yurit\OneDrive\Documentos\sistema_pedido_de_compra\sistema_de_pedidos_de_compra\brasul_pedidos_restaurado\Iury\cotacao_iury\Iury"
+REDE_BASE_DIR = BASE_REDE_DIR
 
 
 def _normalizar_nome_comprador(nome: str) -> str:
