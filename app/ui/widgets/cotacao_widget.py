@@ -1573,8 +1573,13 @@ class CotacaoWidget(QWidget):
         emp  = self._cb_emp.currentText()
         try:
             mw = self.window()
-            if hasattr(mw, '_pages') and 'pedido' in mw._pages:
+            if hasattr(mw, "obter_pagina"):
+                pw = mw.obter_pagina("pedido")
+            elif hasattr(mw, '_pages') and 'pedido' in mw._pages:
                 pw = mw._pages['pedido']
+            else:
+                pw = None
+            if pw is not None:
                 if hasattr(pw, 'preencher_da_cotacao'):
                     pw.preencher_da_cotacao(fornecedor=fornecedor, obra=obra, empresa=emp, itens=itens)
                     if hasattr(mw, '_nav'): mw._nav('pedido')

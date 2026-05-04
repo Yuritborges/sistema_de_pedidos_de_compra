@@ -8,6 +8,7 @@
 import os
 import shutil
 import sqlite3
+import time
 from datetime import datetime
 from config import DATABASE_PATH, BACKUP_DIR
 
@@ -69,7 +70,14 @@ def get_connection():
 # INICIALIZAÇÃO DO BANCO
 # ============================================================
 def init_db():
+    inicio = time.perf_counter()
+    tempos = []
+
+    def marcar(etapa):
+        tempos.append((etapa, time.perf_counter() - inicio))
+
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
+    marcar("garantir-pasta-db")
 
     with get_connection() as conn:
         conn.executescript("""
@@ -162,12 +170,30 @@ def init_db():
 
             INSERT OR IGNORE INTO contador_pedidos (id, ultimo) VALUES (1, 2548);
         """)
+    marcar("schema-e-migracoes")
 
     print(f"[DB] Banco inicializado: {DATABASE_PATH}")
     print(f"[REDE] Espelho configurado para: {REDE_DB_PATH}")
 
     _fazer_backup_se_necessario()
+    marcar("backup-semanal")
     sincronizar_com_rede(silencioso=True)
+    marcar("sincronizar-rede")
+
+    try:
+        base = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        log_path = os.path.join(base, "startup_v2.log")
+        agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        linhas = [f"[Database.init_db] {agora}"]
+        anterior = 0.0
+        for etapa, acumulado in tempos:
+            delta = acumulado - anterior
+            linhas.append(f"{etapa:24s} +{delta:7.3f}s  total={acumulado:7.3f}s")
+            anterior = acumulado
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write("\n".join(linhas) + "\n")
+    except Exception:
+        pass
 
 
 # ============================================================

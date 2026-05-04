@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
     QDoubleSpinBox, QGroupBox, QScrollArea, QSpinBox, QCompleter,
     QDialog, QFormLayout, QDialogButtonBox, QTextEdit, QAbstractItemView,
-    QFileDialog,
+    QFileDialog, QCheckBox,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeyEvent
@@ -715,6 +715,14 @@ class PedidoWidget(QWidget):
         self.e_num.setToolTip("Gerado automaticamente. Pode editar manualmente.")
         self.e_num.editingFinished.connect(self._num_digitado_manualmente)
         self.e_data = _fld(datetime.now().strftime("%d/%m/%Y"))
+        self.e_data.setReadOnly(True)
+        self.e_data.setToolTip("Automática por padrão. Marque 'Data manual' para editar.")
+        self.chk_data_manual = QCheckBox("Data manual")
+        self.chk_data_manual.setStyleSheet(f"font-size:11px;color:{TXT_S};")
+        self.chk_data_manual.toggled.connect(self._alternar_data_manual)
+        self.btn_data_hoje = _btn("Hoje", "#555555", mini=True)
+        self.btn_data_hoje.setToolTip("Volta a data para hoje e mantém no modo automático.")
+        self.btn_data_hoje.clicked.connect(self._definir_data_hoje)
         self.e_prazo = QSpinBox()
         self.e_prazo.setRange(0,365); self.e_prazo.setValue(0)
         self.e_prazo.setSuffix(" dias"); self.e_prazo.setStyleSheet(CSS_INPUT)
@@ -756,12 +764,24 @@ class PedidoWidget(QWidget):
 
         hl.addLayout(_col("Nº Pedido",      self.e_num,   110))
         hl.addLayout(_col("Data",           self.e_data,  110))
+        hl.addWidget(self.chk_data_manual)
+        hl.addWidget(self.btn_data_hoje)
         hl.addLayout(_col("Prazo entrega",  self.e_prazo, 110))
         hl.addLayout(_col("Condição pagto", self.e_cond,  130))
         hl.addLayout(_col("Forma pagto",    self.e_forma, 120))
         hl.addLayout(vl_comp)
         hl.addStretch()
         box.setLayout(hl); return box
+
+    def _alternar_data_manual(self, habilitar: bool):
+        self.e_data.setReadOnly(not habilitar)
+        if not habilitar:
+            # Ao voltar para automático, sempre usa a data de hoje.
+            self.e_data.setText(datetime.now().strftime("%d/%m/%Y"))
+
+    def _definir_data_hoje(self):
+        self.chk_data_manual.setChecked(False)
+        self.e_data.setText(datetime.now().strftime("%d/%m/%Y"))
 
     def _selecionar_comprador(self):
         # Abre o seletor de comprador e atualiza o botão
@@ -1718,7 +1738,9 @@ class PedidoWidget(QWidget):
         """Aplica na tela os dados carregados do JSON."""
         # Dados do pedido
         self.e_num.setText(str(dados.get("numero", proximo_numero_pedido())))
-        self.e_data.setText(str(dados.get("data_pedido", datetime.now().strftime("%d/%m/%Y"))))
+        data_pedido = str(dados.get("data_pedido", datetime.now().strftime("%d/%m/%Y")))
+        self.e_data.setText(data_pedido)
+        self.chk_data_manual.setChecked(True)
         self.e_prazo.setValue(int(dados.get("prazo_entrega", 5) or 5))
 
         self._set_combo_text(self.e_cond, dados.get("condicao_pagamento", ""))
@@ -1825,6 +1847,7 @@ class PedidoWidget(QWidget):
             # Dados principais
             self.e_num.setText(str(pedido["numero"] or ""))
             self.e_data.setText(str(pedido["data_pedido"] or datetime.now().strftime("%d/%m/%Y")))
+            self.chk_data_manual.setChecked(True)
             self.e_prazo.setValue(int(pedido["prazo_entrega"] or 0))
 
             self._set_combo_text(self.e_cond, str(pedido["condicao_pagamento"] or ""))
@@ -1914,10 +1937,15 @@ class PedidoWidget(QWidget):
         try:
             prazo = int(self.e_prazo.value())
             cond = (self.e_cond.currentText() or "").strip()
+            data_digitada = (self.e_data.text() or "").strip()
             if prazo < 0:
                 raise ValueError("Informe um prazo de entrega válido (0 ou mais dias).")
             if not cond:
                 raise ValueError("Informe a condição de pagamento antes de gerar o pedido.")
+            try:
+                datetime.strptime(data_digitada, "%d/%m/%Y")
+            except Exception:
+                raise ValueError("Data inválida. Use o formato DD/MM/AAAA.")
 
             dto = self._montar_dto(empresa)
             path = self._service.gerar_pdf(dto)
@@ -2037,6 +2065,7 @@ class PedidoWidget(QWidget):
         if resp != QMessageBox.Yes: return
 
         self.e_num.setText(proximo_numero_pedido())
+        self.chk_data_manual.setChecked(False)
         self.e_data.setText(datetime.now().strftime("%d/%m/%Y"))
         self.e_prazo.setValue(0)
         self.e_cond.setCurrentIndex(0); self.e_forma.setCurrentIndex(0)
@@ -2122,6 +2151,7 @@ class PedidoWidget(QWidget):
 
         # Numero e data atualizados
         self.e_num.setText(proximo_numero_pedido())
+        self.chk_data_manual.setChecked(False)
         self.e_data.setText(datetime.now().strftime("%d/%m/%Y"))
         # Mantém o comprador atual selecionado
 

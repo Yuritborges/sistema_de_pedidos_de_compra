@@ -3,6 +3,8 @@
 
 import os
 import traceback
+import time
+from datetime import datetime
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -13,23 +15,6 @@ from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QPixmap, QIcon, QFont, QShortcut, QKeySequence, QColor, QPainter
 
 from app.ui.widgets.formulario_pedido import PedidoWidget
-from app.ui.widgets.obras_widget import ObrasWidget
-from app.ui.widgets.cotacao_widget import CotacaoWidget
-from app.ui.widgets.historico_widget import HistoricoWidget
-from app.ui.widgets.pedidos_widget import PedidosWidget
-from PySide6.QtGui import QIcon
-
-
-# Nova aba de manutenção de cadastros
-try:
-    from app.ui.widgets.cadastros_widget import CadastrosWidget
-except Exception as e:
-    CadastrosWidget = None
-    CADASTROS_IMPORT_ERROR = e
-    CADASTROS_IMPORT_TRACEBACK = traceback.format_exc()
-else:
-    CADASTROS_IMPORT_ERROR = None
-    CADASTROS_IMPORT_TRACEBACK = ""
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -131,35 +116,84 @@ class MainWindow(QMainWindow):
             self.setWindowIcon(QIcon(icon_path))
 
     def _build(self):
+        inicio = time.perf_counter()
+        marcacoes = []
+
+        def marcar(etapa):
+            marcacoes.append((etapa, time.perf_counter() - inicio))
+
         root = QWidget()
         self.setCentralWidget(root)
+        marcar("root-central-widget")
 
         lay = QHBoxLayout(root)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(self._sidebar())
+        marcar("sidebar-pronta")
 
         self._stack = QStackedWidget()
         self._stack.setStyleSheet(f"background:{C_BG};")
         lay.addWidget(self._stack, 1)
+        marcar("stack-pronto")
 
-        self._pages = {
-            "pedido": PedidoWidget(),
-            "pedidos": PedidosWidget(),
-            "cotacao": CotacaoWidget(),
-            "obras": ObrasWidget(),
-            "historico": HistoricoWidget(),
-            "cadastros": self._criar_pagina_cadastros(),
+        self._page_factories = {
+            "pedido": self._criar_pagina_pedido,
+            "pedidos": self._criar_pagina_pedidos,
+            "cotacao": self._criar_pagina_cotacao,
+            "obras": self._criar_pagina_obras,
+            "historico": self._criar_pagina_historico,
+            "cadastros": self._criar_pagina_cadastros,
         }
-
-        for p in self._pages.values():
-            self._stack.addWidget(p)
+        # Lazy load: páginas são criadas apenas quando abertas.
+        self._pages = {k: None for k in self._page_factories}
+        marcar("factories-configuradas")
 
         self._nav("pedido")
+        marcar("navegacao-inicial")
+        self._registrar_log_startup(marcacoes)
+
+    def _criar_pagina_pedido(self):
+        return PedidoWidget()
+
+    def _criar_pagina_pedidos(self):
+        from app.ui.widgets.pedidos_widget import PedidosWidget
+        return PedidosWidget()
+
+    def _criar_pagina_cotacao(self):
+        from app.ui.widgets.cotacao_widget import CotacaoWidget
+        return CotacaoWidget()
+
+    def _criar_pagina_obras(self):
+        from app.ui.widgets.obras_widget import ObrasWidget
+        return ObrasWidget()
+
+    def _criar_pagina_historico(self):
+        from app.ui.widgets.historico_widget import HistoricoWidget
+        return HistoricoWidget()
+
+    def _registrar_log_startup(self, marcacoes):
+        try:
+            base = os.path.normpath(os.path.join(_HERE, "..", "..", ".."))
+            log_path = os.path.join(base, "startup_v2.log")
+            agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            linhas = [f"[MainWindow] {agora}"]
+            anterior = 0.0
+            for etapa, acumulado in marcacoes:
+                delta = acumulado - anterior
+                linhas.append(f"{etapa:24s} +{delta:7.3f}s  total={acumulado:7.3f}s")
+                anterior = acumulado
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write("\n".join(linhas) + "\n")
+        except Exception:
+            pass
 
     def _criar_pagina_cadastros(self):
-        if CadastrosWidget is not None:
+        try:
+            from app.ui.widgets.cadastros_widget import CadastrosWidget
             return CadastrosWidget()
+        except Exception as e:
+            erro_cadastros = e
 
         # Página de fallback para o programa abrir mesmo se o widget de cadastros tiver erro
         page = QWidget()
@@ -173,7 +207,7 @@ class MainWindow(QMainWindow):
             "O sistema abriu, mas a aba Cadastros não pôde ser carregada.\n\n"
             "Verifique se o arquivo existe em:\n"
             "app/ui/widgets/cadastros_widget.py\n\n"
-            f"Erro:\n{CADASTROS_IMPORT_ERROR}"
+            f"Erro:\n{erro_cadastros}"
         )
         msg.setWordWrap(True)
         msg.setStyleSheet("font-size:12px; color:#333;")
@@ -311,13 +345,29 @@ class MainWindow(QMainWindow):
         for k, b in self._btns.items():
             b.setChecked(k == key)
 
-        self._stack.setCurrentWidget(self._pages[key])
+        widget = self.obter_pagina(key)
+        if widget is None:
+            return
+        self._stack.setCurrentWidget(widget)
 
         # Recarrega dados ao trocar de aba
-        widget = self._pages[key]
         if hasattr(widget, '_carregar'):
             widget._carregar()
         elif hasattr(widget, 'carregar_dados'):
             widget.carregar_dados()
         elif hasattr(widget, '_carregar_tudo'):
             widget._carregar_tudo()
+
+    def obter_pagina(self, key):
+        if key not in self._pages:
+            return None
+        pagina = self._pages.get(key)
+        if pagina is None:
+            try:
+                pagina = self._page_factories[key]()
+                self._pages[key] = pagina
+                self._stack.addWidget(pagina)
+            except Exception:
+                traceback.print_exc()
+                return None
+        return pagina

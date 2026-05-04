@@ -6,6 +6,8 @@ import sys
 import os
 import sys
 import json
+import time
+from datetime import datetime
 
 if sys.platform == "win32":
     try:
@@ -42,42 +44,73 @@ GLOBAL_CSS = """
 
 def main():
     try:
+        inicio_total = time.perf_counter()
+        tempos = []
+
+        def marcar(etapa):
+            tempos.append((etapa, time.perf_counter() - inicio_total))
+
         from PySide6.QtWidgets import (
             QApplication, QDialog, QVBoxLayout, QLabel, QPushButton,
             QHBoxLayout, QInputDialog, QMessageBox
         )
         from PySide6.QtGui import QIcon
+        marcar("imports-qt")
 
         app = QApplication(sys.argv)
         app.setApplicationName("Sistema de Cotação - Brasul")
         app.setOrganizationName("Brasul Construtora")
         app.setStyle("Fusion")
         app.setStyleSheet(GLOBAL_CSS)
+        marcar("qapplication-criada")
         icon_path = _icone_app_path()
         if icon_path:
             app.setWindowIcon(QIcon(icon_path))
+        marcar("icone-aplicado")
 
         usuario = _selecionar_usuario(app)
         if not usuario:
             return
+        marcar("usuario-selecionado")
 
         os.environ["BRASUL_USUARIO"] = usuario
 
         from app.data.database import init_db
         from app.ui.main_window import MainWindow, criar_splash
+        marcar("imports-app")
 
         init_db()
+        marcar("init-db")
 
         # Mostra splash enquanto a janela carrega
         splash = criar_splash()
         splash.show()
         app.processEvents()
+        marcar("splash-pronta")
 
         window = MainWindow()
+        marcar("main-window-criada")
 
-        # Fecha a splash e mostra a janela principal depois de 1.5s
+        # Fecha a splash assim que a janela principal estiver pronta.
         from PySide6.QtCore import QTimer
-        QTimer.singleShot(1500, lambda: (splash.finish(window), window.show()))
+        QTimer.singleShot(0, lambda: (splash.finish(window), window.show()))
+        marcar("timer-show-janela")
+
+        try:
+            base = os.path.dirname(os.path.abspath(__file__))
+            log_path = os.path.join(base, "startup_v2.log")
+            agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            linhas = [f"\n=== Startup {agora} ===", f"usuario={usuario}"]
+            anterior = 0.0
+            for etapa, acumulado in tempos:
+                delta = acumulado - anterior
+                linhas.append(f"{etapa:24s} +{delta:7.3f}s  total={acumulado:7.3f}s")
+                anterior = acumulado
+            linhas.append(f"TOTAL_INICIALIZACAO        total={anterior:7.3f}s")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write("\n".join(linhas) + "\n")
+        except Exception:
+            pass
 
         sys.exit(app.exec())
 

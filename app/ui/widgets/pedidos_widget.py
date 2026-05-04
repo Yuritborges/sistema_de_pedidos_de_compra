@@ -949,8 +949,12 @@ class PedidosWidget(QWidget):
             janela = self.window()
             pedido_widget = None
 
-            if hasattr(janela, "_pages") and "pedido" in getattr(janela, "_pages", {}):
+            if hasattr(janela, "obter_pagina"):
+                pedido_widget = janela.obter_pagina("pedido")
+            elif hasattr(janela, "_pages") and "pedido" in getattr(janela, "_pages", {}):
                 pedido_widget = janela._pages["pedido"]
+
+            if pedido_widget is not None:
                 if hasattr(janela, "_nav"):
                     janela._nav("pedido")
                 elif hasattr(janela, "_stack"):
