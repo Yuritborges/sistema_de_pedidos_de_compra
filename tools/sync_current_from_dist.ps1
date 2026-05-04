@@ -1,8 +1,7 @@
 # Copia dist\SistemaPedidosV2 para current\ (sem rodar PyInstaller).
-# Usa robocopy /MIR para nao depender de apagar a pasta inteira (menos conflito com arquivos em uso).
-# Se ainda falhar, feche o SistemaPedidosV2 em todos os PCs e rode de novo.
+# Caminhos com espacos (ex.: Z:\0 OBRAS\...) sao tratados corretamente.
 #
-# Uso: powershell -ExecutionPolicy Bypass -File tools\sync_current_from_dist.ps1
+# Uso (na raiz do projeto):  powershell -ExecutionPolicy Bypass -File tools\sync_current_from_dist.ps1
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
@@ -10,15 +9,25 @@ $src = Join-Path $Root "dist\SistemaPedidosV2"
 $cur = Join-Path $Root "current"
 
 if (-not (Test-Path (Join-Path $src "SistemaPedidosV2.exe"))) {
-    throw "Nao encontrei $src\SistemaPedidosV2.exe. Rode build_release.ps1 antes."
+    throw "Nao encontrei $src\SistemaPedidosV2.exe. Rode build_release.ps1 ou pyinstaller antes."
 }
 New-Item -ItemType Directory -Path $cur -Force | Out-Null
 
-# /MIR espelha dest para ficar igual ao dist; codigos 0-7 = OK no robocopy
-$rc = (Start-Process -FilePath "robocopy.exe" -ArgumentList @(
-    $src, $cur, "/MIR", "/R:30", "/W:3", "/NFL", "/NDL", "/NJH", "/NJS", "/NP"
-) -Wait -PassThru).ExitCode
+. (Join-Path $PSScriptRoot "robocopy_mirror.ps1")
+$rc = Invoke-RobocopyMirror -Source $src -Destination $cur
+
+# Robocopy: 0-7 = operacao concluida (bits combinados); >= 8 falha
 if ($rc -ge 8) {
-    throw "robocopy falhou (codigo $rc). Feche o SistemaPedidosV2 e tente de novo."
+    $msg = @()
+    $msg += "robocopy falhou (codigo $rc)."
+    if ($rc -eq 16) {
+        $msg += "Codigo 16 = erro grave (caminho invalido, permissao, ou sintaxe)."
+        $msg += "Confira se existe: $src"
+        $msg += "Feche SistemaPedidosV2 em todos os PCs se for arquivo em uso."
+    } else {
+        $msg += "Feche SistemaPedidosV2 em todos os PCs e tente de novo."
+    }
+    throw ($msg -join " ")
 }
+
 Write-Host "OK: $cur\SistemaPedidosV2.exe"

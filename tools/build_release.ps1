@@ -34,10 +34,8 @@ Copy-Item -Path $src -Destination $destRelease -Recurse -Force
 Write-Host "[3/3] Atualizando pasta current (atalhos da rede) ..."
 $cur = Join-Path $Root "current"
 New-Item -ItemType Directory -Path $cur -Force | Out-Null
-# /MIR espelha; /R /W = retentativas (arquivos em uso = feche o SistemaPedidosV2 em todos os PCs)
-$rc = (Start-Process -FilePath "robocopy.exe" -ArgumentList @(
-    $src, $cur, "/MIR", "/R:30", "/W:3", "/NFL", "/NDL", "/NJH", "/NJS", "/NP"
-) -Wait -PassThru).ExitCode
+. (Join-Path $PSScriptRoot "robocopy_mirror.ps1")
+$rc = Invoke-RobocopyMirror -Source $src -Destination $cur
 if ($rc -ge 8) {
     throw "Falha ao copiar para current (robocopy codigo $rc). Feche o SistemaPedidosV2 em todos os PCs e rode: tools\sync_current_from_dist.ps1"
 }
