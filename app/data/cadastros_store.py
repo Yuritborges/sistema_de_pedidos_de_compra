@@ -9,8 +9,12 @@ LOCAL_FORNECEDORES = os.path.join(LOCAL_ASSETS_DIR, "fornecedores.json")
 LOCAL_OBRAS = os.path.join(LOCAL_ASSETS_DIR, "obras.json")
 LOCAL_FUNCIONARIOS = os.path.join(LOCAL_ASSETS_DIR, "funcionarios.json")
 
+# Ponteiro único dos cadastros JSON na rede (mesma árvore do backup_diario).
+# Antes importava REDE_BASE_DIR do config — esse nome nunca existiu em config.py,
+# então caía sempre no fallback local (projeto/database ou _internal no .exe),
+# usando cópia antiga/pequena em vez de Z:\...\brasul_pedidos\cadastros_compartilhados.
 try:
-    from config import REDE_BASE_DIR
+    from config import BASE_REDE_DIR as REDE_BASE_DIR
 except Exception:
     REDE_BASE_DIR = os.path.join(BASE_DIR, "database")
 
