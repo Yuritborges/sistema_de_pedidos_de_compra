@@ -240,6 +240,12 @@ class _ComboSemRoda(QComboBox):
         event.ignore()
 
 
+class _SpinSemRoda(QDoubleSpinBox):
+    def wheelEvent(self, event):
+        # Evita alterar desconto ao rolar a página do formulário.
+        event.ignore()
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # DELEGATE — força maiúsculas em tempo real na coluna de descrição
 # ══════════════════════════════════════════════════════════════════════════════
@@ -295,8 +301,8 @@ class TabelaItens(QTableWidget):
         col = self.currentColumn()
 
         if key == Qt.Key_Tab:
-            # Ordem de tabulação: 0 (desc) → 1 (qtd) → 3 (valor) → próxima linha
-            ordem = [0, 1, 3]
+            # Ordem de tabulação: 0 (desc) -> 1 (qtd) -> 2 (unid) -> 3 (valor) -> próxima linha
+            ordem = [0, 1, 2, 3]
             if col in ordem:
                 prox_idx = ordem.index(col) + 1
                 if prox_idx < len(ordem):
@@ -321,6 +327,32 @@ class TabelaItens(QTableWidget):
                 if w:
                     w.setFocus()
                     if hasattr(w, 'selectAll'): w.selectAll()
+                return
+            if col == 1:
+                # Enter na quantidade -> unidade
+                self.setCurrentCell(row, 2)
+                w = self.cellWidget(row, 2)
+                if w:
+                    w.setFocus()
+                return
+            if col == 2:
+                # Enter na unidade -> valor unitário
+                self.setCurrentCell(row, 3)
+                w = self.cellWidget(row, 3)
+                if w:
+                    w.setFocus()
+                    if hasattr(w, 'selectAll'): w.selectAll()
+                return
+            if col == 3:
+                # Enter no valor -> próxima linha (ou cria nova linha)
+                prox_row = row + 1
+                if prox_row >= self.rowCount():
+                    parent = self.parent()
+                    if hasattr(parent, "_add_row"):
+                        parent._add_row()
+                if prox_row < self.rowCount():
+                    self.setCurrentCell(prox_row, 0)
+                    self.editItem(self.item(prox_row, 0))
                 return
 
         super().keyPressEvent(event)
@@ -728,13 +760,33 @@ class PedidoWidget(QWidget):
         self.e_prazo.setSuffix(" dias"); self.e_prazo.setStyleSheet(CSS_INPUT)
         self.e_cond = _combo([""] + list(CONDICOES_PAGAMENTO))
         self.e_cond.setEditable(True); self.e_cond.setInsertPolicy(QComboBox.NoInsert)
-        self.e_cond.lineEdit().setStyleSheet(CSS_INPUT)
+        self.e_cond.lineEdit().setStyleSheet(
+            CSS_INPUT + "QLineEdit{font-weight:600;font-size:12px;}"
+        )
         self.e_cond.setCurrentIndex(0)
         self.e_cond.lineEdit().setPlaceholderText("Selecione/Digite")
         self.e_cond.setToolTip("Selecione ou digite. Ex: 28/35/42  ou  À VISTA")
         self.e_forma = _combo(FORMAS_PAGAMENTO)
         self.e_forma.setEditable(True); self.e_forma.setInsertPolicy(QComboBox.NoInsert)
         self.e_forma.lineEdit().setStyleSheet(CSS_INPUT)
+        self.chk_pag_etapas = QCheckBox("Pagamento em etapas")
+        self.chk_pag_etapas.setStyleSheet(f"font-size:11px;color:{TXT_S};")
+        self.e_pg_entrada = QSpinBox()
+        self.e_pg_entrada.setRange(0, 100)
+        self.e_pg_entrada.setValue(50)
+        self.e_pg_entrada.setSuffix("%")
+        self.e_pg_entrada.setStyleSheet(CSS_INPUT)
+        self.e_pg_saldo = QSpinBox()
+        self.e_pg_saldo.setRange(0, 100)
+        self.e_pg_saldo.setValue(50)
+        self.e_pg_saldo.setSuffix("%")
+        self.e_pg_saldo.setReadOnly(True)
+        self.e_pg_saldo.setButtonSymbols(QSpinBox.NoButtons)
+        self.e_pg_saldo.setStyleSheet(CSS_INPUT)
+        self.e_pg_marco = _combo(["FINALIZAÇÃO"])
+        self.chk_pag_etapas.toggled.connect(self._toggle_pagamento_etapas)
+        self.e_pg_entrada.valueChanged.connect(self._sync_pagamento_etapas)
+        self.e_pg_marco.currentTextChanged.connect(self._sync_pagamento_etapas)
         # Comprador — botão que abre o seletor
         self._comprador_atual = COMPRADOR_PADRAO
         vl_comp = QVBoxLayout(); vl_comp.setSpacing(4)
@@ -766,12 +818,19 @@ class PedidoWidget(QWidget):
         hl.addLayout(_col("Data",           self.e_data,  110))
         hl.addWidget(self.chk_data_manual)
         hl.addWidget(self.btn_data_hoje)
-        hl.addLayout(_col("Prazo entrega",  self.e_prazo, 110))
-        hl.addLayout(_col("Condição pagto", self.e_cond,  130))
+        hl.addLayout(_col("Prazo entrega",  self.e_prazo, 100))
+        hl.addLayout(_col("Condição pagto", self.e_cond,  235))
         hl.addLayout(_col("Forma pagto",    self.e_forma, 120))
-        hl.addLayout(vl_comp)
+        hl.addWidget(self.chk_pag_etapas)
+        hl.addLayout(_col("Entrada", self.e_pg_entrada, 66))
+        hl.addLayout(_col("Saldo", self.e_pg_saldo, 66))
+        hl.addLayout(_col("Marco do saldo", self.e_pg_marco, 130))
         hl.addStretch()
-        box.setLayout(hl); return box
+        hl.addLayout(vl_comp)
+
+        box.setLayout(hl)
+        self._toggle_pagamento_etapas(False)
+        return box
 
     def _alternar_data_manual(self, habilitar: bool):
         self.e_data.setReadOnly(not habilitar)
@@ -782,6 +841,21 @@ class PedidoWidget(QWidget):
     def _definir_data_hoje(self):
         self.chk_data_manual.setChecked(False)
         self.e_data.setText(datetime.now().strftime("%d/%m/%Y"))
+
+    def _toggle_pagamento_etapas(self, ativo: bool):
+        self.e_pg_entrada.setEnabled(ativo)
+        self.e_pg_marco.setEnabled(ativo)
+        self._sync_pagamento_etapas()
+
+    def _sync_pagamento_etapas(self):
+        entrada = int(self.e_pg_entrada.value())
+        saldo = max(0, 100 - entrada)
+        self.e_pg_saldo.blockSignals(True)
+        self.e_pg_saldo.setValue(saldo)
+        self.e_pg_saldo.blockSignals(False)
+        if self.chk_pag_etapas.isChecked():
+            self.e_pg_marco.setCurrentText("FINALIZAÇÃO")
+            self.e_cond.setCurrentText(f"{entrada}% PARA INICIO E {saldo}% NA FINALIZAÇÃO.")
 
     def _selecionar_comprador(self):
         # Abre o seletor de comprador e atualiza o botão
@@ -1017,7 +1091,7 @@ class PedidoWidget(QWidget):
         hl.addWidget(self.btn_pct); hl.addWidget(self.btn_val)
 
         # Spin do valor do desconto
-        self.spin_desconto = QDoubleSpinBox()
+        self.spin_desconto = _SpinSemRoda()
         self.spin_desconto.setRange(0, 999_999)
         self.spin_desconto.setDecimals(2)
         self.spin_desconto.setValue(0.0)
@@ -1387,7 +1461,7 @@ class PedidoWidget(QWidget):
         self.tabela.setItem(r, 0, item_desc)
 
         # Col 1: quantidade — alta precisão para orçamentos fracionados
-        sq = _SpinFoco(decimais=6)
+        sq = _SpinFoco(decimais=4)
         sq.setRange(0, 999_999)
         sq.setValue(0.0)
         sq.setStyleSheet(CSS_INPUT)
@@ -1629,6 +1703,10 @@ class PedidoWidget(QWidget):
             "prazo_entrega": self.e_prazo.value(),
             "condicao_pagamento": self.e_cond.currentText(),
             "forma_pagamento": self.e_forma.currentText(),
+            "pagamento_etapas_ativo": self.chk_pag_etapas.isChecked(),
+            "percentual_entrada": self.e_pg_entrada.value(),
+            "percentual_final": self.e_pg_saldo.value(),
+            "marco_percentual_final": self.e_pg_marco.currentText(),
             "comprador": self._comprador_atual,
 
             "obra": self.e_obra.currentText(),
@@ -1745,6 +1823,10 @@ class PedidoWidget(QWidget):
 
         self._set_combo_text(self.e_cond, dados.get("condicao_pagamento", ""))
         self._set_combo_text(self.e_forma, dados.get("forma_pagamento", ""))
+        self.chk_pag_etapas.setChecked(bool(dados.get("pagamento_etapas_ativo", False)))
+        self.e_pg_entrada.setValue(int(dados.get("percentual_entrada", 50) or 0))
+        self.e_pg_marco.setCurrentText(str(dados.get("marco_percentual_final", "FINALIZAÇÃO") or "FINALIZAÇÃO"))
+        self._sync_pagamento_etapas()
 
         self._comprador_atual = str(dados.get("comprador", COMPRADOR_PADRAO) or COMPRADOR_PADRAO)
         self.btn_comprador.setText(f"👤  {self._comprador_atual}")
@@ -1852,6 +1934,10 @@ class PedidoWidget(QWidget):
 
             self._set_combo_text(self.e_cond, str(pedido["condicao_pagamento"] or ""))
             self._set_combo_text(self.e_forma, str(pedido["forma_pagamento"] or ""))
+            self.chk_pag_etapas.setChecked(bool(pedido["pagamento_etapas_ativo"] or 0))
+            self.e_pg_entrada.setValue(int(pedido["percentual_entrada"] or 0))
+            self.e_pg_marco.setCurrentText(str(pedido["marco_percentual_final"] or "FINALIZAÇÃO"))
+            self._sync_pagamento_etapas()
 
             comprador = str(pedido["comprador"] or COMPRADOR_PADRAO)
             self._comprador_atual = comprador
@@ -2047,6 +2133,10 @@ class PedidoWidget(QWidget):
             prazo_entrega=self.e_prazo.value(),
             condicao_pagamento=self.e_cond.currentText(),
             forma_pagamento=self.e_forma.currentText(),
+            pagamento_etapas_ativo=self.chk_pag_etapas.isChecked(),
+            percentual_entrada=self.e_pg_entrada.value(),
+            percentual_final=self.e_pg_saldo.value(),
+            marco_percentual_final=self.e_pg_marco.currentText(),
             observacao_extra=self.e_obs.toPlainText().strip(),
             desconto=desconto_reais,
             itens=itens,
@@ -2069,6 +2159,10 @@ class PedidoWidget(QWidget):
         self.e_data.setText(datetime.now().strftime("%d/%m/%Y"))
         self.e_prazo.setValue(0)
         self.e_cond.setCurrentIndex(0); self.e_forma.setCurrentIndex(0)
+        self.chk_pag_etapas.setChecked(False)
+        self.e_pg_entrada.setValue(50)
+        self.e_pg_marco.setCurrentText("FINALIZAÇÃO")
+        self._sync_pagamento_etapas()
         self._comprador_atual = COMPRADOR_PADRAO
         self.btn_comprador.setText(f"👤  {COMPRADOR_PADRAO}")
 

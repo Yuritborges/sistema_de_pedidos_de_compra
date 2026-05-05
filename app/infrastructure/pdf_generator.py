@@ -292,6 +292,9 @@ class PedidoCompraGenerator:
         c.setFont("Helvetica", 7.5); c.setFillColor(C_ESCURO)
         c.drawString(cx, y-13*mm, emp["endereco"][:80])
         c.drawString(cx, y-17.5*mm, f"Tel: {emp['telefone']}   |   {emp['email']}")
+        cnpj = str(emp.get("cnpj", "") or "").strip()
+        if cnpj:
+            c.drawString(cx, y-22*mm, f"CNPJ: {cnpj}")
 
         c.setFont("Helvetica-Bold", 22); c.setFillColor(C_PRETO)
         c.drawRightString(W-M-2*mm, y-11*mm, f"#{dto.numero}")
@@ -413,14 +416,17 @@ class PedidoCompraGenerator:
         c.setStrokeColor(C_LINHA); c.setLineWidth(0.8)
         c.rect(M, y-alt, CW, alt, fill=0, stroke=1)
 
-        cond  = dto.condicao_pagamento or "—"
-        forma = dto.forma_pagamento or "—"
+        cond  = str(dto.condicao_pagamento or "—").strip()
+        forma = str(dto.forma_pagamento or "—").strip()
+        cond_upper = cond.upper()
+        cond_em_etapas = "%" in cond_upper or " NO ATO " in f" {cond_upper} "
+        texto_faturamento = f"{cond}   {forma}" if cond_em_etapas else f"{cond} dias   {forma}"
 
         # Linha 1: Faturamento + Estimativa de vencimento
         c.setFont("Helvetica-Bold", 8); c.setFillColor(C_ESCURO)
         c.drawString(M+3*mm, y-5.5*mm, "Faturamento:")
         c.setFont("Helvetica-Bold", 9); c.setFillColor(C_PRETO)
-        c.drawString(M+32*mm, y-5.5*mm, f"{cond} dias   {forma}")
+        c.drawString(M+32*mm, y-5.5*mm, texto_faturamento)
         c.setFont("Helvetica-Bold", 8); c.setFillColor(C_ESCURO)
         c.drawRightString(W-M-3*mm, y-5.5*mm,
                           f"Estimativa de vencimento: {dto.estimativa_vencimento}")

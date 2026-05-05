@@ -127,8 +127,8 @@ def _users_file_path():
 def _icone_app_path():
     base = os.path.dirname(os.path.abspath(__file__))
     candidatos = [
-        os.path.join(base, "assets", "logos", "logo_brasul.ico"),
         os.path.join(base, "assets", "iconebrasul2.ico"),
+        os.path.join(base, "assets", "logos", "logo_brasul.ico"),
         os.path.join(base, "assets", "logo.ico"),
         os.path.join(base, "assets", "logos", "logo_brasul.png"),
         os.path.join(base, "assets", "logo_brasul.png"),

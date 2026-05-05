@@ -1030,6 +1030,10 @@ class PedidosWidget(QWidget):
                 fornecedor_razao=str(ped["fornecedor_razao"] or ""),
                 condicao_pagamento=str(ped["condicao_pagamento"] or ""),
                 forma_pagamento=str(ped["forma_pagamento"] or ""),
+                pagamento_etapas_ativo=bool(ped["pagamento_etapas_ativo"] or 0),
+                percentual_entrada=int(ped["percentual_entrada"] or 0),
+                percentual_final=int(ped["percentual_final"] or 0),
+                marco_percentual_final=str(ped["marco_percentual_final"] or "FINALIZAÇÃO"),
                 prazo_entrega=int(ped["prazo_entrega"] or 0),
                 itens=itens,
             )

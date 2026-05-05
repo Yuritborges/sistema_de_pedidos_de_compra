@@ -36,8 +36,8 @@ ORDEM_ABAS = ["pedido", "pedidos", "cotacao", "obras", "historico", "cadastros"]
 def _icone_app_path():
     base = os.path.normpath(os.path.join(_HERE, "..", ".."))
     candidatos = [
-        os.path.join(base, "assets", "logos", "logo_brasul.ico"),
         os.path.join(base, "assets", "iconebrasul2.ico"),
+        os.path.join(base, "assets", "logos", "logo_brasul.ico"),
         os.path.join(base, "assets", "logo.ico"),
         os.path.join(base, "assets", "logos", "logo_brasul.png"),
         os.path.join(base, "assets", "logo_brasul.png"),

@@ -46,9 +46,15 @@ def _upsert_pedido(dst_conn, pedido):
     cols = [
         "data_pedido", "obra_nome", "escola", "fornecedor_nome",
         "fornecedor_razao", "empresa_faturadora", "condicao_pagamento",
-        "forma_pagamento", "prazo_entrega", "comprador", "valor_total",
+        "forma_pagamento", "pagamento_etapas_ativo", "percentual_entrada",
+        "percentual_final", "marco_percentual_final",
+        "prazo_entrega", "comprador", "valor_total",
         "caminho_pdf", "status", "emitido_em"
     ]
+    cols_destino = {
+        r[1] for r in dst_conn.execute("PRAGMA table_info(pedidos)").fetchall()
+    }
+    cols = [c for c in cols if c in cols_destino and c in pedido]
 
     if row:
         pedido_id, comprador_existente = row[0], str(row[1] or "").strip().upper()

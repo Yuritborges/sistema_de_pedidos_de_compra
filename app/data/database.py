@@ -122,6 +122,10 @@ def init_db():
                 empresa_faturadora  TEXT,
                 condicao_pagamento  TEXT,
                 forma_pagamento     TEXT,
+                pagamento_etapas_ativo INTEGER DEFAULT 0,
+                percentual_entrada  INTEGER,
+                percentual_final    INTEGER,
+                marco_percentual_final TEXT,
                 prazo_entrega       INTEGER,
                 comprador           TEXT,
                 valor_total         REAL,
@@ -170,6 +174,7 @@ def init_db():
 
             INSERT OR IGNORE INTO contador_pedidos (id, ultimo) VALUES (1, 2548);
         """)
+        _garantir_colunas_pagamento_etapas(conn)
     marcar("schema-e-migracoes")
 
     print(f"[DB] Banco inicializado: {DATABASE_PATH}")
@@ -194,6 +199,26 @@ def init_db():
             f.write("\n".join(linhas) + "\n")
     except Exception:
         pass
+
+
+def _garantir_colunas_pagamento_etapas(conn):
+    """
+    Migração leve para bases antigas que ainda não têm os campos
+    estruturados de pagamento em etapas.
+    """
+    colunas = {
+        "pagamento_etapas_ativo": "ALTER TABLE pedidos ADD COLUMN pagamento_etapas_ativo INTEGER DEFAULT 0",
+        "percentual_entrada": "ALTER TABLE pedidos ADD COLUMN percentual_entrada INTEGER",
+        "percentual_final": "ALTER TABLE pedidos ADD COLUMN percentual_final INTEGER",
+        "marco_percentual_final": "ALTER TABLE pedidos ADD COLUMN marco_percentual_final TEXT",
+    }
+    existentes = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(pedidos)").fetchall()
+    }
+    for nome, sql in colunas.items():
+        if nome not in existentes:
+            conn.execute(sql)
 
 
 # ============================================================

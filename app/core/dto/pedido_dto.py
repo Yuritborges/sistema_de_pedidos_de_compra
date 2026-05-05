@@ -55,6 +55,10 @@ class PedidoDTO:
     prazo_entrega:      int   = 5
     condicao_pagamento: str   = "14"
     forma_pagamento:    str   = "BOLETO"
+    pagamento_etapas_ativo: bool = False
+    percentual_entrada: int = 0
+    percentual_final: int = 0
+    marco_percentual_final: str = "FINALIZAÇÃO"
     observacao_extra:   str   = ""
     desconto:           float = 0.0
 
