@@ -731,12 +731,12 @@ class PedidosWidget(QWidget):
                 agrupar_por_empresa=True,
             )
 
-            self._abrir_pdf(caminho)
+            impresso = self._imprimir_ou_abrir_pdf(caminho)
 
             QMessageBox.information(
                 self, "Relatório gerado!",
                 f"<b>{nome_arq}</b><br><br>"
-                f"Aberto para impressão.<br>"
+                f"{'Enviado para impressão.' if impresso else 'PDF aberto para impressão manual.'}<br>"
                 f"Salvo em: <code>{pasta_rel}</code>"
             )
 
@@ -758,11 +758,78 @@ class PedidosWidget(QWidget):
             )
             return
         try:
-            if sys.platform == "win32":    os.startfile(caminho)
+            alvo = self._preparar_pdf_local(caminho)
+            if sys.platform == "win32":
+                self._abrir_pdf_windows(alvo)
             elif sys.platform == "darwin": subprocess.run(["open", caminho])
             else:                          subprocess.run(["xdg-open", caminho])
         except Exception as e:
             QMessageBox.warning(self, "Erro ao abrir", str(e))
+
+    def _abrir_pdf_windows(self, caminho):
+        # Evita depender do app padrão (ex.: Adobe), que pode congelar em rede.
+        candidatos = [
+            r"C:\Program Files\SumatraPDF\SumatraPDF.exe",
+            r"C:\Program Files (x86)\SumatraPDF\SumatraPDF.exe",
+        ]
+        for exe in candidatos:
+            if os.path.exists(exe):
+                subprocess.Popen([exe, caminho], close_fds=True)
+                return
+
+        for cmd in ("msedge", "chrome"):
+            try:
+                subprocess.Popen([cmd, caminho], close_fds=True)
+                return
+            except Exception:
+                pass
+
+        os.startfile(caminho)
+
+    def _imprimir_pdf_windows(self, caminho):
+        # Impressão silenciosa preferencial via SumatraPDF (mais estável em rede).
+        candidatos = [
+            r"C:\Program Files\SumatraPDF\SumatraPDF.exe",
+            r"C:\Program Files (x86)\SumatraPDF\SumatraPDF.exe",
+        ]
+        for exe in candidatos:
+            if os.path.exists(exe):
+                try:
+                    subprocess.Popen(
+                        [exe, "-print-to-default", "-silent", "-exit-when-done", caminho],
+                        close_fds=True,
+                    )
+                    return True
+                except Exception:
+                    pass
+        return False
+
+    def _imprimir_ou_abrir_pdf(self, caminho):
+        if not caminho or not os.path.exists(caminho):
+            return False
+        alvo = self._preparar_pdf_local(caminho)
+        if sys.platform == "win32" and self._imprimir_pdf_windows(alvo):
+            return True
+        self._abrir_pdf(caminho)
+        return False
+
+    def _preparar_pdf_local(self, caminho):
+        """
+        Evita abrir PDF direto da rede no Adobe.
+        Em alguns cenários, abrir/imprimir pelo caminho de rede trava o Reader.
+        """
+        if sys.platform != "win32":
+            return caminho
+        try:
+            nome = os.path.basename(caminho)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            pasta_tmp = os.path.join(tempfile.gettempdir(), "brasul_pdf_tmp")
+            os.makedirs(pasta_tmp, exist_ok=True)
+            destino = os.path.join(pasta_tmp, f"{stamp}_{nome}")
+            shutil.copy2(caminho, destino)
+            return destino
+        except Exception:
+            return caminho
 
     def _exportar(self, caminho_origem, nome_arquivo):
         if not caminho_origem or not os.path.exists(caminho_origem):
@@ -1045,13 +1112,23 @@ class PedidosWidget(QWidget):
             msg.setWindowTitle(f"Pedido #{numero} reimpresso!")
             msg.setText(f"PDF gerado em:\n{path}")
             msg.setIcon(QMessageBox.Information)
+            b_imprimir = msg.addButton("🖨 Imprimir agora", QMessageBox.ActionRole)
             b_abrir = msg.addButton("📄 Abrir PDF", QMessageBox.ActionRole)
             msg.addButton("OK", QMessageBox.AcceptRole)
             msg.exec()
-            if msg.clickedButton() == b_abrir:
+            if msg.clickedButton() == b_imprimir:
+                enviado = self._imprimir_ou_abrir_pdf(path)
+                if enviado:
+                    QMessageBox.information(
+                        self,
+                        "Impressão enviada",
+                        "O pedido foi enviado para a impressora padrão."
+                    )
+            elif msg.clickedButton() == b_abrir:
                 import os, sys, subprocess
+                alvo = self._preparar_pdf_local(path)
                 if sys.platform == "win32":
-                    os.startfile(path)
+                    self._abrir_pdf_windows(alvo)
                 else:
                     subprocess.run(["xdg-open", path])
             self._carregar()

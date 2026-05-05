@@ -1,6 +1,6 @@
 # app/ui/widgets/formulario_pedido.py
 # Formulário de criação e edição de pedidos de compra.
-import os, sys, subprocess, json, copy
+import os, sys, subprocess, json, copy, shutil, tempfile
 from datetime import datetime
 
 from PySide6.QtWidgets import (
@@ -2305,10 +2305,44 @@ class PedidoWidget(QWidget):
     @staticmethod
     def _abrir_arquivo(path):
         try:
-            if sys.platform == "win32": os.startfile(path)
+            alvo = path
+            if sys.platform == "win32":
+                # Em rede, o Adobe pode congelar ao abrir/imprimir direto.
+                # Abrimos uma cópia local temporária para reduzir travamentos.
+                try:
+                    nome = os.path.basename(path)
+                    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                    pasta_tmp = os.path.join(tempfile.gettempdir(), "brasul_pdf_tmp")
+                    os.makedirs(pasta_tmp, exist_ok=True)
+                    destino = os.path.join(pasta_tmp, f"{stamp}_{nome}")
+                    shutil.copy2(path, destino)
+                    alvo = destino
+                except Exception:
+                    alvo = path
+                PedidoWidget._abrir_pdf_windows(alvo)
             elif sys.platform == "darwin": subprocess.run(["open", path])
             else: subprocess.run(["xdg-open", path])
         except Exception: pass
+
+    @staticmethod
+    def _abrir_pdf_windows(path):
+        candidatos = [
+            r"C:\Program Files\SumatraPDF\SumatraPDF.exe",
+            r"C:\Program Files (x86)\SumatraPDF\SumatraPDF.exe",
+        ]
+        for exe in candidatos:
+            if os.path.exists(exe):
+                subprocess.Popen([exe, path], close_fds=True)
+                return
+
+        for cmd in ("msedge", "chrome"):
+            try:
+                subprocess.Popen([cmd, path], close_fds=True)
+                return
+            except Exception:
+                pass
+
+        os.startfile(path)
 
     @staticmethod
     def _fmt(v):

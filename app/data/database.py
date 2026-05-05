@@ -172,6 +172,38 @@ def init_db():
                 ultimo INTEGER NOT NULL DEFAULT 2548
             );
 
+            CREATE TABLE IF NOT EXISTS ferramentas_registros (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                categoria             TEXT,
+                numero_serie          TEXT,
+                ferramenta            TEXT NOT NULL,
+                responsavel           TEXT,
+                data_saida            TEXT,
+                data_devolucao        TEXT,
+                obra                  TEXT,
+                observacoes           TEXT,
+                numero_serie_escritorio TEXT,
+                foto_ref              TEXT,
+                status                TEXT DEFAULT 'EM USO',
+                origem_planilha       TEXT,
+                atualizado_em         TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_ferramentas_saida
+                ON ferramentas_registros(data_saida);
+            CREATE INDEX IF NOT EXISTS idx_ferramentas_status
+                ON ferramentas_registros(status);
+            CREATE INDEX IF NOT EXISTS idx_ferramentas_obra
+                ON ferramentas_registros(obra);
+            CREATE INDEX IF NOT EXISTS idx_ferramentas_responsavel
+                ON ferramentas_registros(responsavel);
+            CREATE INDEX IF NOT EXISTS idx_pedidos_emitido_em
+                ON pedidos(emitido_em);
+            CREATE INDEX IF NOT EXISTS idx_pedidos_obra_emitido_em
+                ON pedidos(obra_nome, emitido_em);
+            CREATE INDEX IF NOT EXISTS idx_pedidos_fornecedor_emitido_em
+                ON pedidos(fornecedor_nome, emitido_em);
+
             INSERT OR IGNORE INTO contador_pedidos (id, ultimo) VALUES (1, 2548);
         """)
         _garantir_colunas_pagamento_etapas(conn)

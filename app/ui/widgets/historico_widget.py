@@ -35,6 +35,7 @@ ORANGE = "#E67E22"
 
 MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
             "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+DIAS_FILTRO_HISTORICO = 180
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -365,8 +366,9 @@ class HistoricoWidget(QWidget):
                     SELECT numero, data_pedido, obra_nome, fornecedor_nome,
                            empresa_faturadora, valor_total
                     FROM pedidos
+                    WHERE date(COALESCE(emitido_em, '')) >= date('now', ?)
                     ORDER BY CAST(numero AS INTEGER) DESC
-                """).fetchall()
+                """, (f"-{DIAS_FILTRO_HISTORICO} day",)).fetchall()
                 for row in rows:
                     self._todos.append(dict(row))
         except Exception as e:

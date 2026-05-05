@@ -24,6 +24,7 @@ from app.ui.style import (
 _ASSETS = os.path.normpath(
     os.path.join(os.path.dirname(__file__), '..', '..', '..', 'assets')
 )
+DIAS_FILTRO_OBRAS = 180
 
 
 def _load_json(p):
@@ -128,10 +129,12 @@ class EditarObraDialog(QDialog):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class ObrasWidget(QWidget):
+    _MAX_OBRAS_RENDER = 250
 
     def __init__(self):
         super().__init__()
         self._obras = {}
+        self._obras_exibicao = {}
         self._obra_atual = None
         self._pedidos_obra_atual = []
         self._build()
@@ -333,7 +336,10 @@ class ObrasWidget(QWidget):
             with get_connection() as conn:
                 rows = conn.execute(
                     "SELECT obra_nome, COUNT(*) as n, SUM(valor_total) as vt "
-                    "FROM pedidos GROUP BY obra_nome"
+                    "FROM pedidos "
+                    "WHERE date(COALESCE(emitido_em, '')) >= date('now', ?) "
+                    "GROUP BY obra_nome",
+                    (f"-{DIAS_FILTRO_OBRAS} day",)
                 ).fetchall()
                 for row in rows:
                     self._pedidos_por_obra[row["obra_nome"]] = row["n"]
@@ -341,7 +347,12 @@ class ObrasWidget(QWidget):
         except Exception as e:
             print(f"[ObrasWidget] {e}")
 
-        self._preencher_tabela(self._obras)
+        obras_ativas = {
+            nome: dados for nome, dados in self._obras.items()
+            if nome in self._pedidos_por_obra
+        }
+        self._obras_exibicao = obras_ativas if obras_ativas else self._obras
+        self._preencher_tabela(self._obras_exibicao)
         self._atualizar_cards()
 
     def _atualizar_cards(self):
@@ -355,9 +366,9 @@ class ObrasWidget(QWidget):
     def _filtrar(self, texto):
         termo = texto.strip().lower()
         if not termo:
-            self._preencher_tabela(self._obras); return
+            self._preencher_tabela(self._obras_exibicao); return
         filtradas = {
-            k: v for k, v in self._obras.items()
+            k: v for k, v in self._obras_exibicao.items()
             if termo in k.lower()
             or termo in v.get("escola","").lower()
             or termo in v.get("cidade","").lower()
@@ -367,7 +378,11 @@ class ObrasWidget(QWidget):
 
     def _preencher_tabela(self, obras):
         self.tabela.setRowCount(0)
-        for nome, dados in sorted(obras.items()):
+        itens = sorted(obras.items())
+        truncado = len(itens) > self._MAX_OBRAS_RENDER
+        if truncado:
+            itens = itens[:self._MAX_OBRAS_RENDER]
+        for nome, dados in itens:
             r = self.tabela.rowCount()
             self.tabela.insertRow(r)
             self.tabela.setRowHeight(r, 48)
@@ -401,7 +416,9 @@ class ObrasWidget(QWidget):
             self.tabela.setCellWidget(r, 5, cell)
 
         total = len(obras)
-        self._lbl_cont.setText(f"{total} obra{'s' if total!=1 else ''}")
+        exibidas = len(itens)
+        sufixo = f" (exibindo {exibidas})" if truncado else ""
+        self._lbl_cont.setText(f"{total} obra{'s' if total!=1 else ''}{sufixo}")
         if total == 0:
             self.tabela.setRowCount(1); self.tabela.setSpan(0,0,1,6)
             it = QTableWidgetItem("Nenhuma obra encontrada.")
@@ -446,8 +463,11 @@ class ObrasWidget(QWidget):
             with get_connection() as conn:
                 pedidos = conn.execute(
                     "SELECT numero, data_pedido, fornecedor_nome, valor_total "
-                    "FROM pedidos WHERE obra_nome = ? ORDER BY CAST(numero AS INTEGER) DESC",
-                    (nome_obra,)
+                    "FROM pedidos "
+                    "WHERE obra_nome = ? "
+                    "  AND date(COALESCE(emitido_em, '')) >= date('now', ?) "
+                    "ORDER BY CAST(numero AS INTEGER) DESC",
+                    (nome_obra, f"-{DIAS_FILTRO_OBRAS} day")
                 ).fetchall()
         except Exception as e:
             print(f"[ObrasWidget] relatório: {e}")

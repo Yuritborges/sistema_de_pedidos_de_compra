@@ -29,8 +29,8 @@ S_TEXT = "#6B5555"
 S_ATXT = "#C0392B"
 C_BG = "#F0EDED"
 
-# Ordem das abas para atalhos Ctrl+1..6
-ORDEM_ABAS = ["pedido", "pedidos", "cotacao", "obras", "historico", "cadastros"]
+# Ordem das abas para atalhos Ctrl+1..5
+ORDEM_ABAS = ["pedido", "pedidos", "cotacao", "ferramentas", "cadastros"]
 
 
 def _icone_app_path():
@@ -141,8 +141,7 @@ class MainWindow(QMainWindow):
             "pedido": self._criar_pagina_pedido,
             "pedidos": self._criar_pagina_pedidos,
             "cotacao": self._criar_pagina_cotacao,
-            "obras": self._criar_pagina_obras,
-            "historico": self._criar_pagina_historico,
+            "ferramentas": self._criar_pagina_ferramentas,
             "cadastros": self._criar_pagina_cadastros,
         }
         # Lazy load: páginas são criadas apenas quando abertas.
@@ -164,13 +163,9 @@ class MainWindow(QMainWindow):
         from app.ui.widgets.cotacao_widget import CotacaoWidget
         return CotacaoWidget()
 
-    def _criar_pagina_obras(self):
-        from app.ui.widgets.obras_widget import ObrasWidget
-        return ObrasWidget()
-
-    def _criar_pagina_historico(self):
-        from app.ui.widgets.historico_widget import HistoricoWidget
-        return HistoricoWidget()
+    def _criar_pagina_ferramentas(self):
+        from app.ui.widgets.ferramentas_widget import FerramentasWidget
+        return FerramentasWidget()
 
     def _registrar_log_startup(self, marcacoes):
         try:
@@ -218,7 +213,7 @@ class MainWindow(QMainWindow):
         return page
 
     def _registrar_atalhos(self):
-        # Ctrl+1 a Ctrl+6 navegam entre abas
+        # Ctrl+1 a Ctrl+5 navegam entre abas
         for i, key in enumerate(ORDEM_ABAS, start=1):
             atalho = QShortcut(QKeySequence(f"Ctrl+{i}"), self)
             atalho.activated.connect(lambda k=key: self._nav(k))
@@ -272,8 +267,7 @@ class MainWindow(QMainWindow):
             ("pedido", "Pedido de Compra", "●"),
             ("pedidos", "Pedidos Gerados", "📁"),
             ("cotacao", "Cotação", "◆"),
-            ("obras", "Obras", "◉"),
-            ("historico", "Histórico", "≡"),
+            ("ferramentas", "Ferramentas", "🧰"),
             ("cadastros", "Cadastros", "⚙"),
         ]
 
