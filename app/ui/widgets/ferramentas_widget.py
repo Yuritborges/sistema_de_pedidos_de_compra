@@ -286,11 +286,14 @@ class FerramentasWidget(QWidget):
         btn_novo.clicked.connect(self._novo_registro)
         btn_editar = btn_outline("Editar selecionado")
         btn_editar.clicked.connect(self._editar_selecionado)
+        btn_excluir = btn_outline("Excluir selecionado")
+        btn_excluir.clicked.connect(self._excluir_selecionado)
         btn_atualizar = btn_solid("Atualizar", "#95A5A6")
         btn_atualizar.clicked.connect(self._carregar)
         top.addWidget(self.btn_importar)
         top.addWidget(btn_novo)
         top.addWidget(btn_editar)
+        top.addWidget(btn_excluir)
         top.addWidget(btn_atualizar)
         root.addLayout(top)
 
@@ -666,6 +669,31 @@ class FerramentasWidget(QWidget):
         sincronizar_com_rede(silencioso=True)
         self._carregar()
 
+    def _excluir_selecionado(self):
+        reg_id = self._registro_selecionado_id()
+        if not reg_id:
+            QMessageBox.information(self, "Ferramentas", "Selecione um registro para excluir.")
+            return
+        self._excluir_registro_id(reg_id)
+
+    def _excluir_registro_id(self, reg_id: int):
+        reg = self._registro_por_id(reg_id) or {}
+        nome = _txt_limpo(reg.get("ferramenta", "")) or "item sem nome"
+        serie = _txt_limpo(reg.get("numero_serie", ""))
+        resp = QMessageBox.question(
+            self,
+            "Confirmar exclusão",
+            f"Deseja excluir este registro?\n\nFerramenta: {nome}\nSérie: {serie or '—'}",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if resp != QMessageBox.Yes:
+            return
+        with get_connection() as conn:
+            conn.execute("DELETE FROM ferramentas_registros WHERE id = ?", (reg_id,))
+        sincronizar_com_rede(silencioso=True)
+        self._carregar()
+
     def _devolver_registro_hoje(self, reg_id: int):
         data_hoje = datetime.now().strftime("%Y-%m-%d")
         with get_connection() as conn:
@@ -796,17 +824,20 @@ class FerramentasWidget(QWidget):
         hl.addStretch()
         btn_cancelar = btn_outline("Fechar")
         btn_editar = btn_outline("✏ Editar completo")
+        btn_excluir = btn_outline("🗑 Excluir item")
         btn_devolver = btn_solid("✅ Devolver agora", RED)
         if status == "DEVOLVIDO":
             btn_devolver.setEnabled(False)
             btn_devolver.setToolTip("Este item já está devolvido.")
         hl.addWidget(btn_cancelar)
         hl.addWidget(btn_editar)
+        hl.addWidget(btn_excluir)
         hl.addWidget(btn_devolver)
         vl.addLayout(hl)
 
         btn_cancelar.clicked.connect(dlg.reject)
         btn_editar.clicked.connect(lambda: (dlg.accept(), self._editar_registro(reg_id)))
+        btn_excluir.clicked.connect(lambda: (dlg.accept(), self._excluir_registro_id(reg_id)))
 
         def devolver():
             self._devolver_registro_hoje(reg_id)
