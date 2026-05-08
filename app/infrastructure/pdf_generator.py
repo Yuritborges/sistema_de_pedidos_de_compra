@@ -198,27 +198,53 @@ class PedidoCompraGenerator:
         self._fonte_tabela = max(5.5, round(7.5 * (ROW_H / (6*mm)), 1))
         self._hdr_tabela   = max(4.5*mm, b["HDR_H"])
 
-        linhas_p1 = max(1, int(b["espaco"] / ROW_H))
+        itens = dto.itens
+        col_desc_w = 84 * mm
+        margem_desc = 2 * mm
+        largura_desc = max(10, col_desc_w - (margem_desc * 2))
+        line_h = max(self._fonte_tabela + 1, 6)
+        row_padding = 4
+
+        def _altura_item(item_desc):
+            linhas = self._quebrar_texto(
+                c, item_desc, largura_desc, "Helvetica", self._fonte_tabela
+            )
+            return max(ROW_H, row_padding + (len(linhas) * line_h))
+
+        alturas = [_altura_item(getattr(it, "descricao", "")) for it in itens]
+        disp_p1 = max(ROW_H, b["espaco"])
         blocos_pn = b["H_TOPO"] + b["H_DATAFAIXA"] + b["HDR_H"] + b["TOT_H"] + b["H_ROD"]
-        linhas_pn = max(1, int((H - 2*M - blocos_pn) / ROW_H))
+        disp_pn = max(ROW_H, (H - 2*M - blocos_pn))
 
-        itens  = dto.itens
         fatias = []
-        if n_itens <= linhas_p1:
-            fatias.append((itens, n_itens))
-        else:
-            fatias.append((itens[:linhas_p1], linhas_p1))
-            restante = itens[linhas_p1:]
-            while restante:
-                fatia = restante[:linhas_pn]
-                fatias.append((fatia, len(fatia)))
-                restante = restante[linhas_pn:]
+        idx = 0
+        while idx < len(itens):
+            cap = disp_p1 if not fatias else disp_pn
+            usados = 0.0
+            itens_pag = []
+            alturas_pag = []
+            while idx < len(itens):
+                h = alturas[idx]
+                if itens_pag and (usados + h > cap):
+                    break
+                itens_pag.append(itens[idx])
+                alturas_pag.append(h)
+                usados += h
+                idx += 1
+                if usados >= cap:
+                    break
+            if not itens_pag:
+                # item muito alto: força ao menos um item na página
+                itens_pag = [itens[idx]]
+                alturas_pag = [alturas[idx]]
+                idx += 1
+            fatias.append((itens_pag, alturas_pag))
 
-        for idx, (fatia_itens, n_linhas) in enumerate(fatias):
+        for idx, (fatia_itens, alturas_linhas) in enumerate(fatias):
             primeira = (idx == 0)
             ultima   = (idx == len(fatias) - 1)
             self._desenhar_pagina(
-                c, dto, emp, fatia_itens, n_linhas,
+                c, dto, emp, fatia_itens, alturas_linhas,
                 primeira, ultima, idx+1, len(fatias),
                 b["H_TOPO"], b["H_DATAFAIXA"], b["H_FORN"], b["H_COB"],
                 b["H_FAT"], b["H_OBS_EMP"], b["H_ENT"], b["H_OBS"], b["H_ROD"],
@@ -229,7 +255,7 @@ class PedidoCompraGenerator:
                 c.showPage()
 
     def _desenhar_pagina(
-        self, c, dto, emp, itens_pagina, n_linhas,
+        self, c, dto, emp, itens_pagina, alturas_linhas,
         primeira, ultima, num_pag, total_pag,
         H_TOPO, H_DATAFAIXA, H_FORN, H_COB,
         H_FAT, H_OBS_EMP, H_ENT, H_OBS, H_ROD,
@@ -259,7 +285,7 @@ class PedidoCompraGenerator:
                 y = self._bloco_obs(c, obs_txt, y, H_OBS)
 
         self._tabela_itens(
-            c, dto, itens_pagina, y, n_linhas,
+            c, dto, itens_pagina, y, alturas_linhas,
             HDR_H, ROW_H, TOT_H,
             mostrar_totais=ultima
         )
@@ -584,7 +610,7 @@ class PedidoCompraGenerator:
     # BLOCO 8 — Tabela de itens + totais
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _tabela_itens(self, c, dto, itens_pagina, y, n_linhas,
+    def _tabela_itens(self, c, dto, itens_pagina, y, alturas_linhas,
                       HDR_H, ROW_H, TOT_H, mostrar_totais=True):
         """
         Tabela de itens para UMA página.
@@ -616,37 +642,47 @@ class PedidoCompraGenerator:
         y -= HDR_H
         y_tab_topo = y
 
-        for i in range(n_linhas):
+        for i, item in enumerate(itens_pagina):
+            row_h_i = alturas_linhas[i] if i < len(alturas_linhas) else ROW_H
             if i % 2 == 0:
                 c.setFillColor(colors.HexColor("#FAFAFA"))
-                c.rect(M, y-ROW_H, CW, ROW_H, fill=1, stroke=0)
+                c.rect(M, y-row_h_i, CW, row_h_i, fill=1, stroke=0)
             c.setStrokeColor(C_LINHA); c.setLineWidth(0.5)
-            c.line(M, y-ROW_H, M+CW, y-ROW_H)
+            c.line(M, y-row_h_i, M+CW, y-row_h_i)
 
-            if i < len(itens_pagina):
-                item = itens_pagina[i]
-                yt = y - ROW_H/2 - 2
-                x  = M
-                dados = [
-                    (str(i+1),                       "c", True ),
-                    (item.descricao[:56],             "l", False),
-                    (self._fmt_num(item.quantidade),  "c", False),
-                    (item.unidade,                    "c", False),
-                    (self._fmt_val(item.valor_unitario), "r", False),
-                    (self._fmt_val(item.valor_total),    "r", False),
-                ]
-                for j, (val, alg, bold) in enumerate(dados):
-                    w = cols[j]["w"]
-                    c.setFont("Helvetica-Bold" if bold else "Helvetica", fnt)
-                    c.setFillColor(C_PRETO)
-                    if   alg == "c": c.drawCentredString(x+w/2, yt, val)
-                    elif alg == "r": c.drawRightString(x+w-2*mm, yt, val)
-                    else:            c.drawString(x+2*mm, yt, val)
-                    x += w
-            else:
-                c.setFont("Helvetica", max(5.5, fnt-1)); c.setFillColor(C_CLARO)
-                c.drawCentredString(M+cols[0]["w"]/2, y-ROW_H/2-2, str(i+1))
-            y -= ROW_H
+            yt = y - row_h_i/2 - 2
+            x  = M
+            dados = [
+                (str(i+1), "c", True),
+                ("", "l", False),  # descrição tratada separadamente com quebra de linha
+                (self._fmt_num(item.quantidade), "c", False),
+                (item.unidade, "c", False),
+                (self._fmt_val(item.valor_unitario), "r", False),
+                (self._fmt_val(item.valor_total), "r", False),
+            ]
+            for j, (val, alg, bold) in enumerate(dados):
+                w = cols[j]["w"]
+                c.setFont("Helvetica-Bold" if bold else "Helvetica", fnt)
+                c.setFillColor(C_PRETO)
+                if j == 1:
+                    margem_x = 2 * mm
+                    largura_util = max(5, w - (margem_x * 2))
+                    line_h = max(fnt + 1, 6)
+                    linhas_desc = self._quebrar_texto(
+                        c, item.descricao, largura_util, "Helvetica", fnt
+                    )
+                    y_desc = y - 2 - fnt
+                    for ln in linhas_desc:
+                        c.drawString(x + margem_x, y_desc, ln)
+                        y_desc -= line_h
+                elif alg == "c":
+                    c.drawCentredString(x+w/2, yt, val)
+                elif alg == "r":
+                    c.drawRightString(x+w-2*mm, yt, val)
+                else:
+                    c.drawString(x+2*mm, yt, val)
+                x += w
+            y -= row_h_i
 
         # Borda externa e divisórias verticais
         c.setStrokeColor(C_LINHA); c.setLineWidth(1.0)
@@ -728,6 +764,42 @@ class PedidoCompraGenerator:
             return f"{float(v):.2f}".replace(".", ",")
         except Exception:
             return str(v)
+
+    @staticmethod
+    def _quebrar_texto(c, texto: str, largura_max: float, fonte: str, tamanho: float):
+        """Quebra texto em múltiplas linhas respeitando a largura disponível."""
+        txt = str(texto or "").strip()
+        if not txt:
+            return [""]
+
+        palavras = txt.split()
+        linhas, linha = [], ""
+
+        for p in palavras:
+            teste = (linha + " " + p).strip()
+            if c.stringWidth(teste, fonte, tamanho) <= largura_max:
+                linha = teste
+                continue
+
+            if linha:
+                linhas.append(linha)
+                linha = ""
+
+            # Palavra maior que a célula: quebra por caractere.
+            pedaco = ""
+            for ch in p:
+                t2 = pedaco + ch
+                if c.stringWidth(t2, fonte, tamanho) <= largura_max:
+                    pedaco = t2
+                else:
+                    if pedaco:
+                        linhas.append(pedaco)
+                    pedaco = ch
+            linha = pedaco
+
+        if linha:
+            linhas.append(linha)
+        return linhas or [""]
 
     @staticmethod
     def _nome_arquivo(dto: PedidoDTO) -> str:

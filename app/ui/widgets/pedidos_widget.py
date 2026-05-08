@@ -133,7 +133,7 @@ class PedidosWidget(QWidget):
         bwl.setContentsMargins(0, 0, 0, 0)
         bwl.setSpacing(0)
         self.e_busca = QLineEdit()
-        self.e_busca.setPlaceholderText("Buscar por nº, obra ou fornecedor...")
+        self.e_busca.setPlaceholderText("Buscar por nº, obra, fornecedor ou item...")
         self.e_busca.setStyleSheet(CSS_BUSCA)
         self.e_busca.textChanged.connect(self._aplicar_filtros)
         self.e_busca.returnPressed.connect(self._aplicar_filtros)
@@ -281,38 +281,54 @@ class PedidosWidget(QWidget):
                 if comprador_atual == "ADMIN":
                     rows = conn.execute("""
                         SELECT
-                            id,
-                            numero,
-                            data_pedido,
-                            obra_nome,
-                            fornecedor_nome,
-                            fornecedor_razao,
-                            empresa_faturadora,
-                            condicao_pagamento,
-                            forma_pagamento,
-                            valor_total,
-                            caminho_pdf,
-                            comprador
-                        FROM pedidos
+                            p.id,
+                            p.numero,
+                            p.data_pedido,
+                            p.obra_nome,
+                            p.fornecedor_nome,
+                            p.fornecedor_razao,
+                            p.empresa_faturadora,
+                            p.condicao_pagamento,
+                            p.forma_pagamento,
+                            p.valor_total,
+                            p.caminho_pdf,
+                            p.comprador,
+                            COALESCE(it.itens_texto, '') AS itens_texto
+                        FROM pedidos p
+                        LEFT JOIN (
+                            SELECT
+                                pedido_id,
+                                GROUP_CONCAT(COALESCE(descricao, ''), ' | ') AS itens_texto
+                            FROM itens_pedido
+                            GROUP BY pedido_id
+                        ) it ON it.pedido_id = p.id
                         ORDER BY CAST(numero AS INTEGER) DESC, id DESC
                     """).fetchall()
                 else:
                     rows = conn.execute("""
                         SELECT
-                            id,
-                            numero,
-                            data_pedido,
-                            obra_nome,
-                            fornecedor_nome,
-                            fornecedor_razao,
-                            empresa_faturadora,
-                            condicao_pagamento,
-                            forma_pagamento,
-                            valor_total,
-                            caminho_pdf,
-                            comprador
-                        FROM pedidos
-                        WHERE UPPER(TRIM(COALESCE(comprador, ''))) = UPPER(TRIM(?))
+                            p.id,
+                            p.numero,
+                            p.data_pedido,
+                            p.obra_nome,
+                            p.fornecedor_nome,
+                            p.fornecedor_razao,
+                            p.empresa_faturadora,
+                            p.condicao_pagamento,
+                            p.forma_pagamento,
+                            p.valor_total,
+                            p.caminho_pdf,
+                            p.comprador,
+                            COALESCE(it.itens_texto, '') AS itens_texto
+                        FROM pedidos p
+                        LEFT JOIN (
+                            SELECT
+                                pedido_id,
+                                GROUP_CONCAT(COALESCE(descricao, ''), ' | ') AS itens_texto
+                            FROM itens_pedido
+                            GROUP BY pedido_id
+                        ) it ON it.pedido_id = p.id
+                        WHERE UPPER(TRIM(COALESCE(p.comprador, ''))) = UPPER(TRIM(?))
                         ORDER BY CAST(numero AS INTEGER) DESC, id DESC
                         LIMIT 300
                     """, (comprador_atual,)).fetchall()
@@ -348,6 +364,7 @@ class PedidosWidget(QWidget):
                     "forma_pagamento":    row["forma_pagamento"] or "—",
                     "obra_nome":          obra,
                     "fornecedor_nome":    fornecedor,
+                    "itens_texto":        str(row["itens_texto"] or ""),
                     "comprador":          row["comprador"] or "",
                 })
 
@@ -439,7 +456,8 @@ class PedidosWidget(QWidget):
                          termo in r["nome"].lower() or
                          termo in r["numero"].lower() or
                          termo in r["obra"].lower() or
-                         termo in r.get("fornecedor", "").lower()]
+                         termo in r.get("fornecedor", "").lower() or
+                         termo in r.get("itens_texto", "").lower()]
 
         if self._filtro_ativo == "hoje":
             resultado = [r for r in resultado if r["data"].date() == hoje]
