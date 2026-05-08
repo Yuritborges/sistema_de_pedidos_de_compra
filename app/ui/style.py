@@ -104,7 +104,6 @@ CSS_TABLE_SM = CSS_TABLE.replace("font-size:12px", "font-size:11px")
 # Cor de destaque por empresa faturadora
 CORES_EMPRESA = {
     "BRASUL":      RED,
-    "JB":          "#A93226",
     "B&B":         GREEN,
     "INTERIORANA": "#784212",
     "INTERBRAS":   "#1A5276",

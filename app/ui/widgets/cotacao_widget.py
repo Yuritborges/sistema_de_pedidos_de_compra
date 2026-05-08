@@ -347,7 +347,7 @@ class CotacaoWidget(QWidget):
         self._cb_emp = QComboBox()
         self._cb_emp.setMinimumWidth(130)
         self._cb_emp.setStyleSheet(CSS_COMBO)
-        for e in ["BRASUL","JB","B&B","INTERIORANA","INTERBRAS"]:
+        for e in ["BRASUL", "B&B", "INTERIORANA", "INTERBRAS"]:
             self._cb_emp.addItem(e)
         hl.addLayout(grp("Empresa faturadora", self._cb_emp))
         hl.addWidget(self._vsep())

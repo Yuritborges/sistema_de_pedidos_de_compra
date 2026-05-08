@@ -355,7 +355,7 @@ class ConsultaPatraoWidget(QWidget):
         self.cb_comprador.addItems(["TODOS", "IURY", "THAMYRES", "SEM COMPRADOR"])
 
         self.cb_empresa = QComboBox()
-        self.cb_empresa.addItems(["TODAS", "BRASUL", "JB", "B&B", "INTERIORANA", "INTERBRAS"])
+        self.cb_empresa.addItems(["TODAS", "BRASUL", "B&B", "INTERIORANA", "INTERBRAS"])
 
         self.cb_obra = QComboBox()
         self.cb_obra.setEditable(True)

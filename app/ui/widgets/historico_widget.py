@@ -139,7 +139,7 @@ class HistoricoWidget(QWidget):
         self._cb_emp.setMinimumWidth(130)
         self._cb_emp.setStyleSheet(CSS_COMBO)
         self._cb_emp.addItem("Todas")
-        for emp in ["BRASUL", "JB", "B&B", "INTERIORANA", "INTERBRAS"]:
+        for emp in ["BRASUL", "B&B", "INTERIORANA", "INTERBRAS"]:
             self._cb_emp.addItem(emp)
         vl_emp.addWidget(self._cb_emp)
         hl.addLayout(vl_emp)

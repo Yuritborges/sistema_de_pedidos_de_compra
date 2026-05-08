@@ -29,7 +29,6 @@ _LOGOS_DIR = os.path.normpath(
 )
 _LOGO_NOMES = {
     "BRASUL":      "logo_brasul.png",
-    "JB":          "logo_jb.png",
     "B&B":         "logo_bb.png",
     "INTERIORANA": "logo_interiorana.png",
     "INTERBRAS":   "logo_interbras.png",
@@ -264,7 +263,7 @@ class PedidoCompraGenerator:
             HDR_H, ROW_H, TOT_H,
             mostrar_totais=ultima
         )
-        self._rodape(c, emp)
+        self._rodape(c, dto.empresa_faturadora)
 
     # ══════════════════════════════════════════════════════════════════════════
     # BLOCO 1 — Topo
@@ -483,10 +482,10 @@ class PedidoCompraGenerator:
             Logo abaixo do bloco de faturamento, acima do bloco de entrega.
             Cada empresa tem seu próprio texto no config.py (obs_padrao).
 
-        EXEMPLO para JB:
+        EXEMPLO de blocos de empresa:
             ┌─────────────────────────────────────────────────────┐
             │ NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA    │
-            │ JB CONSTRUÇÕES E EMPREENDIMENTOS LTDA               │
+            │ BRASUL CONSTRUTORA LTDA                              │
             │ OBS: CONTAR FATURAMENTO A PARTIR DO DIA 27/12/24... │
             └─────────────────────────────────────────────────────┘
         """
@@ -683,7 +682,7 @@ class PedidoCompraGenerator:
     # BLOCO 9 — Rodapé fixo na base
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _rodape(self, c, emp):
+    def _rodape(self, c, empresa_faturadora):
         """Rodapé com instruções, e-mails e horários de recebimento."""
         y = 20*mm
         c.setStrokeColor(C_LINHA); c.setLineWidth(0.5)
@@ -696,8 +695,8 @@ class PedidoCompraGenerator:
         c.setFont("Helvetica-Bold", 7); c.setFillColor(C_PRETO)
         c.drawString(M, y-8.5*mm, "Notas e Boletos encaminha para:")
         c.setFont("Helvetica", 7); c.setFillColor(colors.HexColor("#0055AA"))
-        emp_nome = str(emp or "").strip().upper()
-        if emp_nome == "INTERIORANA":
+        emp_nome = str(empresa_faturadora or "").strip().upper()
+        if "INTERIORANA" in emp_nome:
             c.drawString(M, y-12.5*mm, "notafiscal@construtorainteriorana.com.br")
             c.drawString(M, y-16.5*mm, "financeiro2@construtorainteriorana.com.br")
         else:

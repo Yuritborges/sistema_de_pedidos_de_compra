@@ -61,7 +61,7 @@ class EditarObraDialog(QDialog):
             from config import EMPRESAS_FATURADORAS
             empresas = list(EMPRESAS_FATURADORAS.keys())
         except Exception:
-            empresas = ["BRASUL", "JB", "B&B", "INTERIORANA", "INTERBRAS"]
+            empresas = ["BRASUL", "B&B", "INTERIORANA", "INTERBRAS"]
 
         self._nome     = fld(nome_obra, ro=True)
         self._escola   = fld(dados.get("escola", ""))

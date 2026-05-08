@@ -27,7 +27,6 @@ C_ALT       = colors.HexColor("#FBF7F7")
 
 CORES_EMP = {
     "BRASUL":      colors.HexColor("#C0392B"),
-    "JB":          colors.HexColor("#A93226"),
     "B&B":         colors.HexColor("#1E8449"),
     "INTERIORANA": colors.HexColor("#784212"),
     "INTERBRAS":   colors.HexColor("#1A5276"),

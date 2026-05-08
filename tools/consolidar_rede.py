@@ -32,6 +32,28 @@ def _rows_dict(cur, query, params=()):
     return out
 
 
+def _parse_emitido(raw):
+    s = str(raw or "").strip()
+    if not s:
+        return datetime.min
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%d/%m/%Y",
+        "%d/%m/%y",
+    ):
+        try:
+            return datetime.strptime(s, fmt)
+        except Exception:
+            pass
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except Exception:
+        return datetime.min
+
+
 def _upsert_pedido(dst_conn, pedido):
     numero = str(pedido["numero"] or "").strip()
     comprador = str(pedido.get("comprador") or "").strip().upper()
@@ -39,7 +61,7 @@ def _upsert_pedido(dst_conn, pedido):
         return None, "skip_sem_numero"
 
     row = dst_conn.execute(
-        "SELECT id, comprador FROM pedidos WHERE numero = ?",
+        "SELECT id, comprador, emitido_em, valor_total FROM pedidos WHERE numero = ?",
         (numero,)
     ).fetchone()
 
@@ -59,7 +81,16 @@ def _upsert_pedido(dst_conn, pedido):
     if row:
         pedido_id, comprador_existente = row[0], str(row[1] or "").strip().upper()
         if comprador_existente and comprador and comprador_existente != comprador:
-            return None, f"conflito_numero:{numero}:{comprador_existente}!={comprador}"
+            atual_emit = _parse_emitido(row[2])
+            novo_emit = _parse_emitido(pedido.get("emitido_em"))
+            atual_val = float(row[3] or 0)
+            novo_val = float(pedido.get("valor_total") or 0)
+            # Regra de desempate para numeracao duplicada entre compradores:
+            # prioriza o mais recente; em empate, prioriza o maior valor absoluto.
+            if (novo_emit > atual_emit) or (novo_emit == atual_emit and abs(novo_val) > abs(atual_val)):
+                pass
+            else:
+                return None, f"conflito_numero:{numero}:{comprador_existente}!={comprador}"
 
         sets = ", ".join(f"{c}=?" for c in cols)
         vals = [pedido.get(c) for c in cols] + [pedido_id]

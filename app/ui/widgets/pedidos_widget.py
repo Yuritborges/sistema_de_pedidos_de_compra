@@ -366,7 +366,7 @@ class PedidosWidget(QWidget):
         partes = base.split("-")
         numero = partes[1] if len(partes) > 1 else "—"
         empresa = "—"; obra = "—"
-        for emp in ["INTERBRAS", "INTERIORANA", "BRASUL", "B&B", "JB"]:
+        for emp in ["INTERBRAS", "INTERIORANA", "BRASUL", "B&B"]:
             if emp in base.upper():
                 empresa = emp
                 idx  = base.upper().find(emp)
