@@ -136,11 +136,17 @@ class PedidosWidget(QWidget):
         self.e_busca.setPlaceholderText("Buscar por nº, obra ou fornecedor...")
         self.e_busca.setStyleSheet(CSS_BUSCA)
         self.e_busca.textChanged.connect(self._aplicar_filtros)
+        self.e_busca.returnPressed.connect(self._aplicar_filtros)
         bwl.addWidget(self.e_busca)
         ico = QLabel("🔍")
         ico.setStyleSheet("background:transparent; font-size:13px; border:none;")
         ico.setFixedWidth(28); ico.setParent(busca_wrap); ico.move(8, 9); ico.raise_()
         hl_busca.addWidget(busca_wrap)
+
+        btn_buscar = btn_solid("Pesquisar", BLUE, h=34)
+        btn_buscar.setToolTip("Aplica os filtros com o texto digitado")
+        btn_buscar.clicked.connect(self._aplicar_filtros)
+        hl_busca.addWidget(btn_buscar)
 
         # Botões de filtro rápido
         self._btn_filtros = {}

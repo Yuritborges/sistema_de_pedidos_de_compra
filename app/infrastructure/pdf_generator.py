@@ -696,8 +696,13 @@ class PedidoCompraGenerator:
         c.setFont("Helvetica-Bold", 7); c.setFillColor(C_PRETO)
         c.drawString(M, y-8.5*mm, "Notas e Boletos encaminha para:")
         c.setFont("Helvetica", 7); c.setFillColor(colors.HexColor("#0055AA"))
-        c.drawString(M, y-12.5*mm, "notafiscal@brasulconstrutora.com.br")
-        c.drawString(M, y-16.5*mm, "viviane@brasulconstrutora.com.br")
+        emp_nome = str(emp or "").strip().upper()
+        if emp_nome == "INTERIORANA":
+            c.drawString(M, y-12.5*mm, "notafiscal@construtorainteriorana.com.br")
+            c.drawString(M, y-16.5*mm, "financeiro2@construtorainteriorana.com.br")
+        else:
+            c.drawString(M, y-12.5*mm, "notafiscal@brasulconstrutora.com.br")
+            c.drawString(M, y-16.5*mm, "viviane@brasulconstrutora.com.br")
 
         c.setFont("Helvetica-Bold", 7); c.setFillColor(C_PRETO)
         c.drawRightString(W-M, y-4*mm, "Horário de RECEBIMENTO NA OBRA")
