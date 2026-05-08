@@ -29,8 +29,8 @@ S_TEXT = "#6B5555"
 S_ATXT = "#C0392B"
 C_BG = "#F0EDED"
 
-# Ordem das abas para atalhos Ctrl+1..5
-ORDEM_ABAS = ["pedido", "pedidos", "cotacao", "ferramentas", "cadastros"]
+# Ordem das abas para atalhos Ctrl+1..6
+ORDEM_ABAS = ["pedido", "pedidos", "cotacao", "ferramentas", "locacoes", "cadastros"]
 
 
 def _icone_app_path():
@@ -142,6 +142,7 @@ class MainWindow(QMainWindow):
             "pedidos": self._criar_pagina_pedidos,
             "cotacao": self._criar_pagina_cotacao,
             "ferramentas": self._criar_pagina_ferramentas,
+            "locacoes": self._criar_pagina_locacoes,
             "cadastros": self._criar_pagina_cadastros,
         }
         # Lazy load: páginas são criadas apenas quando abertas.
@@ -166,6 +167,10 @@ class MainWindow(QMainWindow):
     def _criar_pagina_ferramentas(self):
         from app.ui.widgets.ferramentas_widget import FerramentasWidget
         return FerramentasWidget()
+
+    def _criar_pagina_locacoes(self):
+        from app.ui.widgets.locacoes_widget import LocacoesWidget
+        return LocacoesWidget()
 
     def _registrar_log_startup(self, marcacoes):
         try:
@@ -268,6 +273,7 @@ class MainWindow(QMainWindow):
             ("pedidos", "Pedidos Gerados", "📁"),
             ("cotacao", "Cotação", "◆"),
             ("ferramentas", "Ferramentas", "🧰"),
+            ("locacoes", "Locações", "🏗"),
             ("cadastros", "Cadastros", "⚙"),
         ]
 

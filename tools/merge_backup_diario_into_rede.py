@@ -3,11 +3,11 @@ Mescla os bancos do backup diario (Iury + Thamyres) no cotacao_rede.db da rede,
 usando a mesma logica de consolidar_rede.py.
 
 Use quando o consolidado estiver defasado mas voces tiverem um backup de horario
-conhecido (ex.: hoje 18:30 em backups/diario/iury_YYYYMMDD_HHMM.db).
+conhecido (ex.: hoje 18:00 em backups/diario/iury_YYYYMMDD_HHMM.db).
 
 Uso (na raiz do projeto de pedidos, com venv):
   .\\.venv\\Scripts\\python.exe tools\\merge_backup_diario_into_rede.py
-  .\\.venv\\Scripts\\python.exe tools\\merge_backup_diario_into_rede.py --ts 20260507_1830
+  .\\.venv\\Scripts\\python.exe tools\\merge_backup_diario_into_rede.py --ts 20260507_1800
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def main():
     ap = argparse.ArgumentParser(description="Mescla backup diario Iury+Thamyres no cotacao_rede.db")
     ap.add_argument(
         "--ts",
-        help="Timestamp do backup (ex.: 20260507_1830). Omited: o mais recente em backups/diario.",
+        help="Timestamp do backup (ex.: 20260507_1800). Omited: o mais recente em backups/diario.",
         default=None,
     )
     args = ap.parse_args()

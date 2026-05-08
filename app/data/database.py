@@ -53,6 +53,7 @@ def obter_rede_db_path() -> str:
 
 
 REDE_DB_PATH = obter_rede_db_path()
+REDE_LOCACOES_DB_PATH = os.path.join(REDE_BASE_DIR, "_shared", "locacoes.db")
 
 
 # ============================================================
@@ -64,6 +65,176 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def get_locacoes_connection():
+    """
+    Banco compartilhado de locações (único para todos os usuários).
+    Usa WAL + busy_timeout para reduzir conflito de escrita concorrente.
+    """
+    os.makedirs(os.path.dirname(REDE_LOCACOES_DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(REDE_LOCACOES_DB_PATH, timeout=20)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA busy_timeout = 20000")
+    return conn
+
+
+def list_obras_nomes_para_locacao() -> list[str]:
+    """
+    Nomes de obra para o formulário de locação: cadastro de obras, pedidos, locações já salvas.
+    Ordem alfabética (sem importar diferenças só de maiúsculas).
+    """
+    nomes: set[str] = set()
+    try:
+        with get_connection() as conn:
+            try:
+                for row in conn.execute(
+                    "SELECT nome FROM obras WHERE IFNULL(ativo, 1) != 0"
+                ):
+                    n = (row[0] or "").strip()
+                    if n:
+                        nomes.add(n)
+            except sqlite3.Error:
+                pass
+            try:
+                for row in conn.execute(
+                    """
+                    SELECT DISTINCT TRIM(obra_nome) AS o FROM pedidos
+                    WHERE obra_nome IS NOT NULL AND TRIM(obra_nome) != ''
+                    """
+                ):
+                    n = (row[0] or "").strip()
+                    if n:
+                        nomes.add(n)
+            except sqlite3.Error:
+                pass
+    except OSError:
+        pass
+    try:
+        with get_locacoes_connection() as conn:
+            for row in conn.execute(
+                """
+                SELECT DISTINCT TRIM(obra) AS o FROM locacoes_registros
+                WHERE obra IS NOT NULL AND TRIM(obra) != ''
+                """
+            ):
+                n = (row[0] or "").strip()
+                if n:
+                    nomes.add(n)
+    except OSError:
+        pass
+    except sqlite3.Error:
+        pass
+    return sorted(nomes, key=lambda x: (x.upper(), x))
+
+
+def list_fornecedores_nomes_para_locacao() -> list[str]:
+    """
+    Fornecedores para o formulário de locação: cadastro, pedidos e locações já salvas.
+    """
+    nomes: set[str] = set()
+    try:
+        with get_connection() as conn:
+            try:
+                for row in conn.execute(
+                    "SELECT nome FROM fornecedores WHERE IFNULL(ativo, 1) != 0"
+                ):
+                    n = (row[0] or "").strip()
+                    if n:
+                        nomes.add(n)
+            except sqlite3.Error:
+                pass
+            try:
+                for row in conn.execute(
+                    """
+                    SELECT DISTINCT TRIM(fornecedor_nome) AS f FROM pedidos
+                    WHERE fornecedor_nome IS NOT NULL AND TRIM(fornecedor_nome) != ''
+                    """
+                ):
+                    n = (row[0] or "").strip()
+                    if n:
+                        nomes.add(n)
+            except sqlite3.Error:
+                pass
+    except OSError:
+        pass
+    try:
+        with get_locacoes_connection() as conn:
+            for row in conn.execute(
+                """
+                SELECT DISTINCT TRIM(fornecedor) AS f FROM locacoes_registros
+                WHERE fornecedor IS NOT NULL AND TRIM(fornecedor) != ''
+                """
+            ):
+                n = (row[0] or "").strip()
+                if n:
+                    nomes.add(n)
+    except OSError:
+        pass
+    except sqlite3.Error:
+        pass
+    return sorted(nomes, key=lambda x: (x.upper(), x))
+
+
+def init_locacoes_shared_db():
+    with get_locacoes_connection() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS locacoes_registros (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                obra              TEXT,
+                comprador         TEXT,
+                numero_pedido     TEXT,
+                fornecedor        TEXT,
+                item_locado       TEXT,
+                tipo              TEXT DEFAULT '',
+                pedido_compra_numero TEXT DEFAULT '',
+                data_pedido       TEXT,
+                periodo_dias      INTEGER,
+                data_vencimento   TEXT,
+                dias_a_vencer     TEXT,
+                situacao          TEXT,
+                pedido_ok         TEXT,
+                origem_planilha   TEXT,
+                editando_por      TEXT,
+                editando_desde    TEXT,
+                versao            INTEGER DEFAULT 0,
+                atualizado_em     TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_locacoes_numero
+                ON locacoes_registros(numero_pedido);
+            CREATE INDEX IF NOT EXISTS idx_locacoes_obra
+                ON locacoes_registros(obra);
+            CREATE INDEX IF NOT EXISTS idx_locacoes_comprador
+                ON locacoes_registros(comprador);
+            CREATE INDEX IF NOT EXISTS idx_locacoes_situacao
+                ON locacoes_registros(situacao);
+            CREATE INDEX IF NOT EXISTS idx_locacoes_vencimento
+                ON locacoes_registros(data_vencimento);
+            CREATE INDEX IF NOT EXISTS idx_locacoes_editando_por
+                ON locacoes_registros(editando_por);
+
+            CREATE TABLE IF NOT EXISTS locacoes_meta (
+                chave   TEXT PRIMARY KEY,
+                valor   TEXT
+            );
+        """)
+        # Migração leve para bases compartilhadas antigas
+        existentes = {r["name"] for r in conn.execute("PRAGMA table_info(locacoes_registros)")}
+        if "editando_por" not in existentes:
+            conn.execute("ALTER TABLE locacoes_registros ADD COLUMN editando_por TEXT")
+        if "editando_desde" not in existentes:
+            conn.execute("ALTER TABLE locacoes_registros ADD COLUMN editando_desde TEXT")
+        if "versao" not in existentes:
+            conn.execute("ALTER TABLE locacoes_registros ADD COLUMN versao INTEGER DEFAULT 0")
+        if "tipo" not in existentes:
+            conn.execute("ALTER TABLE locacoes_registros ADD COLUMN tipo TEXT DEFAULT ''")
+        if "pedido_compra_numero" not in existentes:
+            conn.execute(
+                "ALTER TABLE locacoes_registros ADD COLUMN pedido_compra_numero TEXT DEFAULT ''"
+            )
 
 
 # ============================================================
@@ -189,6 +360,25 @@ def init_db():
                 atualizado_em         TEXT DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS locacoes_registros (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                obra              TEXT,
+                comprador         TEXT,
+                numero_pedido     TEXT,
+                fornecedor        TEXT,
+                item_locado       TEXT,
+                tipo              TEXT DEFAULT '',
+                pedido_compra_numero TEXT DEFAULT '',
+                data_pedido       TEXT,
+                periodo_dias      INTEGER,
+                data_vencimento   TEXT,
+                dias_a_vencer     TEXT,
+                situacao          TEXT,
+                pedido_ok         TEXT,
+                origem_planilha   TEXT,
+                atualizado_em     TEXT DEFAULT (datetime('now'))
+            );
+
             CREATE INDEX IF NOT EXISTS idx_ferramentas_saida
                 ON ferramentas_registros(data_saida);
             CREATE INDEX IF NOT EXISTS idx_ferramentas_status
@@ -197,6 +387,16 @@ def init_db():
                 ON ferramentas_registros(obra);
             CREATE INDEX IF NOT EXISTS idx_ferramentas_responsavel
                 ON ferramentas_registros(responsavel);
+            CREATE INDEX IF NOT EXISTS idx_locacoes_numero
+                ON locacoes_registros(numero_pedido);
+            CREATE INDEX IF NOT EXISTS idx_locacoes_obra
+                ON locacoes_registros(obra);
+            CREATE INDEX IF NOT EXISTS idx_locacoes_comprador
+                ON locacoes_registros(comprador);
+            CREATE INDEX IF NOT EXISTS idx_locacoes_situacao
+                ON locacoes_registros(situacao);
+            CREATE INDEX IF NOT EXISTS idx_locacoes_vencimento
+                ON locacoes_registros(data_vencimento);
             CREATE INDEX IF NOT EXISTS idx_pedidos_emitido_em
                 ON pedidos(emitido_em);
             CREATE INDEX IF NOT EXISTS idx_pedidos_obra_emitido_em
@@ -216,6 +416,16 @@ def init_db():
     marcar("backup-semanal")
     sincronizar_com_rede(silencioso=True)
     marcar("sincronizar-rede")
+    init_locacoes_shared_db()
+    marcar("locacoes-shared-init")
+
+    try:
+        from app.data.locacoes_import import tentar_sincronizar_planilha_locacoes_no_startup
+
+        tentar_sincronizar_planilha_locacoes_no_startup()
+        marcar("locacoes-sync-planilha")
+    except Exception as e:
+        print(f"[Locações] Aviso: sincronização automática da planilha ignorada: {e}")
 
     try:
         base = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))

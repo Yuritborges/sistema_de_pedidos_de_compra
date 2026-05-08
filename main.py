@@ -30,8 +30,7 @@ GLOBAL_CSS = """
     QTextEdit              { color: #111827; background: #FFFFFF; }
     QLabel                 { color: #111827; background: transparent; }
     QGroupBox              { color: #111827; }
-    QTableWidget           { color: #111827; }
-    QTableWidget::item     { color: #111827; }
+    /* QTableWidget: cada aba define seu próprio QSS; cor global em ::item quebrava delegates (ex.: Locações). */
     QHeaderView::section   { color: #FFFFFF; }
     QMessageBox QLabel     { color: #111827; }
     QComboBox QAbstractItemView {

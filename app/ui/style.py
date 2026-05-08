@@ -60,6 +60,53 @@ CSS_COMBO = f"""
     }}
 """
 
+# Popup do QCompleter (janela à parte — não herda QComboBox QAbstractItemView)
+CSS_COMPLETER_POPUP = f"""
+    QAbstractItemView {{
+        color:{TXT};
+        background:{WHITE};
+        border:1.5px solid {BDR};
+        font-size:12px;
+        outline:none;
+        selection-background-color:#DBEAFE;
+        selection-color:#1E3A5F;
+    }}
+    QAbstractItemView::item {{
+        color:{TXT};
+        background:{WHITE};
+        padding:6px 12px;
+        min-height:28px;
+    }}
+    QAbstractItemView::item:hover {{
+        background:#EFF6FF;
+        color:{TXT};
+    }}
+    QAbstractItemView::item:selected {{
+        background:#DBEAFE;
+        color:#1E3A5F;
+    }}
+    QScrollBar:vertical {{
+        background:{WHITE};
+        width:10px;
+        margin:2px;
+    }}
+    QScrollBar::handle:vertical {{
+        background:#C5BABA;
+        border-radius:4px;
+        min-height:24px;
+    }}
+"""
+
+
+def apply_completer_popup_style(completer) -> None:
+    """Evita popup escuro (Fusion) com texto ilegível ao combinar QComboBox + QCompleter."""
+    if completer is None:
+        return
+    pop = completer.popup()
+    if pop is not None:
+        pop.setStyleSheet(CSS_COMPLETER_POPUP)
+
+
 # CSS do campo de busca
 CSS_BUSCA = f"""
     QLineEdit {{

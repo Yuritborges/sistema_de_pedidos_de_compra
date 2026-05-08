@@ -4,6 +4,7 @@
 *.xlsx
 *.xlsb
 *.xls
+*.xlsm
 *.csv
 
 *.db
