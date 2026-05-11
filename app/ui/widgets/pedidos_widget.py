@@ -964,7 +964,14 @@ class PedidosWidget(QWidget):
 
             try:
                 from app.data.database import sincronizar_com_rede
+
                 sincronizar_com_rede(silencioso=True)
+            except Exception:
+                pass
+            try:
+                from app.data.cotacao_rede_sync import remover_pedido_cotacao_rede
+
+                remover_pedido_cotacao_rede(numero)
             except Exception:
                 pass
 

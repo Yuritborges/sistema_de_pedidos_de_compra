@@ -114,6 +114,7 @@ class PedidoService:
                         comprador          = ?,
                         valor_total        = ?,
                         caminho_pdf        = ?,
+                        emitido_em         = datetime('now'),
                         status             = 'emitido'
                     WHERE id = ?
                 """, (
@@ -219,6 +220,13 @@ class PedidoService:
 
         try:
             from app.data.database import sincronizar_com_rede
+
             sincronizar_com_rede(silencioso=True)
         except Exception as e:
             print(f"[REDE] Aviso ao sincronizar pedido: {e}")
+        try:
+            from app.data.cotacao_rede_sync import sync_pedido_atual_para_cotacao_rede
+
+            sync_pedido_atual_para_cotacao_rede(numero)
+        except Exception as e:
+            print(f"[REDE] Aviso ao atualizar cotacao_rede.db: {e}")
