@@ -72,3 +72,5 @@ Thumbs.db
 # EMPACOTAMENTO
 # =========================
 *.spec
+# Spec oficial do build em rede (tools/build_release.ps1)
+!SistemaPedidosV2.spec

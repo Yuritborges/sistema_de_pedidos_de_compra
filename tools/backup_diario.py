@@ -6,12 +6,13 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 
 BASE_REDE = r"Z:\0 OBRAS\brasul_pedidos"
-BASE_PROJETO = r"Z:\0 OBRAS\sistema_de_pedidos_brasulv2"
+BASE_PROJETO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 DB_FILES = {
     "iury": os.path.join(BASE_REDE, "Iury", "cotacao_iury.db"),
     "thamyres": os.path.join(BASE_REDE, "Thamyres", "cotacao_thamyres.db"),
     "rede": os.path.join(BASE_REDE, "cotacao_rede.db"),
+    "locacoes": os.path.join(BASE_REDE, "_shared", "locacoes.db"),
 }
 
 CADASTROS_FILES = {
