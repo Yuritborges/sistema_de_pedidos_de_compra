@@ -131,15 +131,15 @@ class MainWindow(QMainWindow):
         if icon_path:
             self.setWindowIcon(QIcon(icon_path))
         self.setWindowTitle("Sistema de Pedidos — Brasul Construtora")
-        self.setMinimumSize(1100, 700)
-        self.resize(1300, 820)
-        self._build()
-        self._registrar_atalhos()
         self._title_base = self.windowTitle()
         self._locacoes_venc = 0
         self._locacoes_alert = 0
         self._locacoes_blink_phase = False
         self._locacoes_btn_caption = "  🏗   Locações"
+        self.setMinimumSize(1100, 700)
+        self.resize(1300, 820)
+        self._build()
+        self._registrar_atalhos()
         self._setup_locacoes_sidebar_alerta()
 
         # Ícone da janela (mantém fallback único)
