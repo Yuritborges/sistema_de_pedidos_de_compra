@@ -8,14 +8,24 @@ _icon = os.path.join(_root, "assets", "logos", "logo_brasul.ico")
 if not os.path.isfile(_icon):
     _icon = None
 
+_bundle_datas = [
+    ("assets", "assets"),
+    ("database", "database"),
+]
+try:
+    import PySide6
+
+    _pyside_tr = os.path.join(os.path.dirname(PySide6.__file__), "translations")
+    if os.path.isdir(_pyside_tr):
+        _bundle_datas.append((_pyside_tr, "PySide6/translations"))
+except Exception:
+    pass
+
 a = Analysis(
     ["main.py"],
     pathex=[_root],
     binaries=[],
-    datas=[
-        ("assets", "assets"),
-        ("database", "database"),
-    ],
+    datas=_bundle_datas,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

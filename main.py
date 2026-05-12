@@ -17,6 +17,7 @@ if sys.platform == "win32":
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+
 GLOBAL_CSS = """
     QWidget                { color: #111827; }
     QLineEdit              { color: #111827; background: #FFFFFF;
@@ -58,7 +59,10 @@ def main():
         from PySide6.QtGui import QIcon
         marcar("imports-qt")
 
+        from app.ui.qt_i18n import instalar_traducoes_qt_pt_br
+
         app = QApplication(sys.argv)
+        instalar_traducoes_qt_pt_br(app)
         app.setApplicationName("Sistema de Cotação - Brasul")
         app.setOrganizationName("Brasul Construtora")
         app.setStyle("Fusion")
