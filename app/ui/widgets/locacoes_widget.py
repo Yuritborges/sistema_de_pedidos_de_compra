@@ -649,7 +649,7 @@ class LocacoesWidget(QWidget):
         self.combo_janela_venc.currentIndexChanged.connect(lambda _: self._aplicar_filtro())
         hl_janela.addWidget(self.combo_janela_venc)
         lj_hint = QLabel(
-            "Mostra só linhas cuja data de vencimento cai na janela em torno de hoje. "
+            "Mostra linhas cuja data de vencimento ou de pedido cai na janela em torno de hoje. "
             "Itens VENCIDOS sempre aparecem."
         )
         lj_hint.setStyleSheet(f"font-size:10px; color:{TXT_S}; background:transparent;")
@@ -1115,17 +1115,27 @@ class LocacoesWidget(QWidget):
         sit = str(r.get("situacao", "")).strip().upper()
         if sit == "VENCIDO":
             return True
-        v_iso = _clean(r.get("data_vencimento"))
-        if not v_iso or len(v_iso) < 10:
-            return True
-        try:
-            vd = datetime.strptime(v_iso[:10], "%Y-%m-%d").date()
-        except ValueError:
-            return True
         hoje = date.today()
         lo = hoje - timedelta(days=int(dias_win))
         hi = hoje + timedelta(days=int(dias_win))
-        return lo <= vd <= hi
+
+        def _parse_iso_d(iso: str):
+            if not iso or len(iso) < 10:
+                return None
+            try:
+                return datetime.strptime(iso[:10], "%Y-%m-%d").date()
+            except ValueError:
+                return None
+
+        vd = _parse_iso_d(_clean(r.get("data_vencimento")))
+        pd = _parse_iso_d(_clean(r.get("data_pedido")))
+        if vd is not None and lo <= vd <= hi:
+            return True
+        if pd is not None and lo <= pd <= hi:
+            return True
+        if vd is None and pd is None:
+            return True
+        return False
 
     def _aplicar_filtro(self):
         if not getattr(self, "e_busca", None):
@@ -1569,7 +1579,7 @@ class LocacoesWidget(QWidget):
             jw = self.combo_janela_venc.currentData()
             if jw is not None:
                 jhint = (
-                    f" <span style='color:{TXT_S};'>· Grade: vencimento ±{jw} dias "
+                    f" <span style='color:{TXT_S};'>· Grade: pedido ou vencimento ±{jw} dias "
                     f"(vencidos sempre visíveis)</span>"
                 )
         self.lbl_info.setTextFormat(Qt.TextFormat.RichText)
