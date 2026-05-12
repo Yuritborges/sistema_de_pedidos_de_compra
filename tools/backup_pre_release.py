@@ -56,7 +56,13 @@ def _zip_fonte(out: Path) -> None:
             for p in tdir.rglob("*.py"):
                 if "__pycache__" not in p.parts:
                     zf.write(p, f"tools/{p.relative_to(tdir).as_posix()}")
-            for name in ("build_release.ps1", "robocopy_mirror.ps1", "sync_current_from_dist.ps1"):
+            for name in (
+                "build_release.ps1",
+                "close_local_sistema_pedidos.ps1",
+                "release_full.ps1",
+                "robocopy_mirror.ps1",
+                "sync_current_from_dist.ps1",
+            ):
                 p = tdir / name
                 if p.is_file():
                     zf.write(p, f"tools/{name}")

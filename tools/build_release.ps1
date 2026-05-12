@@ -3,19 +3,33 @@
 #
 # Uso (na raiz do projeto):
 #   powershell -ExecutionPolicy Bypass -File tools\build_release.ps1
+#   powershell -ExecutionPolicy Bypass -File tools\build_release.ps1 -SkipKill
+#   powershell -ExecutionPolicy Bypass -File tools\build_release.ps1 -IncludePythonMain
 #
-# Dica: feche o programa em todos os PCs antes de rodar, para nao travar arquivos em uso.
+# Por padrao encerra SistemaPedidosV2.exe NESTA MAQUINA antes do build e antes do robocopy em current/.
+# Outros PCs na rede: ainda e preciso fechar o app la (ou rodar o release na maquina certa).
+
+param(
+    [switch]$SkipKill,
+    [switch]$IncludePythonMain
+)
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
 Set-Location $Root
+
+. (Join-Path $PSScriptRoot "close_local_sistema_pedidos.ps1")
+if (-not $SkipKill) {
+    Write-Host "[0/4] Encerrando app local (liberar arquivos) ..."
+    $null = Invoke-CloseLocalSistemaPedidos -ProjectRoot $Root -IncludePythonMain:$IncludePythonMain
+}
 
 $PyInstaller = Join-Path $Root ".venv\Scripts\pyinstaller.exe"
 if (-not (Test-Path $PyInstaller)) {
     throw "Nao encontrei $PyInstaller. Ative o .venv e instale: pip install pyinstaller"
 }
 
-Write-Host "[1/3] PyInstaller..."
+Write-Host "[1/4] PyInstaller..."
 & $PyInstaller (Join-Path $Root "SistemaPedidosV2.spec") --clean --noconfirm
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -27,11 +41,17 @@ if (-not (Test-Path (Join-Path $src "SistemaPedidosV2.exe"))) {
 $stamp = Get-Date -Format "yyyyMMdd_HHmm"
 $destRelease = Join-Path $Root "releases\SistemaPedidosV2_$stamp"
 
-Write-Host "[2/3] Copiando para $destRelease ..."
+Write-Host "[2/4] Copiando para $destRelease ..."
 New-Item -ItemType Directory -Path (Join-Path $Root "releases") -Force | Out-Null
 Copy-Item -Path $src -Destination $destRelease -Recurse -Force
 
-Write-Host "[3/3] Atualizando pasta current (atalhos da rede) ..."
+if (-not $SkipKill) {
+    Write-Host "[3/4] Encerrando app local de novo antes de current/ ..."
+    $null = Invoke-CloseLocalSistemaPedidos -ProjectRoot $Root -IncludePythonMain:$IncludePythonMain
+    Start-Sleep -Seconds 1
+}
+
+Write-Host "[4/4] Atualizando pasta current (atalhos da rede) ..."
 $cur = Join-Path $Root "current"
 New-Item -ItemType Directory -Path $cur -Force | Out-Null
 . (Join-Path $PSScriptRoot "robocopy_mirror.ps1")
