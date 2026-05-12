@@ -414,9 +414,9 @@ class MainWindow(QMainWindow):
                     background: {bg};
                 }}
                 QPushButton:checked {{
-                    color: {S_ATXT};
-                    background: {S_SEL};
-                    border-left: 4px solid {S_EDGE};
+                    color: {accent};
+                    background: {bg};
+                    border-left: 4px solid {accent};
                     font-weight: bold;
                 }}
             """
@@ -446,9 +446,9 @@ class MainWindow(QMainWindow):
                     background: {bg};
                 }}
                 QPushButton:checked {{
-                    color: {S_ATXT};
-                    background: {S_SEL};
-                    border-left: 4px solid {S_EDGE};
+                    color: {accent};
+                    background: {bg};
+                    border-left: 4px solid {accent};
                     font-weight: bold;
                 }}
             """
@@ -479,7 +479,7 @@ class MainWindow(QMainWindow):
             return
         v, a = self._locacoes_venc, self._locacoes_alert
         total = v + a
-        if total <= 0 or btn.isChecked():
+        if total <= 0:
             return
         ph = self._locacoes_blink_phase
         if v > 0 and a > 0:
@@ -521,16 +521,9 @@ class MainWindow(QMainWindow):
             else ""
         )
 
-        if btn.isChecked():
-            self._timer_locacoes_blink.stop()
-            btn.setStyleSheet(_qss_nav_pushbutton())
-            # Com a aba ativa o piscar fica no restante da UI; o contador continua visível no nome.
-            btn.setText(self._locacoes_btn_caption + self._texto_suffix_locacoes_contagem())
-            btn.setToolTip(f"{tip_extra}Ctrl+{idx}")
-            return
-
         btn.setToolTip(f"{tip_extra}Ctrl+{idx}")
 
+        # Piscar vermelho (vencido) / amarelo (próximo do vencimento) na sidebar também com a aba ativa.
         if not self._timer_locacoes_blink.isActive():
             self._timer_locacoes_blink.start()
         self._apply_locacoes_blink_frame()
