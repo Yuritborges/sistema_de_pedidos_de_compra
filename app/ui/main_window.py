@@ -136,6 +136,12 @@ class MainWindow(QMainWindow):
         self._locacoes_alert = 0
         self._locacoes_blink_phase = False
         self._locacoes_btn_caption = "  🏗   Locações"
+        self._timer_locacoes_poll = QTimer(self)
+        self._timer_locacoes_poll.setInterval(60_000)
+        self._timer_locacoes_poll.timeout.connect(self._poll_locacoes_vencimento)
+        self._timer_locacoes_blink = QTimer(self)
+        self._timer_locacoes_blink.setInterval(750)
+        self._timer_locacoes_blink.timeout.connect(self._toggle_locacoes_blink)
         self.setMinimumSize(1100, 700)
         self.resize(1300, 820)
         self._build()
@@ -406,15 +412,7 @@ class MainWindow(QMainWindow):
             """
 
     def _setup_locacoes_sidebar_alerta(self):
-        self._timer_locacoes_poll = QTimer(self)
-        self._timer_locacoes_poll.setInterval(60_000)
-        self._timer_locacoes_poll.timeout.connect(self._poll_locacoes_vencimento)
         self._timer_locacoes_poll.start()
-
-        self._timer_locacoes_blink = QTimer(self)
-        self._timer_locacoes_blink.setInterval(750)
-        self._timer_locacoes_blink.timeout.connect(self._toggle_locacoes_blink)
-
         QTimer.singleShot(2500, self._poll_locacoes_vencimento)
 
     def _poll_locacoes_vencimento(self):
