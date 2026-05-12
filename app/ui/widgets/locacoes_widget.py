@@ -744,8 +744,8 @@ class LocacoesWidget(QWidget):
         def sit_upper(r):
             return str(r.get("situacao", "")).strip().upper()
 
-        venc = sum(1 for r in rows if sit_upper(r) == "VENCIDO")
-        alert = sum(1 for r in rows if sit_upper(r) == "ATUALIZAR")
+        venc = sum(1 for r in rows if destaque_visual_linha_locacao_db(r) == "vencido")
+        alert = sum(1 for r in rows if destaque_visual_linha_locacao_db(r) == "dois_dias")
         obra = sum(1 for r in rows if sit_upper(r) == "NA OBRA")
         ok = sum(
             1 for r in rows
