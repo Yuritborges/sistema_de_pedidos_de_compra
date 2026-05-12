@@ -4,13 +4,16 @@
 #   powershell -ExecutionPolicy Bypass -File tools\release_full.ps1
 #   powershell -ExecutionPolicy Bypass -File tools\release_full.ps1 -IncludePythonMain
 #   powershell -ExecutionPolicy Bypass -File tools\release_full.ps1 -SkipKill
+#   powershell -ExecutionPolicy Bypass -File tools\release_full.ps1 -SkipCurrent
 #
 # -IncludePythonMain: tambem encerra python.exe rodando main.py / main_patrao.py desta pasta (dev).
-# Outros PCs com o atalho na rede: robocopy pode falhar se la estiverem com o .exe aberto.
+# -SkipCurrent: build vai para releases/ mas NAO atualiza current/ (evita pedir pra colegas fecharem na hora).
+# Outros PCs com o atalho em current: sem -SkipCurrent, robocopy pode falhar se alguem tiver o .exe aberto.
 
 param(
     [switch]$SkipKill,
-    [switch]$IncludePythonMain
+    [switch]$IncludePythonMain,
+    [switch]$SkipCurrent
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,13 +36,9 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "[3/3] Build + release ..."
 $br = Join-Path $PSScriptRoot "build_release.ps1"
-if ($SkipKill) {
-    & powershell -ExecutionPolicy Bypass -File $br -SkipKill
-}
-elseif ($IncludePythonMain) {
-    & powershell -ExecutionPolicy Bypass -File $br -IncludePythonMain
-}
-else {
-    & powershell -ExecutionPolicy Bypass -File $br
-}
+$params = @("-ExecutionPolicy", "Bypass", "-File", $br)
+if ($SkipKill) { $params += "-SkipKill" }
+if ($IncludePythonMain) { $params += "-IncludePythonMain" }
+if ($SkipCurrent) { $params += "-SkipCurrent" }
+& powershell @params
 exit $LASTEXITCODE

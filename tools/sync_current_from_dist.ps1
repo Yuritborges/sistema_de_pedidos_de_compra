@@ -1,4 +1,5 @@
 # Copia dist\SistemaPedidosV2 para current\ (sem rodar PyInstaller).
+# Use depois de um build com -SkipCurrent, ou quando current/ travou por .exe em uso.
 # Caminhos com espacos (ex.: Z:\0 OBRAS\...) sao tratados corretamente.
 #
 # Uso (na raiz do projeto):
