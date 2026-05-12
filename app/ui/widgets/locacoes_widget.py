@@ -48,6 +48,7 @@ from app.data.locacoes_import import (
     calcular_derivados_locacao as _calcular_derivados,
     clean_str as _clean,
     consume_last_sync_message,
+    destaque_visual_linha_locacao_db,
     import_locacoes_into_connection,
     parse_periodo as _parse_periodo,
     registrar_planilha_na_meta,
@@ -286,28 +287,8 @@ def _br_to_iso(txt: str) -> str:
 
 
 def _destaque_visual_linha_locacao(r):
-    """
-    'vencido' = linha vermelha inteira.
-    'dois_dias' = linha amarela (alerta de vencimento: 0–7 dias, mesma faixa «ATUALIZAR» da planilha).
-    """
-    if str(r.get("pedido_ok", "")).strip().upper() == "OK":
-        return None
-    sit = str(r.get("situacao", "")).strip().upper()
-    d = None
-    try:
-        d = int(str(r.get("dias_a_vencer", "")).strip())
-    except ValueError:
-        pass
-
-    if sit == "VENCIDO":
-        return "vencido"
-    if d is not None and d < 0:
-        return "vencido"
-    if d is not None and 0 <= d <= 7:
-        return "dois_dias"
-    if sit == "ATUALIZAR":
-        return "dois_dias"
-    return None
+    """Delega para o mesmo critério centralizado em locacoes_import."""
+    return destaque_visual_linha_locacao_db(r)
 
 
 def _hex_fundo_linha(destaque, zebra: QColor):

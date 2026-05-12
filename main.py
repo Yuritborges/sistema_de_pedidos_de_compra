@@ -48,6 +48,9 @@ def main():
         def marcar(etapa):
             tempos.append((etapa, time.perf_counter() - inicio_total))
 
+        # Cada processo deve escolher utilizador de novo (evita env herdado).
+        os.environ.pop("BRASUL_USUARIO", None)
+
         from PySide6.QtWidgets import (
             QApplication, QDialog, QVBoxLayout, QLabel, QPushButton,
             QHBoxLayout, QInputDialog, QMessageBox
@@ -170,10 +173,12 @@ def _selecionar_usuario(app) -> str:
         QHBoxLayout, QInputDialog, QMessageBox, QFrame
     )
     from PySide6.QtCore import Qt
-    from PySide6.QtGui import QPixmap, QIcon
+    from PySide6.QtGui import QPixmap, QIcon, QGuiApplication
 
     dlg = QDialog()
     dlg.setWindowTitle("Acesso ao Sistema")
+    dlg.setWindowModality(Qt.ApplicationModal)
+    dlg.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
     icon_path = _icone_app_path()
     if icon_path:
         dlg.setWindowIcon(QIcon(icon_path))
@@ -316,6 +321,15 @@ def _selecionar_usuario(app) -> str:
     rodape.addWidget(btn_cancelar)
     layout.addLayout(rodape)
     outer.addWidget(card)
+
+    pm = QGuiApplication.primaryScreen()
+    if pm:
+        dlg.adjustSize()
+        fg = dlg.frameGeometry()
+        fg.moveCenter(pm.availableGeometry().center())
+        dlg.move(fg.topLeft())
+    dlg.raise_()
+    dlg.activateWindow()
 
     if dlg.exec() != QDialog.Accepted:
         return ""

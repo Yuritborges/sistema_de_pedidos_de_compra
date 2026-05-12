@@ -379,9 +379,51 @@ class MainWindow(QMainWindow):
 
         self._sync_locacoes_nav_alerta_ui()
 
-    def _qss_nav_locacoes_alerta(self, blink_high: bool) -> str:
-        accent = "#B71C1C" if blink_high else "#E65100"
-        bg = "#FFEBEE" if blink_high else "#FFF8E1"
+    def _texto_suffix_locacoes_contagem(self) -> str:
+        v, a = self._locacoes_venc, self._locacoes_alert
+        if v and a:
+            return f"  ({v}+{a})"
+        if v:
+            return f"  ({v})"
+        if a:
+            return f"  ({a})"
+        return ""
+
+    def _qss_nav_locacoes_alerta_vermelho(self, blink_high: bool) -> str:
+        accent = "#B71C1C" if blink_high else "#C62828"
+        bg = "#FFEBEE" if blink_high else "#FFCDD2"
+        return f"""
+                QPushButton {{
+                    text-align: left;
+                    color: {S_TEXT};
+                    background: transparent;
+                    border: none;
+                    border-left: 4px solid transparent;
+                    font-size: 13px;
+                    padding-left: 18px;
+                }}
+                QPushButton:hover {{
+                    color: #C0392B;
+                    background: {S_ITEM};
+                    border-left: 4px solid #E8A090;
+                }}
+                QPushButton:!checked {{
+                    color: {accent};
+                    font-weight: bold;
+                    border-left: 4px solid {accent};
+                    background: {bg};
+                }}
+                QPushButton:checked {{
+                    color: {S_ATXT};
+                    background: {S_SEL};
+                    border-left: 4px solid {S_EDGE};
+                    font-weight: bold;
+                }}
+            """
+
+    def _qss_nav_locacoes_alerta_amarelo(self, blink_high: bool) -> str:
+        accent = "#E65100" if blink_high else "#F57C00"
+        bg = "#FFFDE7" if blink_high else "#FFF9C4"
         return f"""
                 QPushButton {{
                     text-align: left;
@@ -434,12 +476,21 @@ class MainWindow(QMainWindow):
         btn = self._btns.get("locacoes")
         if not btn:
             return
-        total = self._locacoes_venc + self._locacoes_alert
+        v, a = self._locacoes_venc, self._locacoes_alert
+        total = v + a
         if total <= 0 or btn.isChecked():
             return
-        btn.setStyleSheet(self._qss_nav_locacoes_alerta(self._locacoes_blink_phase))
-        cap = self._locacoes_btn_caption
-        btn.setText(cap + (f"  ⚠ {total}" if self._locacoes_blink_phase else f"  ({total})"))
+        ph = self._locacoes_blink_phase
+        if v > 0 and a > 0:
+            if ph:
+                btn.setStyleSheet(self._qss_nav_locacoes_alerta_vermelho(ph))
+            else:
+                btn.setStyleSheet(self._qss_nav_locacoes_alerta_amarelo(not ph))
+        elif v > 0:
+            btn.setStyleSheet(self._qss_nav_locacoes_alerta_vermelho(ph))
+        else:
+            btn.setStyleSheet(self._qss_nav_locacoes_alerta_amarelo(ph))
+        btn.setText(self._locacoes_btn_caption + self._texto_suffix_locacoes_contagem())
 
     def _sync_locacoes_nav_alerta_ui(self):
         btn = self._btns.get("locacoes")
@@ -463,7 +514,11 @@ class MainWindow(QMainWindow):
             partes.append(f"{n_a} próx. venc.")
         self.setWindowTitle(f"{self._title_base}  —  Locações: {', '.join(partes)}")
         idx = ORDEM_ABAS.index("locacoes") + 1
-        tip_extra = f"Atenção: {n_v} vencido(s), {n_a} a vencer (≤7 dias).\n"
+        tip_extra = (
+            f"Vencidos: {n_v}. A vencer (≤7 dias): {n_a}.\n"
+            if (n_v or n_a)
+            else ""
+        )
 
         if btn.isChecked():
             self._timer_locacoes_blink.stop()

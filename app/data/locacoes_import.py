@@ -110,6 +110,30 @@ def calcular_derivados_locacao(
     return v_out, dias_txt, sit
 
 
+def destaque_visual_linha_locacao_db(row: dict) -> str | None:
+    """
+    Mesmo critério da tabela Locações (linha vermelha / faixa amarela «2 dias»).
+    Retorna None, 'vencido' ou 'dois_dias'.
+    """
+    if clean_str(row.get("pedido_ok")).upper() == "OK":
+        return None
+    sit = str(row.get("situacao") or "").strip().upper()
+    d = None
+    try:
+        d = int(str(row.get("dias_a_vencer") or "").strip())
+    except ValueError:
+        pass
+    if sit == "VENCIDO":
+        return "vencido"
+    if d is not None and d < 0:
+        return "vencido"
+    if d is not None and 0 <= d <= 7:
+        return "dois_dias"
+    if sit == "ATUALIZAR":
+        return "dois_dias"
+    return None
+
+
 def resolver_caminho_planilha_locacoes() -> str | None:
     """Primeiro caminho válido: variável de ambiente → manual em config → pasta do projeto."""
     if LOCACOES_PLANILHA_ENV and os.path.isfile(LOCACOES_PLANILHA_ENV):
@@ -202,8 +226,8 @@ def import_locacoes_into_connection(conn, path: str, substituir: bool) -> int:
 
 def contar_locacoes_vencimento_e_alerta() -> tuple[int, int]:
     """
-    Conta linhas com situação derivada VENCIDO ou ATUALIZAR (vence em até 7 dias),
-    usando a mesma regra que `calcular_derivados_locacao` / aba Locações.
+    Conta linhas com o mesmo destaque visual da tabela (vencido vs. alerta amarelo).
+    Usa colunas gravadas no BD (`situacao`, `dias_a_vencer`, `pedido_ok`).
     Retorna (n_vencidos, n_proximo_vencer).
     """
     try:
@@ -213,23 +237,17 @@ def contar_locacoes_vencimento_e_alerta() -> tuple[int, int]:
     try:
         with get_locacoes_connection() as conn:
             rows = conn.execute(
-                "SELECT data_pedido, periodo_dias, data_vencimento, pedido_ok "
-                "FROM locacoes_registros"
+                "SELECT pedido_ok, situacao, dias_a_vencer FROM locacoes_registros"
             ).fetchall()
     except Exception:
         return 0, 0
     venc = 0
     alert = 0
     for r in rows:
-        _, _, sit = calcular_derivados_locacao(
-            clean_str(r["data_pedido"]),
-            r["periodo_dias"],
-            clean_str(r["data_vencimento"]),
-            clean_str(r["pedido_ok"]),
-        )
-        if sit == "VENCIDO":
+        tag = destaque_visual_linha_locacao_db(dict(r))
+        if tag == "vencido":
             venc += 1
-        elif sit == "ATUALIZAR":
+        elif tag == "dois_dias":
             alert += 1
     return venc, alert
 
