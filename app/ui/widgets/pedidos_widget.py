@@ -3,6 +3,9 @@
 import os, sys, subprocess, shutil, tempfile
 from datetime import datetime, date, timedelta
 
+# Janela em dias: pedidos com previsão de entrega até hoje+N (ou já atrasados) aparecem em amarelo até confirmar na obra.
+ENTREGA_OBRA_JANELA_DIAS = 15
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
@@ -34,6 +37,7 @@ class PedidosWidget(QWidget):
         self._filtro_ativo      = None
         self._data_inicio       = None
         self._data_fim          = None
+        self._filtro_entrega_obra = None  # None | "pendente" | "entregue"
         self._build()
         self._set_filtro_data("todos")
         self._carregar()
@@ -161,6 +165,25 @@ class PedidosWidget(QWidget):
         btn_periodo.clicked.connect(self._filtro_periodo_custom)
         hl_busca.addWidget(btn_periodo)
 
+        sep_ent = QFrame()
+        sep_ent.setFrameShape(QFrame.VLine)
+        sep_ent.setStyleSheet(f"background:{BDR}; margin:4px 2px;")
+        sep_ent.setFixedWidth(1)
+        hl_busca.addWidget(sep_ent)
+
+        self._btn_f_ent_pend = btn_filtro("A entregar")
+        self._btn_f_ent_pend.setToolTip(
+            "Pedidos em que o material ainda não foi confirmado na obra e a previsão de entrega "
+            f"cai em até {ENTREGA_OBRA_JANELA_DIAS} dias (ou já passou)."
+        )
+        self._btn_f_ent_pend.clicked.connect(lambda: self._toggle_filtro_entrega_obra("pendente"))
+        hl_busca.addWidget(self._btn_f_ent_pend)
+
+        self._btn_f_ent_ok = btn_filtro("Entregues")
+        self._btn_f_ent_ok.setToolTip("Pedidos em que você já confirmou o recebimento do material na obra.")
+        self._btn_f_ent_ok.clicked.connect(lambda: self._toggle_filtro_entrega_obra("entregue"))
+        hl_busca.addWidget(self._btn_f_ent_ok)
+
         hl_busca.addStretch()
         self._lbl_cont = QLabel("")
         self._lbl_cont.setStyleSheet(f"font-size:11px; color:{TXT_S}; background:transparent;")
@@ -195,7 +218,7 @@ class PedidosWidget(QWidget):
         hh.setSectionResizeMode(2, QHeaderView.Stretch)
         hh.setSectionResizeMode(3, QHeaderView.Stretch)
         hh.setSectionResizeMode(4, QHeaderView.Fixed);  self.tabela.setColumnWidth(4, 115)
-        hh.setSectionResizeMode(5, QHeaderView.Fixed);  self.tabela.setColumnWidth(5, 380)
+        hh.setSectionResizeMode(5, QHeaderView.Fixed);  self.tabela.setColumnWidth(5, 440)
         cvl.addWidget(self.tabela)
         vl.addWidget(container, 1)
 
@@ -293,6 +316,8 @@ class PedidosWidget(QWidget):
                             p.valor_total,
                             p.caminho_pdf,
                             p.comprador,
+                            COALESCE(p.prazo_entrega, 0) AS prazo_entrega,
+                            p.material_entregue_em,
                             COALESCE(it.itens_texto, '') AS itens_texto
                         FROM pedidos p
                         LEFT JOIN (
@@ -319,6 +344,8 @@ class PedidosWidget(QWidget):
                             p.valor_total,
                             p.caminho_pdf,
                             p.comprador,
+                            COALESCE(p.prazo_entrega, 0) AS prazo_entrega,
+                            p.material_entregue_em,
                             COALESCE(it.itens_texto, '') AS itens_texto
                         FROM pedidos p
                         LEFT JOIN (
@@ -349,6 +376,10 @@ class PedidosWidget(QWidget):
                 except Exception:
                     valor_total = 0.0
 
+                prazo_ent = row["prazo_entrega"]
+                mat_em = row["material_entregue_em"]
+                entrega_tag = PedidosWidget._classificar_entrega_na_obra(data_dt, prazo_ent, mat_em)
+
                 self._todos.append({
                     "id":                 row["id"],
                     "nome":               nome_pdf,
@@ -366,6 +397,9 @@ class PedidosWidget(QWidget):
                     "fornecedor_nome":    fornecedor,
                     "itens_texto":        str(row["itens_texto"] or ""),
                     "comprador":          row["comprador"] or "",
+                    "prazo_entrega":      prazo_ent,
+                    "material_entregue_em": mat_em,
+                    "entrega_tag":        entrega_tag,
                 })
 
         except Exception as e:
@@ -404,6 +438,31 @@ class PedidosWidget(QWidget):
             b.setChecked(k == chave)
         self._lbl_filtro_ativo.setVisible(False)
         self._aplicar_filtros()
+
+    def _toggle_filtro_entrega_obra(self, chave):
+        if self._filtro_entrega_obra == chave:
+            self._filtro_entrega_obra = None
+        else:
+            self._filtro_entrega_obra = chave
+        self._btn_f_ent_pend.setChecked(self._filtro_entrega_obra == "pendente")
+        self._btn_f_ent_ok.setChecked(self._filtro_entrega_obra == "entregue")
+        self._aplicar_filtros()
+
+    @staticmethod
+    def _classificar_entrega_na_obra(data_pedido: datetime, prazo_ent: int | None, material_entregue_em) -> str:
+        """entregue | pendente (amarelo) | neutro (sem destaque)."""
+        if material_entregue_em and str(material_entregue_em).strip():
+            return "entregue"
+        try:
+            pr = int(prazo_ent if prazo_ent is not None else 0)
+        except (TypeError, ValueError):
+            pr = 0
+        dp = data_pedido.date() if isinstance(data_pedido, datetime) else data_pedido
+        prev = dp + timedelta(days=pr)
+        hoje = date.today()
+        if prev <= hoje + timedelta(days=ENTREGA_OBRA_JANELA_DIAS):
+            return "pendente"
+        return "neutro"
 
     def _filtro_periodo_custom(self):
         dlg = QDialog(self)
@@ -472,6 +531,11 @@ class PedidosWidget(QWidget):
             resultado = [r for r in resultado if
                          self._data_inicio <= r["data"].date() <= self._data_fim]
 
+        if self._filtro_entrega_obra == "pendente":
+            resultado = [r for r in resultado if r.get("entrega_tag") == "pendente"]
+        elif self._filtro_entrega_obra == "entregue":
+            resultado = [r for r in resultado if r.get("entrega_tag") == "entregue"]
+
         # Armazena resultado filtrado e reseta paginação
         self._filtrados    = resultado
         self._pagina_atual = 0
@@ -538,8 +602,27 @@ class PedidosWidget(QWidget):
         """Insere uma única linha na tabela. Usado pela paginação."""
         r = self.tabela.rowCount()
         self.tabela.insertRow(r)
-        self.tabela.setRowHeight(r, 92)
-        bg = WHITE if r % 2 == 0 else "#FBF7F7"
+        self.tabela.setRowHeight(r, 108)
+
+        tag = dados.get("entrega_tag", "neutro")
+        if tag == "entregue":
+            bg = "#E3F4E8"
+        elif tag == "pendente":
+            bg = "#FFF9C4"
+        else:
+            bg = WHITE if r % 2 == 0 else "#FBF7F7"
+
+        try:
+            pr = int(dados.get("prazo_entrega") or 0)
+        except (TypeError, ValueError):
+            pr = 0
+        prev_dt = dados["data"].date() + timedelta(days=pr)
+        tip_prev = (
+            f"Previsão de entrega (pedido + {pr} dia{'s' if pr != 1 else ''}): "
+            f"{prev_dt.strftime('%d/%m/%Y')}"
+        )
+        if dados.get("material_entregue_em"):
+            tip_prev += f"\nMaterial confirmado na obra em: {dados['material_entregue_em']}"
 
         def _it(txt, align=Qt.AlignVCenter|Qt.AlignLeft, bold=False, cor=None):
             it = QTableWidgetItem(str(txt)); it.setTextAlignment(align)
@@ -548,8 +631,11 @@ class PedidosWidget(QWidget):
             if cor:  it.setForeground(QColor(cor))
             return it
 
+        it_data = _it(dados["data"].strftime("%d/%m/%Y"), Qt.AlignVCenter|Qt.AlignCenter, cor=TXT_S)
+        it_data.setToolTip(tip_prev)
+
         self.tabela.setItem(r, 0, _it(f"#{dados['numero']}", Qt.AlignVCenter|Qt.AlignCenter, bold=True, cor=RED))
-        self.tabela.setItem(r, 1, _it(dados["data"].strftime("%d/%m/%Y"), Qt.AlignVCenter|Qt.AlignCenter, cor=TXT_S))
+        self.tabela.setItem(r, 1, it_data)
         self.tabela.setItem(r, 2, _it(dados["obra"], bold=True))
         self.tabela.setItem(r, 3, _it(dados.get("fornecedor", "—"), cor=TXT_S))
         cor_e = CORES_EMPRESA.get(dados["empresa"], TXT_S)
@@ -558,7 +644,7 @@ class PedidosWidget(QWidget):
         cell = QWidget(); cell.setStyleSheet(f"background:{bg};")
         vl_acoes = QVBoxLayout(cell)
         vl_acoes.setContentsMargins(10, 10, 10, 10)
-        vl_acoes.setSpacing(10)
+        vl_acoes.setSpacing(8)
 
         num = dados["numero"]
         p = dados["caminho"]
@@ -608,12 +694,88 @@ class PedidosWidget(QWidget):
         row2.setContentsMargins(0, 0, 0, 0)
         row2.addWidget(bed)
         row2.addWidget(bpr)
+
+        if tag == "pendente":
+            bok = btn_solid("✓ OK na obra", "#1E8449", h=30)
+            bok.setMinimumWidth(102)
+            bok.setToolTip(
+                "Confirma que o material deste pedido já foi entregue na obra. "
+                "A linha fica verde e entra no filtro «Entregues»."
+            )
+            bok.clicked.connect(lambda _, x=pid: self._confirmar_material_obra(x))
+            row2.addWidget(bok)
+        elif tag == "entregue":
+            bu = btn_outline("↩ Desfazer entrega", h=30)
+            bu.setMinimumWidth(118)
+            bu.setToolTip("Remove a confirmação, se o registro foi marcado por engano.")
+            bu.clicked.connect(lambda _, x=pid: self._desfazer_confirmacao_material_obra(x))
+            row2.addWidget(bu)
+
         row2.addWidget(bx)
         row2.addStretch(1)
 
         vl_acoes.addLayout(row1)
         vl_acoes.addLayout(row2)
         self.tabela.setCellWidget(r, 5, cell)
+
+    def _confirmar_material_obra(self, pedido_id: int):
+        r = QMessageBox.question(
+            self,
+            "Confirmar entrega",
+            "Confirmar que o material deste pedido já foi recebido na obra?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if r != QMessageBox.Yes:
+            return
+        try:
+            from app.data.database import get_connection
+
+            hoje = date.today().isoformat()
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE pedidos SET material_entregue_em = ? WHERE id = ?",
+                    (hoje, pedido_id),
+                )
+            try:
+                from app.data.database import sincronizar_com_rede
+
+                sincronizar_com_rede(silencioso=True)
+            except Exception:
+                pass
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Não foi possível salvar.\n\n{e}")
+            return
+        self._carregar()
+
+    def _desfazer_confirmacao_material_obra(self, pedido_id: int):
+        r = QMessageBox.question(
+            self,
+            "Desfazer",
+            "Remover a confirmação de entrega deste pedido?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if r != QMessageBox.Yes:
+            return
+        try:
+            from app.data.database import get_connection
+
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE pedidos SET material_entregue_em = NULL WHERE id = ?",
+                    (pedido_id,),
+                )
+            try:
+                from app.data.database import sincronizar_com_rede
+
+                sincronizar_com_rede(silencioso=True)
+            except Exception:
+                pass
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Não foi possível salvar.\n\n{e}")
+            return
+        self._carregar()
 
     # ══════════════════════════════════════════════════════════════════════════
     # IMPRESSÃO — RELAÇÃO DE PEDIDOS

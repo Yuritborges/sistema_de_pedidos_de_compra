@@ -298,6 +298,7 @@ def init_db():
                 percentual_final    INTEGER,
                 marco_percentual_final TEXT,
                 prazo_entrega       INTEGER,
+                material_entregue_em TEXT,
                 comprador           TEXT,
                 valor_total         REAL,
                 caminho_pdf         TEXT,
@@ -407,6 +408,7 @@ def init_db():
             INSERT OR IGNORE INTO contador_pedidos (id, ultimo) VALUES (1, 2548);
         """)
         _garantir_colunas_pagamento_etapas(conn)
+        _garantir_coluna_material_entregue_obra(conn)
     marcar("schema-e-migracoes")
 
     print(f"[DB] Banco inicializado: {DATABASE_PATH}")
@@ -461,6 +463,15 @@ def _garantir_colunas_pagamento_etapas(conn):
     for nome, sql in colunas.items():
         if nome not in existentes:
             conn.execute(sql)
+
+
+def _garantir_coluna_material_entregue_obra(conn):
+    """Confirmação na obra: material recebido (Pedidos Gerados — controle visual)."""
+    existentes = {row["name"] for row in conn.execute("PRAGMA table_info(pedidos)").fetchall()}
+    if "material_entregue_em" not in existentes:
+        conn.execute(
+            "ALTER TABLE pedidos ADD COLUMN material_entregue_em TEXT"
+        )
 
 
 # ============================================================
