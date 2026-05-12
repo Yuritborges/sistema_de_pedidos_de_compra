@@ -701,6 +701,7 @@ class PedidoWidget(QWidget):
         self._desconto_tipo = "%"   # "%" ou "R$"
         self._arquivo_pedido_atual = None  # caminho do rascunho carregado/salvo
         self._pedido_editando_numero = None  # número do pedido aberto pela tela Pedidos Gerados
+        self._material_entregue_em_db = ""  # OK na obra (vem do banco ao editar pedido existente)
         self._fornecedor_pix = ""
         self._fornecedor_favorecido = ""
         self._build()
@@ -1925,6 +1926,7 @@ class PedidoWidget(QWidget):
         """
         try:
             self._pedido_editando_numero = str(pedido["numero"])
+            self._material_entregue_em_db = str(pedido.get("material_entregue_em") or "")
 
             # Dados principais
             self.e_num.setText(str(pedido["numero"] or ""))
@@ -2063,6 +2065,7 @@ class PedidoWidget(QWidget):
 
             self._arquivo_pedido_atual = None
             self._pedido_editando_numero = None
+            self._material_entregue_em_db = ""
             self.e_num.setText(proximo_numero_pedido())
 
         except ValueError as e:
@@ -2139,6 +2142,7 @@ class PedidoWidget(QWidget):
             marco_percentual_final=self.e_pg_marco.currentText(),
             observacao_extra=self.e_obs.toPlainText().strip(),
             desconto=desconto_reais,
+            material_entregue_em=getattr(self, "_material_entregue_em_db", "") or "",
             itens=itens,
         )
 
@@ -2189,6 +2193,7 @@ class PedidoWidget(QWidget):
 
         self.e_obs.clear(); self.lbl_obs_padrao.setVisible(False)
         self._pedido_editando_numero = None
+        self._material_entregue_em_db = ""
 
     # ══════════════════════════════════════════════════════════════════════════
     # INTEGRAÇÃO COTAÇÃO → PEDIDO (Sprint 3)

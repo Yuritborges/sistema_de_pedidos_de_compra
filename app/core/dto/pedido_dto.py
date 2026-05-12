@@ -61,6 +61,8 @@ class PedidoDTO:
     marco_percentual_final: str = "FINALIZAÇÃO"
     observacao_extra:   str   = ""
     desconto:           float = 0.0
+    # Preenchido ao reemitir / editar do banco: cor da caixa "DATA PREVISTA" no PDF.
+    material_entregue_em: str = ""
 
     # Itens do pedido
     itens: List[ItemPedidoDTO] = field(default_factory=list)

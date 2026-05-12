@@ -15,11 +15,19 @@ if not COMPRADOR_PADRAO or COMPRADOR_PADRAO == "SEU_NOME":
 if not PASTA_COMPRADOR or PASTA_COMPRADOR == "SuaPasta":
     raise ValueError("Defina PASTA_COMPRADOR com o nome da pasta (ex: Iury, Thamyres, Joao)")
 
-DATABASE_PATH = r"Z:\0 OBRAS\brasul_pedidos\cotacao_rede.db"
+# Banco de trabalho do comprador (não use cotacao_rede.db aqui; esse arquivo é o consolidado na rede).
+DATABASE_PATH = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\cotacao_{''.join(ch.lower() for ch in COMPRADOR_PADRAO if ch.isalnum())}.db"
+# Pasta raiz da rede (Iury/Thamyres/cotacao_rede.db, cadastros compartilhados, etc.).
+BASE_REDE_DIR = r"Z:\0 OBRAS\brasul_pedidos"
 PEDIDOS_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\pdfs de pedidos"
 COTACOES_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\cotações_salvas"
 BACKUP_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\backup"
 RELACOES_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\relações"
+
+# 0 = desligado. Ex.: 30 = a cada 30 s copia o SQLite do comprador para a pasta na rede (cadastros/obras/pedidos no .db do comprador).
+REDE_SYNC_INTERVALO_SEGUNDOS = 0
+# Se True, no mesmo gatilho roda em thread a reaplicação de todos os pedidos locais em cotacao_rede.db (mais pesado; salvar pedido já faz sync incremental).
+REDE_SYNC_MESCLAR_CONSOLIDADO = False
 
 
 # Cria as pastas necessárias automaticamente

@@ -8,9 +8,11 @@
 import os
 import shutil
 import sqlite3
+import threading
 import time
 from datetime import datetime
 from config import DATABASE_PATH, BACKUP_DIR, BASE_REDE_DIR
+from app.core.material_obra import material_entregue_obra_confirmado
 
 
 try:
@@ -528,6 +530,42 @@ def atualizar_numero_pedido_se_maior(numero):
         print(f"[DB] Erro ao atualizar contador (se maior): {e}")
 
 
+def marcar_material_entregue_na_obra_toggle(pedido_id: int) -> tuple[bool, str]:
+    """
+    Alterna material_entregue_em (Pedidos Gerados — OK na obra / linha verde).
+    Retorna (ok, mensagem).
+    """
+    pid = int(pedido_id)
+    if pid <= 0:
+        return False, "Pedido inválido."
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT id, material_entregue_em FROM pedidos WHERE id = ?",
+                (pid,),
+            ).fetchone()
+            if not row:
+                return False, "Pedido não encontrado."
+            marcado = material_entregue_obra_confirmado(row["material_entregue_em"])
+            if marcado:
+                conn.execute(
+                    "UPDATE pedidos SET material_entregue_em = NULL WHERE id = ?",
+                    (pid,),
+                )
+                msg = "Marcação na obra removida."
+            else:
+                conn.execute(
+                    "UPDATE pedidos SET material_entregue_em = datetime('now') WHERE id = ?",
+                    (pid,),
+                )
+                msg = "Marcado como entregue na obra."
+            conn.commit()
+        sincronizar_com_rede(silencioso=True)
+        return True, msg
+    except Exception as e:
+        return False, str(e)
+
+
 # ============================================================
 # SINCRONIZAÇÃO PARA A REDE
 # ============================================================
@@ -567,6 +605,32 @@ def sincronizar_com_rede(silencioso=True):
         if not silencioso:
             print(f"[REDE] Aviso ao sincronizar: {e}")
         return False
+
+
+def rede_periodic_sync_tick():
+    """
+    Espelha o SQLite do comprador na pasta da rede (obras, pedidos, etc.).
+    Opcionalmente reaplica pedidos no cotacao_rede.db em thread de fundo
+    (ver REDE_SYNC_MESCLAR_CONSOLIDADO em config).
+    """
+    sincronizar_com_rede(silencioso=True)
+    try:
+        import config as _cfg
+
+        if not bool(getattr(_cfg, "REDE_SYNC_MESCLAR_CONSOLIDADO", False)):
+            return
+    except Exception:
+        return
+
+    def _worker():
+        try:
+            from app.data import cotacao_rede_sync
+
+            cotacao_rede_sync.merge_local_database_para_rede_consolidado(silencioso=True)
+        except Exception:
+            pass
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 # ============================================================

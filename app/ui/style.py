@@ -20,6 +20,19 @@ GREEN = "#1E8449"
 BLUE  = "#2980B9"
 RO_BG = "#F5F0F0"
 
+# Coluna "Ações" em Pedidos Gerados — uma cor por função (fácil de reconhecer à distância).
+PEDIDO_ACAO_ABRIR = BLUE
+PEDIDO_ACAO_EXPORTAR = "#16A085"
+PEDIDO_ACAO_REIMPRIMIR = "#8E44AD"
+PEDIDO_ACAO_EDITAR = "#E67E22"
+PEDIDO_ACAO_PRAZO_OBRA = "#2874A6"   # azul — card de prazo / calendário
+PEDIDO_ACAO_OK_NA_OBRA = "#25D366"   # verde WhatsApp — confirmação OK na obra
+PEDIDO_ACAO_EXCLUIR = RED
+
+# Pedidos Gerados — apenas duas cores: sem OK na obra / com OK na obra.
+PEDIDOS_GERADOS_ROW_PENDENTE = "#FFEBEE"  # vermelho claro (falta confirmar OK na obra)
+PEDIDOS_GERADOS_ROW_OK_OBRA = "#C8E6C9"  # verde claro (OK na obra confirmado)
+
 # CSS dos campos de texto
 CSS_INPUT = f"""
     QLineEdit {{
@@ -146,6 +159,30 @@ CSS_TABLE = f"""
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height:0; }}
 """
 
+# Tabela "Pedidos Gerados": não estilize QTableWidget::item (nem padding, nem borda) —
+# no Windows isso costuma ignorar o BackgroundRole e a linha fica branca menos a coluna Ações.
+CSS_TABLE_PEDIDOS_GERADOS = f"""
+    QTableWidget#pedidos_gerados_tabela {{
+        background:{WHITE}; border:none;
+        font-size:12px; color:{TXT};
+        outline:none; gridline-color:transparent;
+    }}
+    QTableWidget#pedidos_gerados_tabela QHeaderView {{ background:{WHITE}; }}
+    QTableWidget#pedidos_gerados_tabela QHeaderView::section {{
+        background:{WHITE}; color:{TXT_S}; font-size:10px;
+        font-weight:bold; padding:10px 12px;
+        border:none; border-bottom:2px solid #E8DEDE;
+    }}
+    QTableWidget#pedidos_gerados_tabela QScrollBar:vertical {{
+        background:transparent; width:6px; border-radius:3px; margin:0;
+    }}
+    QTableWidget#pedidos_gerados_tabela QScrollBar::handle:vertical {{
+        background:#D8CCCC; border-radius:3px; min-height:30px;
+    }}
+    QTableWidget#pedidos_gerados_tabela QScrollBar::add-line:vertical,
+    QTableWidget#pedidos_gerados_tabela QScrollBar::sub-line:vertical {{ height:0; }}
+"""
+
 CSS_TABLE_SM = CSS_TABLE.replace("font-size:12px", "font-size:11px")
 
 # Cor de destaque por empresa faturadora
@@ -158,14 +195,14 @@ CORES_EMPRESA = {
 
 
 # Botão preenchido colorido
-def btn_solid(texto, cor, h=34):
+def btn_solid(texto, cor, h=34, font_px=11, pad_x=16):
     b = QPushButton(texto)
     b.setFixedHeight(h)
     b.setCursor(Qt.PointingHandCursor)
     b.setStyleSheet(f"""
         QPushButton {{
-            background:{cor}; color:white; font-size:11px;
-            font-weight:bold; border-radius:6px; border:none; padding:0 16px;
+            background:{cor}; color:white; font-size:{font_px}px;
+            font-weight:bold; border-radius:6px; border:none; padding:0 {pad_x}px;
         }}
         QPushButton:hover   {{ background:{cor}DD; }}
         QPushButton:pressed {{ background:{cor}AA; }}

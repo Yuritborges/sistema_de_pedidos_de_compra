@@ -59,6 +59,40 @@ def _qss_nav_pushbutton() -> str:
             """
 
 
+def _qss_nav_pedidos_gerados_alerta_static() -> str:
+    """Sidebar Pedidos Gerados com contagem (visual tipo alerta Locações, sem piscar)."""
+    accent = "#B71C1C"
+    bg = "#FFEBEE"
+    return f"""
+                QPushButton {{
+                    text-align: left;
+                    color: {S_TEXT};
+                    background: transparent;
+                    border: none;
+                    border-left: 4px solid transparent;
+                    font-size: 13px;
+                    padding-left: 18px;
+                }}
+                QPushButton:hover {{
+                    color: #C0392B;
+                    background: {S_ITEM};
+                    border-left: 4px solid #E8A090;
+                }}
+                QPushButton:!checked {{
+                    color: {accent};
+                    font-weight: bold;
+                    border-left: 4px solid {accent};
+                    background: {bg};
+                }}
+                QPushButton:checked {{
+                    color: {accent};
+                    background: {bg};
+                    border-left: 4px solid {accent};
+                    font-weight: bold;
+                }}
+            """
+
+
 def _icone_app_path():
     base = os.path.normpath(os.path.join(_HERE, "..", ".."))
     candidatos = [
@@ -136,6 +170,7 @@ class MainWindow(QMainWindow):
         self._locacoes_alert = 0
         self._locacoes_blink_phase = False
         self._locacoes_btn_caption = "  🏗   Locações"
+        self._pedidos_nav_caption = "  📁   Pedidos Gerados"
         self._timer_locacoes_poll = QTimer(self)
         self._timer_locacoes_poll.setInterval(60_000)
         self._timer_locacoes_poll.timeout.connect(self._poll_locacoes_vencimento)
@@ -147,6 +182,7 @@ class MainWindow(QMainWindow):
         self._build()
         self._registrar_atalhos()
         self._setup_locacoes_sidebar_alerta()
+        self._setup_rede_sync_periodico()
 
         # Ícone da janela (mantém fallback único)
         icon_path = _icone_app_path()
@@ -209,6 +245,30 @@ class MainWindow(QMainWindow):
     def _criar_pagina_locacoes(self):
         from app.ui.widgets.locacoes_widget import LocacoesWidget
         return LocacoesWidget()
+
+    def _setup_rede_sync_periodico(self):
+        """Espelhamento na rede em intervalo fixo (config REDE_SYNC_INTERVALO_SEGUNDOS)."""
+        try:
+            import config as _cfg
+
+            seg = int(getattr(_cfg, "REDE_SYNC_INTERVALO_SEGUNDOS", 0) or 0)
+        except Exception:
+            seg = 0
+        if seg <= 0:
+            return
+        seg = max(5, seg)
+        self._timer_rede_sync = QTimer(self)
+        self._timer_rede_sync.setInterval(seg * 1000)
+        self._timer_rede_sync.timeout.connect(self._tick_rede_sync_periodico)
+        self._timer_rede_sync.start()
+
+    def _tick_rede_sync_periodico(self):
+        try:
+            from app.data.database import rede_periodic_sync_tick
+
+            rede_periodic_sync_tick()
+        except Exception:
+            pass
 
     def _registrar_log_startup(self, marcacoes):
         try:
@@ -327,6 +387,8 @@ class MainWindow(QMainWindow):
             self._btns[key] = btn
             if key == "locacoes":
                 self._locacoes_btn_caption = f"  {ico}   {label}"
+            if key == "pedidos":
+                self._pedidos_nav_caption = f"  {ico}   {label}"
             vl.addWidget(btn)
 
         # Divisória
@@ -378,6 +440,29 @@ class MainWindow(QMainWindow):
             widget._carregar_tudo()
 
         self._sync_locacoes_nav_alerta_ui()
+        self._sync_pedidos_gerados_nav_badge_if_loaded()
+
+    def _aplicar_pedidos_gerados_nav_alerta(self, n: int) -> None:
+        btn = self._btns.get("pedidos")
+        if not btn:
+            return
+        cap = getattr(self, "_pedidos_nav_caption", "  📁   Pedidos Gerados")
+        idx = ORDEM_ABAS.index("pedidos") + 1
+        if n <= 0:
+            btn.setStyleSheet(_qss_nav_pushbutton())
+            btn.setText(cap)
+            btn.setToolTip(f"Ctrl+{idx}")
+            return
+        btn.setText(f"{cap}  ({n})")
+        btn.setStyleSheet(_qss_nav_pedidos_gerados_alerta_static())
+        btn.setToolTip(
+            f"{n} pedido(s) com data prevista hoje ou em atraso e sem OK na obra.\nCtrl+{idx}"
+        )
+
+    def _sync_pedidos_gerados_nav_badge_if_loaded(self) -> None:
+        pw = self._pages.get("pedidos")
+        if pw is not None and hasattr(pw, "_sincronizar_nav_pedidos_gerados_alerta"):
+            pw._sincronizar_nav_pedidos_gerados_alerta()
 
     def _texto_suffix_locacoes_contagem(self) -> str:
         v, a = self._locacoes_venc, self._locacoes_alert

@@ -6,6 +6,7 @@ from reportlab.pdfgen import canvas as rl_canvas
 from app.data.database import copiar_arquivo_para_rede
 from config import EMPRESAS_FATURADORAS, PEDIDOS_DIR
 from app.core.dto.pedido_dto import PedidoDTO
+from app.core.material_obra import material_entregue_obra_confirmado
 
 
 def _resolver_empresa_faturadora(empresa_faturadora: str) -> dict:
@@ -42,6 +43,9 @@ C_LINHA  = colors.HexColor("#888888")   # bordas das células — mais escuro
 C_FUNDO  = colors.HexColor("#EEEEEE")   # fundo alternado — mais visível
 C_BRANCO = colors.white
 C_HDR    = colors.HexColor("#000000")   # cabeçalho tabela — preto sólido
+# Caixa "DATA PREVISTA DA ENTREGA" (alinhado à tela Pedidos Gerados)
+C_PREVISTA_SEM_OK = colors.HexColor("#FFEBEE")   # vermelho claro — falta OK na obra
+C_PREVISTA_COM_OK = colors.HexColor("#C8E6C9")  # verde claro — OK na obra confirmado
 
 # ── Diretório das logos ───────────────────────────────────────────────────────
 _LOGOS_DIR = os.path.normpath(
@@ -498,8 +502,11 @@ class PedidoCompraGenerator:
         c.setFont("Helvetica-Bold", 8); c.setFillColor(C_ESCURO)
         c.drawRightString(W-M-30*mm, y-11*mm, "DATA PREVISTA DA ENTREGA")
 
-        # Caixinha: fundo cinza, data centralizada em 10pt bold
-        c.setStrokeColor(C_LINHA); c.setFillColor(C_FUNDO)
+        # Caixinha da data prevista: vermelho claro sem OK na obra; verde claro com OK
+        # (evita cinza #EEE que em alguns monitores parece "verde de sucesso").
+        ok_obra = material_entregue_obra_confirmado(getattr(dto, "material_entregue_em", ""))
+        c.setStrokeColor(C_LINHA)
+        c.setFillColor(C_PREVISTA_COM_OK if ok_obra else C_PREVISTA_SEM_OK)
         c.rect(W-M-28*mm, y-14*mm, 25*mm, 6.5*mm, fill=1, stroke=1)
         c.setFont("Helvetica-Bold", 10); c.setFillColor(C_PRETO)
         cx_data = W - M - 28*mm + 12.5*mm

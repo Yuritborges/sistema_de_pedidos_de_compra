@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 import os
 
-from app.ui.style import btn_solid
+from app.ui.style import btn_solid, PEDIDO_ACAO_OK_NA_OBRA, PEDIDO_ACAO_PRAZO_OBRA
 
 
 class PedidosGeradosWidget(QWidget):
@@ -84,16 +84,23 @@ class PedidosGeradosWidget(QWidget):
 
                 btn_pdf = QPushButton("Abrir PDF")
                 btn_pdf.setFixedHeight(30)
-                btn_pdf.clicked.connect(lambda _, p=caminho_pdf: self.abrir_pdf(p))
+                btn_pdf.clicked.connect(lambda: self.abrir_pdf(caminho_pdf))
 
-                btn_prazo = btn_solid("Prazo obra", "#25D366", h=30)
+                btn_prazo = btn_solid("📅 Prazo obra", PEDIDO_ACAO_PRAZO_OBRA, h=30)
                 btn_prazo.setToolTip(
-                    "Gera imagem com prazo e itens para colar no WhatsApp da obra."
+                    "Imagem com prazo e itens para colar no WhatsApp."
                 )
-                btn_prazo.clicked.connect(lambda _, pid=pedido_id: self._gerar_imagem_prazo(pid))
+                btn_prazo.clicked.connect(lambda: self._gerar_imagem_prazo(pedido_id))
+
+                btn_ok_obra = btn_solid("✅ OK NA OBRA", PEDIDO_ACAO_OK_NA_OBRA, h=30)
+                btn_ok_obra.setToolTip(
+                    "Marca entregue na obra (verde na lista principal). Clique de novo para desmarcar."
+                )
+                btn_ok_obra.clicked.connect(lambda: self._marcar_ok_na_obra(pedido_id))
 
                 hl.addWidget(btn_pdf)
                 hl.addWidget(btn_prazo)
+                hl.addWidget(btn_ok_obra)
                 self.tabela.setCellWidget(i, 5, acoes)
 
         except Exception as e:
@@ -103,6 +110,61 @@ class PedidosGeradosWidget(QWidget):
         from app.infrastructure.prazo_entrega_imagem import gerar_imagem_prazo_entrega
 
         gerar_imagem_prazo_entrega(self, pedido_id)
+
+    def _marcar_ok_na_obra(self, pedido_id: int):
+        from app.data.database import get_connection, marcar_material_entregue_na_obra_toggle
+        from app.core.material_obra import material_entregue_obra_confirmado
+
+        def _pergunta_sim_nao(titulo: str, texto: str) -> bool:
+            mb = QMessageBox(self)
+            mb.setWindowTitle(titulo)
+            mb.setIcon(QMessageBox.Question)
+            mb.setText(texto)
+            mb.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            mb.setDefaultButton(QMessageBox.No)
+            by = mb.button(QMessageBox.Yes)
+            bn = mb.button(QMessageBox.No)
+            if by is not None:
+                by.setText("Sim")
+            if bn is not None:
+                bn.setText("Não")
+            return mb.exec() == QMessageBox.Yes
+
+        try:
+            with get_connection() as conn:
+                row = conn.execute(
+                    "SELECT material_entregue_em FROM pedidos WHERE id = ?",
+                    (pedido_id,),
+                ).fetchone()
+        except Exception as e:
+            QMessageBox.warning(self, "OK NA OBRA", str(e))
+            return
+
+        if not row:
+            QMessageBox.warning(self, "OK NA OBRA", "Pedido não encontrado.")
+            return
+
+        ja_marcado = material_entregue_obra_confirmado(row["material_entregue_em"])
+
+        if not ja_marcado:
+            if not _pergunta_sim_nao(
+                "OK NA OBRA",
+                "Confirmar que o material deste pedido foi entregue na obra?",
+            ):
+                return
+        else:
+            if not _pergunta_sim_nao(
+                "OK NA OBRA",
+                "Deseja desmarcar a entrega?\n\n"
+                "O pedido voltará a ser tratado como ainda não entregue na obra.",
+            ):
+                return
+
+        ok, msg = marcar_material_entregue_na_obra_toggle(pedido_id)
+        if not ok:
+            QMessageBox.warning(self, "OK NA OBRA", msg)
+            return
+        self.carregar_dados()
 
     def abrir_pdf(self, caminho_pdf):
         if not caminho_pdf:

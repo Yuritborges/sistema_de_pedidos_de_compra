@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import List
 
 from PySide6.QtCore import Qt
@@ -18,6 +18,49 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+
+def prazo_entrega_dias_efetivo(val) -> int:
+    """Dias para data prevista: NULL no banco → 5 (padrão PedidoDTO). Zero explícito mantém 0."""
+    if val is None:
+        return 5
+    try:
+        return max(0, int(val))
+    except (TypeError, ValueError):
+        return 5
+
+
+def _parse_datetime_data_pedido(data_pedido: str) -> datetime | None:
+    """Interpreta data_pedido nos mesmos formatos que a lista Pedidos Gerados (`_parse_data`)."""
+    s = (data_pedido or "").strip()
+    if not s:
+        return None
+    for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(s, fmt)
+        except Exception:
+            continue
+    try:
+        raw = s.replace("Z", "+00:00").split("+", 1)[0].strip()
+        return datetime.fromisoformat(raw)
+    except Exception:
+        return None
+
+
+def data_prevista_entrega_como_date(data_pedido: str, prazo_dias) -> date | None:
+    """Data do pedido + prazo em dias (mesma base do card Prazo obra e da lista)."""
+    dt = _parse_datetime_data_pedido(data_pedido)
+    if dt is None:
+        return None
+    dias = prazo_entrega_dias_efetivo(prazo_dias)
+    return dt.date() + timedelta(days=dias)
+
+
+def _data_prevista_entrega(data_pedido: str, prazo_dias: int) -> str:
+    d = data_prevista_entrega_como_date(data_pedido, prazo_dias)
+    if d is None:
+        return "—"
+    return d.strftime("%d/%m/%y")
 
 
 @dataclass
@@ -37,18 +80,59 @@ class DadosPrazoCard:
     itens: List[ItemPrazoCard]
 
 
-def _data_prevista_entrega(data_pedido: str, prazo_dias: int) -> str:
-    try:
-        dt = datetime.strptime((data_pedido or "").strip(), "%d/%m/%Y")
-        return (dt + timedelta(days=int(prazo_dias))).strftime("%d/%m/%y")
-    except Exception:
-        return "—"
-
-
 def _fmt_qtd(q: float) -> str:
     if q == int(q):
         return str(int(q))
     return f"{q:.2f}".rstrip("0").rstrip(".")
+
+
+def _montar_tabela_materiais(itens: List[ItemPrazoCard]) -> QTableWidget:
+    tbl = QTableWidget()
+    n = len(itens)
+    tbl.setRowCount(n)
+    tbl.setColumnCount(3)
+    tbl.setHorizontalHeaderLabels(["DESCRIÇÃO DO MATERIAL", "QTDADE", "UNID."])
+    tbl.verticalHeader().setVisible(False)
+    tbl.setShowGrid(True)
+    tbl.setEditTriggers(QTableWidget.NoEditTriggers)
+    tbl.setSelectionMode(QTableWidget.NoSelection)
+    tbl.setFocusPolicy(Qt.NoFocus)
+    tbl.horizontalHeader().setStretchLastSection(True)
+    tbl.setColumnWidth(0, 420)
+    tbl.setColumnWidth(1, 90)
+    tbl.setColumnWidth(2, 80)
+    tbl.setStyleSheet(
+        """
+        QTableWidget {
+            background: #FFFFFF;
+            border: 1px solid #CCCCCC;
+            gridline-color: #DDDDDD;
+            font-size: 12px;
+            color: #1A1A1A;
+        }
+        QTableWidget::item { padding: 8px 10px; }
+        QHeaderView::section {
+            background: #000000;
+            color: #FFFFFF;
+            font-weight: bold;
+            font-size: 10px;
+            padding: 10px 8px;
+            border: none;
+        }
+        """
+    )
+    for r, it in enumerate(itens):
+        d = QTableWidgetItem((it.descricao or "").upper())
+        q = QTableWidgetItem(_fmt_qtd(it.quantidade))
+        u = QTableWidgetItem((it.unidade or "").upper())
+        for c, item in enumerate((d, q, u)):
+            item.setFlags(Qt.ItemIsEnabled)
+            tbl.setItem(r, c, item)
+    tbl.resizeRowsToContents()
+    tbl.setMaximumHeight(
+        min(520, tbl.horizontalHeader().height() + sum(tbl.rowHeight(i) for i in range(n)) + 8)
+    )
+    return tbl
 
 
 def construir_widget_card(dados: DadosPrazoCard) -> QWidget:
@@ -111,53 +195,7 @@ def construir_widget_card(dados: DadosPrazoCard) -> QWidget:
     row_prazo.addWidget(box_data)
     vl.addLayout(row_prazo)
 
-    tbl = QTableWidget()
-    n = len(dados.itens)
-    tbl.setRowCount(n)
-    tbl.setColumnCount(3)
-    tbl.setHorizontalHeaderLabels(["DESCRIÇÃO DO MATERIAL", "QTDADE", "UNID."])
-    tbl.verticalHeader().setVisible(False)
-    tbl.setShowGrid(True)
-    tbl.setEditTriggers(QTableWidget.NoEditTriggers)
-    tbl.setSelectionMode(QTableWidget.NoSelection)
-    tbl.setFocusPolicy(Qt.NoFocus)
-    tbl.horizontalHeader().setStretchLastSection(True)
-    tbl.setColumnWidth(0, 420)
-    tbl.setColumnWidth(1, 90)
-    tbl.setColumnWidth(2, 80)
-    tbl.setStyleSheet(
-        """
-        QTableWidget {
-            background: #FFFFFF;
-            border: 1px solid #CCCCCC;
-            gridline-color: #DDDDDD;
-            font-size: 12px;
-            color: #1A1A1A;
-        }
-        QTableWidget::item { padding: 8px 10px; }
-        QHeaderView::section {
-            background: #000000;
-            color: #FFFFFF;
-            font-weight: bold;
-            font-size: 10px;
-            padding: 10px 8px;
-            border: none;
-        }
-        """
-    )
-
-    for r, it in enumerate(dados.itens):
-        d = QTableWidgetItem((it.descricao or "").upper())
-        q = QTableWidgetItem(_fmt_qtd(it.quantidade))
-        u = QTableWidgetItem((it.unidade or "").upper())
-        for c, item in enumerate((d, q, u)):
-            item.setFlags(Qt.ItemIsEnabled)
-            tbl.setItem(r, c, item)
-
-    tbl.resizeRowsToContents()
-    tbl.setMaximumHeight(min(520, tbl.horizontalHeader().height() + sum(tbl.rowHeight(i) for i in range(n)) + 8))
-
-    vl.addWidget(tbl)
+    vl.addWidget(_montar_tabela_materiais(dados.itens))
 
     root.adjustSize()
     return root
@@ -219,7 +257,7 @@ def gerar_imagem_prazo_entrega(parent: QWidget, pedido_id: int) -> None:
             obra=str(p["obra_nome"] or ""),
             fornecedor=str(p["fornecedor_nome"] or ""),
             data_pedido=str(p["data_pedido"] or ""),
-            prazo_dias=int(p["prazo_entrega"] or 0),
+            prazo_dias=prazo_entrega_dias_efetivo(p["prazo_entrega"]),
             itens=itens,
         )
 

@@ -3,9 +3,6 @@
 import os, sys, subprocess, shutil, tempfile
 from datetime import datetime, date, timedelta
 
-# Janela em dias: pedidos com previsão de entrega até hoje+N (ou já atrasados) aparecem em amarelo até confirmar na obra.
-ENTREGA_OBRA_JANELA_DIAS = 15
-
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
@@ -13,16 +10,41 @@ from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QDateEdit, QSizePolicy, QApplication,
 )
 from PySide6.QtCore import Qt, QTimer, QDate
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QBrush, QPixmap, QImage
 
 # ── Estilo centralizado ───────────────────────────────────────────────────────
 from app.ui.style import (
     RED, GRAY, WHITE, BG, BDR, TXT, TXT_S, SEL, HOV, GREEN, BLUE,
-    CSS_BUSCA, CSS_TABLE, CORES_EMPRESA,
+    CSS_BUSCA, CSS_TABLE_PEDIDOS_GERADOS, CORES_EMPRESA,
+    PEDIDOS_GERADOS_ROW_PENDENTE,
+    PEDIDOS_GERADOS_ROW_OK_OBRA,
     btn_solid, btn_outline, btn_filtro, make_card, card_container,
+    PEDIDO_ACAO_ABRIR,
+    PEDIDO_ACAO_EXPORTAR,
+    PEDIDO_ACAO_REIMPRIMIR,
+    PEDIDO_ACAO_EDITAR,
+    PEDIDO_ACAO_PRAZO_OBRA,
+    PEDIDO_ACAO_OK_NA_OBRA,
+    PEDIDO_ACAO_EXCLUIR,
 )
 
 from config import PEDIDOS_DIR, COMPRADOR_PADRAO
+
+from app.infrastructure.prazo_entrega_imagem import prazo_entrega_dias_efetivo
+from app.core.material_obra import material_entregue_obra_confirmado
+
+
+def _pixmap_logo_sem_fundo_branco(pix: QPixmap, limiar: int = 248) -> QPixmap:
+    """Torna pixels quase brancos transparentes (logo retangular com fundo branco)."""
+    if pix.isNull():
+        return pix
+    img = pix.toImage().convertToFormat(QImage.Format.Format_ARGB32)
+    for y in range(img.height()):
+        for x in range(img.width()):
+            c = QColor(img.pixel(x, y))
+            if c.alpha() > 0 and c.red() >= limiar and c.green() >= limiar and c.blue() >= limiar:
+                img.setPixelColor(x, y, QColor(0, 0, 0, 0))
+    return QPixmap.fromImage(img)
 
 
 class PedidosWidget(QWidget):
@@ -35,9 +57,9 @@ class PedidosWidget(QWidget):
         self._filtrados         = []   # resultado após filtros (paginação age sobre isso)
         self._pagina_atual      = 0    # quantas páginas já foram renderizadas
         self._filtro_ativo      = None
+        self._filtro_entrega    = None  # None | "entregar" | "entregue"
         self._data_inicio       = None
         self._data_fim          = None
-        self._filtro_entrega_obra = None  # None | "pendente" | "entregue"
         self._build()
         self._set_filtro_data("todos")
         self._carregar()
@@ -56,18 +78,27 @@ class PedidosWidget(QWidget):
         hl_topo = QHBoxLayout()
         hl_topo.setSpacing(14)
 
-        # Logo Brasul
+        # Logo Brasul (PNG ou ICO; remove fundo branco do PNG)
         _HERE_W = os.path.dirname(os.path.abspath(__file__))
-        _LOGO_PATH = os.path.normpath(
-            os.path.join(_HERE_W, '..', '..', '..', 'assets', 'logos', 'logo_brasul.png')
-        )
-        from PySide6.QtGui import QPixmap
+        _assets = os.path.normpath(os.path.join(_HERE_W, "..", "..", "..", "assets", "logos"))
+        _logo_candidatos = [
+            os.path.join(_assets, "logo_brasul.png"),
+            os.path.join(_assets, "logo_brasul.ico"),
+        ]
         lbl_logo = QLabel()
         lbl_logo.setFixedHeight(48)
         lbl_logo.setStyleSheet("background:transparent;")
-        if os.path.exists(_LOGO_PATH):
-            pix = QPixmap(_LOGO_PATH).scaled(120, 46, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            lbl_logo.setPixmap(pix)
+        _pix = None
+        for _path in _logo_candidatos:
+            if os.path.isfile(_path):
+                _pix = QPixmap(_path)
+                if not _pix.isNull():
+                    _pix = _pix.scaled(120, 46, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    if _path.lower().endswith(".png"):
+                        _pix = _pixmap_logo_sem_fundo_branco(_pix)
+                    break
+        if _pix is not None and not _pix.isNull():
+            lbl_logo.setPixmap(_pix)
         else:
             lbl_logo.setText("BRASUL")
             lbl_logo.setStyleSheet(f"font-size:15px; font-weight:bold; color:{RED}; background:transparent;")
@@ -165,24 +196,16 @@ class PedidosWidget(QWidget):
         btn_periodo.clicked.connect(self._filtro_periodo_custom)
         hl_busca.addWidget(btn_periodo)
 
-        sep_ent = QFrame()
-        sep_ent.setFrameShape(QFrame.VLine)
-        sep_ent.setStyleSheet(f"background:{BDR}; margin:4px 2px;")
-        sep_ent.setFixedWidth(1)
-        hl_busca.addWidget(sep_ent)
-
-        self._btn_f_ent_pend = btn_filtro("A entregar")
-        self._btn_f_ent_pend.setToolTip(
-            "Pedidos em que o material ainda não foi confirmado na obra e a previsão de entrega "
-            f"cai em até {ENTREGA_OBRA_JANELA_DIAS} dias (ou já passou)."
-        )
-        self._btn_f_ent_pend.clicked.connect(lambda: self._toggle_filtro_entrega_obra("pendente"))
-        hl_busca.addWidget(self._btn_f_ent_pend)
-
-        self._btn_f_ent_ok = btn_filtro("Entregues")
-        self._btn_f_ent_ok.setToolTip("Pedidos em que você já confirmou o recebimento do material na obra.")
-        self._btn_f_ent_ok.clicked.connect(lambda: self._toggle_filtro_entrega_obra("entregue"))
-        hl_busca.addWidget(self._btn_f_ent_ok)
+        self._btn_entrega = {}
+        for chave, rotulo in [("entregar", "A ENTREGAR"), ("entregue", "ENTREGUE")]:
+            b = btn_filtro(rotulo)
+            b.setToolTip(
+                "A ENTREGAR: só pedidos sem OK na obra (fundo vermelho claro).\n"
+                "ENTREGUE: só pedidos com OK na obra confirmado (fundo verde claro)."
+            )
+            b.clicked.connect(lambda _, k=chave: self._set_filtro_entrega(k))
+            hl_busca.addWidget(b)
+            self._btn_entrega[chave] = b
 
         hl_busca.addStretch()
         self._lbl_cont = QLabel("")
@@ -207,25 +230,10 @@ class PedidosWidget(QWidget):
         self.tabela = QTableWidget(0, 6)
         self.tabela.setObjectName("pedidos_gerados_tabela")
         self.tabela.setHorizontalHeaderLabels(["Nº", "Data", "Obra", "Fornecedor", "Empresa", "Ações"])
-        # CSS_TABLE define fundo nos ::item e some com QTableWidgetItem.setBackground (só a coluna Ações via QWidget).
-        self.tabela.setStyleSheet(
-            CSS_TABLE
-            + f"""
-    QTableWidget#pedidos_gerados_tabela::item {{
-        background-color: transparent;
-    }}
-    QTableWidget#pedidos_gerados_tabela::item:hover {{
-        background-color: {HOV};
-    }}
-    QTableWidget#pedidos_gerados_tabela::item:selected {{
-        background-color: {SEL};
-        color: {GRAY};
-    }}
-"""
-        )
+        self.tabela.setStyleSheet(CSS_TABLE_PEDIDOS_GERADOS)
+        self.tabela.setAlternatingRowColors(False)
         self.tabela.setSelectionBehavior(QTableWidget.SelectRows)
         self.tabela.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.tabela.setAlternatingRowColors(False)
         self.tabela.verticalHeader().setVisible(False)
         self.tabela.setShowGrid(False)
         self.tabela.setFrameShape(QFrame.NoFrame)
@@ -235,7 +243,7 @@ class PedidosWidget(QWidget):
         hh.setSectionResizeMode(2, QHeaderView.Stretch)
         hh.setSectionResizeMode(3, QHeaderView.Stretch)
         hh.setSectionResizeMode(4, QHeaderView.Fixed);  self.tabela.setColumnWidth(4, 115)
-        hh.setSectionResizeMode(5, QHeaderView.Fixed);  self.tabela.setColumnWidth(5, 440)
+        hh.setSectionResizeMode(5, QHeaderView.Fixed);  self.tabela.setColumnWidth(5, 528)
         cvl.addWidget(self.tabela)
         vl.addWidget(container, 1)
 
@@ -333,8 +341,8 @@ class PedidosWidget(QWidget):
                             p.valor_total,
                             p.caminho_pdf,
                             p.comprador,
-                            COALESCE(p.prazo_entrega, 0) AS prazo_entrega,
                             p.material_entregue_em,
+                            p.prazo_entrega,
                             COALESCE(it.itens_texto, '') AS itens_texto
                         FROM pedidos p
                         LEFT JOIN (
@@ -361,8 +369,8 @@ class PedidosWidget(QWidget):
                             p.valor_total,
                             p.caminho_pdf,
                             p.comprador,
-                            COALESCE(p.prazo_entrega, 0) AS prazo_entrega,
                             p.material_entregue_em,
+                            p.prazo_entrega,
                             COALESCE(it.itens_texto, '') AS itens_texto
                         FROM pedidos p
                         LEFT JOIN (
@@ -393,9 +401,9 @@ class PedidosWidget(QWidget):
                 except Exception:
                     valor_total = 0.0
 
-                prazo_ent = row["prazo_entrega"]
-                mat_em = row["material_entregue_em"]
-                entrega_tag = PedidosWidget._classificar_entrega_na_obra(data_dt, prazo_ent, mat_em)
+                prazo_dias = prazo_entrega_dias_efetivo(row["prazo_entrega"])
+                # Mesma base da coluna Data + prazo (evita divergência se o parser de string falhar).
+                data_prevista_entrega = data_dt.date() + timedelta(days=prazo_dias)
 
                 self._todos.append({
                     "id":                 row["id"],
@@ -414,9 +422,11 @@ class PedidosWidget(QWidget):
                     "fornecedor_nome":    fornecedor,
                     "itens_texto":        str(row["itens_texto"] or ""),
                     "comprador":          row["comprador"] or "",
-                    "prazo_entrega":      prazo_ent,
-                    "material_entregue_em": mat_em,
-                    "entrega_tag":        entrega_tag,
+                    "material_entregue_em": row["material_entregue_em"] or "",
+                    "material_ok_obra": material_entregue_obra_confirmado(
+                        row["material_entregue_em"]
+                    ),
+                    "data_prevista_entrega": data_prevista_entrega,
                 })
 
         except Exception as e:
@@ -428,6 +438,26 @@ class PedidosWidget(QWidget):
 
         self._aplicar_filtros()
         self._atualizar_cards()
+        self._sincronizar_nav_pedidos_gerados_alerta()
+
+    def contar_pedidos_sem_ok_previsto_hoje_ou_atrasado(self) -> int:
+        """Para badge na sidebar: sem OK na obra e data prevista <= hoje."""
+        hoje = date.today()
+        n = 0
+        for r in self._todos:
+            if r.get("material_ok_obra"):
+                continue
+            dp = r.get("data_prevista_entrega")
+            if dp is None:
+                continue
+            if hoje >= dp:
+                n += 1
+        return n
+
+    def _sincronizar_nav_pedidos_gerados_alerta(self):
+        w = self.window()
+        if hasattr(w, "_aplicar_pedidos_gerados_nav_alerta"):
+            w._aplicar_pedidos_gerados_nav_alerta(self.contar_pedidos_sem_ok_previsto_hoje_ou_atrasado())
 
     def _parse_nome(self, nome):
         base   = nome.replace(".pdf", "").replace(".PDF", "")
@@ -456,30 +486,15 @@ class PedidosWidget(QWidget):
         self._lbl_filtro_ativo.setVisible(False)
         self._aplicar_filtros()
 
-    def _toggle_filtro_entrega_obra(self, chave):
-        if self._filtro_entrega_obra == chave:
-            self._filtro_entrega_obra = None
+    def _set_filtro_entrega(self, chave: str):
+        """Filtra por OK na obra; clicar de novo no ativo desliga o filtro."""
+        if self._filtro_entrega == chave:
+            self._filtro_entrega = None
         else:
-            self._filtro_entrega_obra = chave
-        self._btn_f_ent_pend.setChecked(self._filtro_entrega_obra == "pendente")
-        self._btn_f_ent_ok.setChecked(self._filtro_entrega_obra == "entregue")
+            self._filtro_entrega = chave
+        for k, b in self._btn_entrega.items():
+            b.setChecked(k == self._filtro_entrega)
         self._aplicar_filtros()
-
-    @staticmethod
-    def _classificar_entrega_na_obra(data_pedido: datetime, prazo_ent: int | None, material_entregue_em) -> str:
-        """entregue | pendente (amarelo) | neutro (sem destaque)."""
-        if material_entregue_em and str(material_entregue_em).strip():
-            return "entregue"
-        try:
-            pr = int(prazo_ent if prazo_ent is not None else 0)
-        except (TypeError, ValueError):
-            pr = 0
-        dp = data_pedido.date() if isinstance(data_pedido, datetime) else data_pedido
-        prev = dp + timedelta(days=pr)
-        hoje = date.today()
-        if prev <= hoje + timedelta(days=ENTREGA_OBRA_JANELA_DIAS):
-            return "pendente"
-        return "neutro"
 
     def _filtro_periodo_custom(self):
         dlg = QDialog(self)
@@ -548,10 +563,10 @@ class PedidosWidget(QWidget):
             resultado = [r for r in resultado if
                          self._data_inicio <= r["data"].date() <= self._data_fim]
 
-        if self._filtro_entrega_obra == "pendente":
-            resultado = [r for r in resultado if r.get("entrega_tag") == "pendente"]
-        elif self._filtro_entrega_obra == "entregue":
-            resultado = [r for r in resultado if r.get("entrega_tag") == "entregue"]
+        if self._filtro_entrega == "entregar":
+            resultado = [r for r in resultado if not r.get("material_ok_obra")]
+        elif self._filtro_entrega == "entregue":
+            resultado = [r for r in resultado if r.get("material_ok_obra")]
 
         # Armazena resultado filtrado e reseta paginação
         self._filtrados    = resultado
@@ -619,48 +634,30 @@ class PedidosWidget(QWidget):
         """Insere uma única linha na tabela. Usado pela paginação."""
         r = self.tabela.rowCount()
         self.tabela.insertRow(r)
-        self.tabela.setRowHeight(r, 108)
-
-        tag = dados.get("entrega_tag", "neutro")
-        if tag == "entregue":
-            bg = "#E3F4E8"
-        elif tag == "pendente":
-            bg = "#FFF9C4"
-        else:
-            bg = WHITE if r % 2 == 0 else "#FBF7F7"
-
-        try:
-            pr = int(dados.get("prazo_entrega") or 0)
-        except (TypeError, ValueError):
-            pr = 0
-        prev_dt = dados["data"].date() + timedelta(days=pr)
-        tip_prev = (
-            f"Previsão de entrega (pedido + {pr} dia{'s' if pr != 1 else ''}): "
-            f"{prev_dt.strftime('%d/%m/%Y')}"
-        )
-        if dados.get("material_entregue_em"):
-            tip_prev += f"\nMaterial confirmado na obra em: {dados['material_entregue_em']}"
+        self.tabela.setRowHeight(r, 162)
+        hoje = date.today()
+        mat = bool(dados.get("material_ok_obra"))
+        dp = dados.get("data_prevista_entrega")
+        bg = PEDIDOS_GERADOS_ROW_OK_OBRA if mat else PEDIDOS_GERADOS_ROW_PENDENTE
+        bg_brush = QBrush(QColor(bg))
 
         def _it(txt, align=Qt.AlignVCenter|Qt.AlignLeft, bold=False, cor=None):
             it = QTableWidgetItem(str(txt)); it.setTextAlignment(align)
-            it.setBackground(QColor(bg))
+            it.setBackground(bg_brush)
             if bold: f = QFont(); f.setBold(True); it.setFont(f)
             if cor:  it.setForeground(QColor(cor))
             return it
 
-        it_data = _it(dados["data"].strftime("%d/%m/%Y"), Qt.AlignVCenter|Qt.AlignCenter, cor=TXT_S)
-        it_data.setToolTip(tip_prev)
-
         self.tabela.setItem(r, 0, _it(f"#{dados['numero']}", Qt.AlignVCenter|Qt.AlignCenter, bold=True, cor=RED))
-        self.tabela.setItem(r, 1, it_data)
+        self.tabela.setItem(r, 1, _it(dados["data"].strftime("%d/%m/%Y"), Qt.AlignVCenter|Qt.AlignCenter, cor=TXT_S))
         self.tabela.setItem(r, 2, _it(dados["obra"], bold=True))
         self.tabela.setItem(r, 3, _it(dados.get("fornecedor", "—"), cor=TXT_S))
         cor_e = CORES_EMPRESA.get(dados["empresa"], TXT_S)
         self.tabela.setItem(r, 4, _it(dados["empresa"], Qt.AlignVCenter|Qt.AlignCenter, bold=True, cor=cor_e))
 
-        cell = QWidget(); cell.setStyleSheet(f"background:{bg};")
+        cell = QWidget(); cell.setStyleSheet(f"background-color:{bg};")
         vl_acoes = QVBoxLayout(cell)
-        vl_acoes.setContentsMargins(10, 10, 10, 10)
+        vl_acoes.setContentsMargins(12, 12, 12, 12)
         vl_acoes.setSpacing(8)
 
         num = dados["numero"]
@@ -668,131 +665,99 @@ class PedidosWidget(QWidget):
         n = dados["nome"]
         pid = int(dados["id"])
 
-        ba = btn_solid("📄 Abrir", BLUE, h=30)
-        ba.setMinimumWidth(72)
-        ba.clicked.connect(lambda _, x=p: self._abrir_pdf(x))
+        _bp = dict(h=32, font_px=11, pad_x=14)
 
-        be = btn_solid("💾 Exportar", GREEN, h=30)
-        be.setMinimumWidth(88)
-        be.clicked.connect(lambda _, x=p, y=n: self._exportar(x, y))
+        ba = btn_solid("📄 Abrir", PEDIDO_ACAO_ABRIR, **_bp)
+        ba.setMinimumWidth(84)
+        ba.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        ba.clicked.connect(lambda: self._abrir_pdf(p))
 
-        br = btn_solid("🖨 Reimprimir", "#8E44AD", h=30)
-        br.setMinimumWidth(100)
+        be = btn_solid("💾 Exportar", PEDIDO_ACAO_EXPORTAR, **_bp)
+        be.setMinimumWidth(96)
+        be.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        be.clicked.connect(lambda: self._exportar(p, n))
+
+        br = btn_solid("🖨 Reimprimir", PEDIDO_ACAO_REIMPRIMIR, **_bp)
+        br.setMinimumWidth(108)
+        br.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         br.setToolTip(f"Regera o PDF do pedido #{num}")
-        br.clicked.connect(lambda _, x=num: self._reimprimir(x))
+        br.clicked.connect(lambda: self._reimprimir(num))
 
         row1 = QHBoxLayout()
         row1.setSpacing(10)
         row1.setContentsMargins(0, 0, 0, 0)
-        row1.addWidget(ba)
-        row1.addWidget(be)
-        row1.addWidget(br)
-        row1.addStretch(1)
+        row1.addWidget(ba, 1)
+        row1.addWidget(be, 1)
+        row1.addWidget(br, 1)
 
-        bed = btn_solid("✏️ Editar", "#F39C12", h=30)
-        bed.setMinimumWidth(78)
+        bed = btn_solid("✏️ Editar", PEDIDO_ACAO_EDITAR, **_bp)
+        bed.setMinimumWidth(120)
+        bed.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         bed.setToolTip(f"Carrega o pedido #{num} na aba Pedido de Compra para edição")
-        bed.clicked.connect(lambda _, x=num: self._editar_pedido(x))
+        bed.clicked.connect(lambda: self._editar_pedido(num))
 
-        bpr = btn_solid("📅 Prazo obra", "#25D366", h=30)
-        bpr.setMinimumWidth(104)
+        bpr = btn_solid("📅 Prazo obra", PEDIDO_ACAO_PRAZO_OBRA, **_bp)
+        bpr.setMinimumWidth(140)
+        bpr.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         bpr.setToolTip(
-            "Gera imagem com prazo de entrega e itens para colar no WhatsApp (Ctrl+V)."
+            "Gera a imagem com prazo de entrega e itens para colar no WhatsApp (Ctrl+V)."
         )
-        bpr.clicked.connect(lambda _, x=pid: self._gerar_imagem_prazo_obra(x))
-
-        bx = btn_solid("🗑 Excluir", "#C0392B", h=30)
-        bx.setMinimumWidth(82)
-        bx.setToolTip(f"Remove o pedido #{num} do banco e da relação")
-        bx.clicked.connect(lambda _, x=num: self._excluir_pedido(x))
+        bpr.clicked.connect(lambda: self._gerar_imagem_prazo_obra(pid))
+        # Destaque tipo Locações: sem OK e prazo vencendo / vencido (borda à esquerda).
+        if not mat and dp is not None:
+            if hoje > dp:
+                acento, tip = "#B71C1C", f"Prevista {dp.strftime('%d/%m/%Y')}: em atraso — confirme OK na obra."
+            elif hoje == dp:
+                acento, tip = "#E65100", f"Prevista para hoje ({dp.strftime('%d/%m/%Y')})."
+            elif (dp - hoje).days == 1:
+                acento, tip = "#F9A825", f"Prevista para amanhã ({dp.strftime('%d/%m/%Y')})."
+            else:
+                acento, tip = None, None
+            if acento is not None:
+                bpr.setToolTip(tip + " " + bpr.toolTip())
+                bpr.setStyleSheet(
+                    f"""
+                    QPushButton {{
+                        background:{PEDIDO_ACAO_PRAZO_OBRA}; color:white; font-size:11px;
+                        font-weight:bold; border-radius:6px; border:none; padding:0 14px;
+                        border-left: 5px solid {acento};
+                    }}
+                    QPushButton:hover   {{ background:#21618C; }}
+                    QPushButton:pressed {{ background:#1B4F72; }}
+                    """
+                )
 
         row2 = QHBoxLayout()
         row2.setSpacing(10)
         row2.setContentsMargins(0, 0, 0, 0)
-        row2.addWidget(bed)
-        row2.addWidget(bpr)
+        row2.addWidget(bed, 1)
+        row2.addWidget(bpr, 1)
 
-        if tag == "pendente":
-            bok = btn_solid("✓ OK na obra", "#1E8449", h=30)
-            bok.setMinimumWidth(102)
-            bok.setToolTip(
-                "Confirma que o material deste pedido já foi entregue na obra. "
-                "A linha fica verde e entra no filtro «Entregues»."
-            )
-            bok.clicked.connect(lambda _, x=pid: self._confirmar_material_obra(x))
-            row2.addWidget(bok)
-        elif tag == "entregue":
-            bu = btn_outline("↩ Desfazer entrega", h=30)
-            bu.setMinimumWidth(118)
-            bu.setToolTip("Remove a confirmação, se o registro foi marcado por engano.")
-            bu.clicked.connect(lambda _, x=pid: self._desfazer_confirmacao_material_obra(x))
-            row2.addWidget(bu)
+        bok = btn_solid("✅ OK NA OBRA", PEDIDO_ACAO_OK_NA_OBRA, **_bp)
+        bok.setMinimumWidth(148)
+        bok.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        bok.setToolTip(
+            "Confirma entrega na obra: a linha fica verde claro. "
+            "Sem este OK a linha permanece vermelha clara. Clique de novo para desmarcar."
+        )
+        bok.clicked.connect(lambda: self._marcar_ok_na_obra(pid))
 
-        row2.addWidget(bx)
-        row2.addStretch(1)
+        bx = btn_solid("🗑 Excluir", PEDIDO_ACAO_EXCLUIR, **_bp)
+        bx.setMinimumWidth(100)
+        bx.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        bx.setToolTip(f"Remove o pedido #{num} do banco e da relação")
+        bx.clicked.connect(lambda: self._excluir_pedido(num))
+
+        row3 = QHBoxLayout()
+        row3.setSpacing(10)
+        row3.setContentsMargins(0, 0, 0, 0)
+        row3.addWidget(bok, 1)
+        row3.addWidget(bx, 1)
 
         vl_acoes.addLayout(row1)
         vl_acoes.addLayout(row2)
+        vl_acoes.addLayout(row3)
         self.tabela.setCellWidget(r, 5, cell)
-
-    def _confirmar_material_obra(self, pedido_id: int):
-        r = QMessageBox.question(
-            self,
-            "Confirmar entrega",
-            "Confirmar que o material deste pedido já foi recebido na obra?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes,
-        )
-        if r != QMessageBox.Yes:
-            return
-        try:
-            from app.data.database import get_connection
-
-            hoje = date.today().isoformat()
-            with get_connection() as conn:
-                conn.execute(
-                    "UPDATE pedidos SET material_entregue_em = ? WHERE id = ?",
-                    (hoje, pedido_id),
-                )
-            try:
-                from app.data.database import sincronizar_com_rede
-
-                sincronizar_com_rede(silencioso=True)
-            except Exception:
-                pass
-        except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Não foi possível salvar.\n\n{e}")
-            return
-        self._carregar()
-
-    def _desfazer_confirmacao_material_obra(self, pedido_id: int):
-        r = QMessageBox.question(
-            self,
-            "Desfazer",
-            "Remover a confirmação de entrega deste pedido?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if r != QMessageBox.Yes:
-            return
-        try:
-            from app.data.database import get_connection
-
-            with get_connection() as conn:
-                conn.execute(
-                    "UPDATE pedidos SET material_entregue_em = NULL WHERE id = ?",
-                    (pedido_id,),
-                )
-            try:
-                from app.data.database import sincronizar_com_rede
-
-                sincronizar_com_rede(silencioso=True)
-            except Exception:
-                pass
-        except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Não foi possível salvar.\n\n{e}")
-            return
-        self._carregar()
 
     # ══════════════════════════════════════════════════════════════════════════
     # IMPRESSÃO — RELAÇÃO DE PEDIDOS
@@ -1175,6 +1140,60 @@ class PedidosWidget(QWidget):
 
         gerar_imagem_prazo_entrega(self, pedido_id)
 
+    def _marcar_ok_na_obra(self, pedido_id: int):
+        from app.data.database import get_connection, marcar_material_entregue_na_obra_toggle
+
+        def _pergunta_sim_nao(titulo: str, texto: str) -> bool:
+            mb = QMessageBox(self)
+            mb.setWindowTitle(titulo)
+            mb.setIcon(QMessageBox.Question)
+            mb.setText(texto)
+            mb.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            mb.setDefaultButton(QMessageBox.No)
+            by = mb.button(QMessageBox.Yes)
+            bn = mb.button(QMessageBox.No)
+            if by is not None:
+                by.setText("Sim")
+            if bn is not None:
+                bn.setText("Não")
+            return mb.exec() == QMessageBox.Yes
+
+        try:
+            with get_connection() as conn:
+                row = conn.execute(
+                    "SELECT material_entregue_em FROM pedidos WHERE id = ?",
+                    (pedido_id,),
+                ).fetchone()
+        except Exception as e:
+            QMessageBox.warning(self, "OK NA OBRA", str(e))
+            return
+
+        if not row:
+            QMessageBox.warning(self, "OK NA OBRA", "Pedido não encontrado.")
+            return
+
+        ja_marcado = material_entregue_obra_confirmado(row["material_entregue_em"])
+
+        if not ja_marcado:
+            if not _pergunta_sim_nao(
+                "OK NA OBRA",
+                "Confirmar que o material deste pedido foi entregue na obra?",
+            ):
+                return
+        else:
+            if not _pergunta_sim_nao(
+                "OK NA OBRA",
+                "Deseja desmarcar a entrega?\n\n"
+                "O pedido voltará a ser tratado como ainda não entregue na obra.",
+            ):
+                return
+
+        ok, msg = marcar_material_entregue_na_obra_toggle(pedido_id)
+        if not ok:
+            QMessageBox.warning(self, "OK NA OBRA", msg)
+            return
+        self._carregar()
+
     def _editar_pedido(self, numero):
         """
         Carrega um pedido já gerado de volta na aba Pedido de Compra.
@@ -1312,6 +1331,7 @@ class PedidosWidget(QWidget):
                 percentual_final=int(ped["percentual_final"] or 0),
                 marco_percentual_final=str(ped["marco_percentual_final"] or "FINALIZAÇÃO"),
                 prazo_entrega=int(ped["prazo_entrega"] or 0),
+                material_entregue_em=str(ped.get("material_entregue_em") or ""),
                 itens=itens,
             )
 
