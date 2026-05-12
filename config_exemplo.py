@@ -27,12 +27,15 @@ for _pasta in [PEDIDOS_DIR, COTACOES_DIR, RELACOES_DIR, BACKUP_DIR]:
     os.makedirs(_pasta, exist_ok=True)
 
 # Dados de cada empresa faturadora
+# email_rodape_1 / email_rodape_2: rodapé do PDF "Notas e Boletos encaminha para:"
 EMPRESAS_FATURADORAS = {
     "BRASUL": {
         "razao_social": "BRASUL CONSTRUTORA LTDA",
         "endereco":     "Rua Coronel Jordão, 440, Vila Paiva - São Paulo, SP - CEP 02075-030",
         "telefone":     "(11) 3313-8220",
         "email":        "compras2@brasulconstrutora.com.br",
+        "email_rodape_1": "notafiscal@brasulconstrutora.com.br",
+        "email_rodape_2": "viviane@brasulconstrutora.com.br",
         "logo":         "logo_brasul.png",
         "obs_padrao":   "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\nBRASUL CONSTRUTORA LTDA",
         "cor_header":   (0, 51, 102),
@@ -42,6 +45,8 @@ EMPRESAS_FATURADORAS = {
         "endereco":     "Av Luis Dummount Vilares 2078, São Paulo, SP - CEP 02239-000",
         "telefone":     "(11) 3313-8220",
         "email":        "compras2@brasulconstrutora.com.br",
+        "email_rodape_1": "notafiscal@brasulconstrutora.com.br",
+        "email_rodape_2": "viviane@brasulconstrutora.com.br",
         "logo":         "logo_jb.png",
         "obs_padrao":   "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\nJB CONSTRUÇÕES E EMPREENDIMENTOS LTDA",
         "cor_header":   (180, 0, 0),
@@ -51,6 +56,8 @@ EMPRESAS_FATURADORAS = {
         "endereco":     "Rua Itamonte 33, Vila Medeiros - São Paulo, SP - CEP 02220-000",
         "telefone":     "(11) 3313-8220",
         "email":        "compras2@brasulconstrutora.com.br",
+        "email_rodape_1": "notafiscal@brasulconstrutora.com.br",
+        "email_rodape_2": "viviane@brasulconstrutora.com.br",
         "logo":         "logo_bb.png",
         "obs_padrao":   "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\nB&B Engenharia e Construções LTDA",
         "cor_header":   (0, 100, 0),
@@ -60,6 +67,8 @@ EMPRESAS_FATURADORAS = {
         "endereco":     "Av. Independência, 546 sala 93 – Cidade Alta – Piracicaba, SP - CEP 13419-160",
         "telefone":     "(11) 3641-9169",
         "email":        "compra2@construtorainteriorana.com.br",
+        "email_rodape_1": "notafiscal@construtorainteriorana.com.br",
+        "email_rodape_2": "financeiro2@construtorainteriorana.com.br",
         "logo":         "logo_interiorana.png",
         "obs_padrao":   "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\nINTERIORANA CONSTRUTORA LTDA",
         "cor_header":   (100, 50, 0),
@@ -69,6 +78,8 @@ EMPRESAS_FATURADORAS = {
         "endereco":     "Rua Coronel Jordão, 440, Vila Paiva - São Paulo, SP - CEP 02075-030",
         "telefone":     "(11) 3313-8220",
         "email":        "compras2@brasulconstrutora.com.br",
+        "email_rodape_1": "notafiscal@brasulconstrutora.com.br",
+        "email_rodape_2": "viviane@brasulconstrutora.com.br",
         "logo":         "logo_interbras.png",
         "obs_padrao":   "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\nINTERBRAS CONSTRUTORA LTDA",
         "cor_header":   (50, 50, 130),

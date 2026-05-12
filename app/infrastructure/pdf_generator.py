@@ -6,7 +6,27 @@ from reportlab.pdfgen import canvas as rl_canvas
 from app.data.database import copiar_arquivo_para_rede
 from config import EMPRESAS_FATURADORAS, PEDIDOS_DIR
 from app.core.dto.pedido_dto import PedidoDTO
-from app.data.database import copiar_arquivo_para_rede
+
+
+def _resolver_empresa_faturadora(empresa_faturadora: str) -> dict:
+    """
+    Retorna o bloco de EMPRESAS_FATURADORAS para o nome gravado no pedido.
+    Evita cair na Brasul quando o texto vem como nome longo (ex.: INTERIORANA CONSTRUTORA LTDA).
+    """
+    raw = str(empresa_faturadora or "").strip()
+    if not raw:
+        return EMPRESAS_FATURADORAS["BRASUL"]
+    if raw in EMPRESAS_FATURADORAS:
+        return EMPRESAS_FATURADORAS[raw]
+    up = raw.upper()
+    if up in EMPRESAS_FATURADORAS:
+        return EMPRESAS_FATURADORAS[up]
+    if ("B&B" in raw or "B & B" in up) and "B&B" in EMPRESAS_FATURADORAS:
+        return EMPRESAS_FATURADORAS["B&B"]
+    for key in ("INTERIORANA", "INTERBRAS", "JB", "BRASUL"):
+        if key in EMPRESAS_FATURADORAS and key in up:
+            return EMPRESAS_FATURADORAS[key]
+    return EMPRESAS_FATURADORAS["BRASUL"]
 
 # ── Dimensões da página A4 ────────────────────────────────────────────────────
 W, H = A4          # largura ≈ 595pt | altura ≈ 842pt
@@ -101,8 +121,7 @@ class PedidoCompraGenerator:
         os.makedirs(PEDIDOS_DIR, exist_ok=True)
 
     def gerar(self, dto: PedidoDTO) -> str:
-        emp     = EMPRESAS_FATURADORAS.get(dto.empresa_faturadora,
-                                           EMPRESAS_FATURADORAS["BRASUL"])
+        emp = _resolver_empresa_faturadora(dto.empresa_faturadora)
         caminho = os.path.join(PEDIDOS_DIR, self._nome_arquivo(dto))
         c = rl_canvas.Canvas(caminho, pagesize=A4)
         self._gerar_paginas(c, dto, emp)
@@ -301,13 +320,27 @@ class PedidoCompraGenerator:
         c.rect(M, y-alt, CW, alt, fill=0, stroke=1)
 
         LOGO_W = 44*mm; LOGO_H = 22*mm
-        logo = _logo_path(dto.empresa_faturadora)
-        if logo:
+        logo_fn = (emp.get("logo") or "").strip()
+        logo = os.path.join(_LOGOS_DIR, logo_fn) if logo_fn else ""
+        if logo and os.path.exists(logo):
             try:
                 c.drawImage(logo, M+3*mm, y-alt+3*mm,
                             width=LOGO_W, height=LOGO_H,
                             preserveAspectRatio=True, mask='auto')
             except Exception:
+                c.setFont("Helvetica-Bold", 10); c.setFillColor(C_PRETO)
+                c.drawString(M+3*mm, y-alt/2, dto.empresa_faturadora)
+        else:
+            leg = _logo_path(dto.empresa_faturadora)
+            if leg:
+                try:
+                    c.drawImage(leg, M+3*mm, y-alt+3*mm,
+                                width=LOGO_W, height=LOGO_H,
+                                preserveAspectRatio=True, mask='auto')
+                except Exception:
+                    c.setFont("Helvetica-Bold", 10); c.setFillColor(C_PRETO)
+                    c.drawString(M+3*mm, y-alt/2, dto.empresa_faturadora)
+            else:
                 c.setFont("Helvetica-Bold", 10); c.setFillColor(C_PRETO)
                 c.drawString(M+3*mm, y-alt/2, dto.empresa_faturadora)
 
@@ -731,13 +764,15 @@ class PedidoCompraGenerator:
         c.setFont("Helvetica-Bold", 7); c.setFillColor(C_PRETO)
         c.drawString(M, y-8.5*mm, "Notas e Boletos encaminha para:")
         c.setFont("Helvetica", 7); c.setFillColor(colors.HexColor("#0055AA"))
-        emp_nome = str(empresa_faturadora or "").strip().upper()
-        if "INTERIORANA" in emp_nome:
-            c.drawString(M, y-12.5*mm, "notafiscal@construtorainteriorana.com.br")
-            c.drawString(M, y-16.5*mm, "financeiro2@construtorainteriorana.com.br")
-        else:
-            c.drawString(M, y-12.5*mm, "notafiscal@brasulconstrutora.com.br")
-            c.drawString(M, y-16.5*mm, "viviane@brasulconstrutora.com.br")
+        emp = _resolver_empresa_faturadora(empresa_faturadora)
+        e1 = str(emp.get("email_rodape_1") or "").strip()
+        e2 = str(emp.get("email_rodape_2") or "").strip()
+        if not e1:
+            e1 = "notafiscal@brasulconstrutora.com.br"
+        if not e2:
+            e2 = "viviane@brasulconstrutora.com.br"
+        c.drawString(M, y-12.5*mm, e1)
+        c.drawString(M, y-16.5*mm, e2)
 
         c.setFont("Helvetica-Bold", 7); c.setFillColor(C_PRETO)
         c.drawRightString(W-M, y-4*mm, "Horário de RECEBIMENTO NA OBRA")
