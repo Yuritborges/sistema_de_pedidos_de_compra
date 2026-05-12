@@ -205,10 +205,27 @@ class PedidosWidget(QWidget):
         cvl = QVBoxLayout(container); cvl.setContentsMargins(0,0,0,0)
 
         self.tabela = QTableWidget(0, 6)
+        self.tabela.setObjectName("pedidos_gerados_tabela")
         self.tabela.setHorizontalHeaderLabels(["Nº", "Data", "Obra", "Fornecedor", "Empresa", "Ações"])
-        self.tabela.setStyleSheet(CSS_TABLE)
+        # CSS_TABLE define fundo nos ::item e some com QTableWidgetItem.setBackground (só a coluna Ações via QWidget).
+        self.tabela.setStyleSheet(
+            CSS_TABLE
+            + f"""
+    QTableWidget#pedidos_gerados_tabela::item {{
+        background-color: transparent;
+    }}
+    QTableWidget#pedidos_gerados_tabela::item:hover {{
+        background-color: {HOV};
+    }}
+    QTableWidget#pedidos_gerados_tabela::item:selected {{
+        background-color: {SEL};
+        color: {GRAY};
+    }}
+"""
+        )
         self.tabela.setSelectionBehavior(QTableWidget.SelectRows)
         self.tabela.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tabela.setAlternatingRowColors(False)
         self.tabela.verticalHeader().setVisible(False)
         self.tabela.setShowGrid(False)
         self.tabela.setFrameShape(QFrame.NoFrame)
