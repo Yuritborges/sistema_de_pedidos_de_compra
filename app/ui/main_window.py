@@ -455,7 +455,8 @@ class MainWindow(QMainWindow):
 
     def _setup_locacoes_sidebar_alerta(self):
         self._timer_locacoes_poll.start()
-        QTimer.singleShot(2500, self._poll_locacoes_vencimento)
+        # Primeira contagem cedo: o usuário vê o sufixo na sidebar sem esperar 1 minuto.
+        QTimer.singleShot(600, self._poll_locacoes_vencimento)
 
     def _poll_locacoes_vencimento(self):
         try:
@@ -523,7 +524,8 @@ class MainWindow(QMainWindow):
         if btn.isChecked():
             self._timer_locacoes_blink.stop()
             btn.setStyleSheet(_qss_nav_pushbutton())
-            btn.setText(self._locacoes_btn_caption)
+            # Com a aba ativa o piscar fica no restante da UI; o contador continua visível no nome.
+            btn.setText(self._locacoes_btn_caption + self._texto_suffix_locacoes_contagem())
             btn.setToolTip(f"{tip_extra}Ctrl+{idx}")
             return
 
