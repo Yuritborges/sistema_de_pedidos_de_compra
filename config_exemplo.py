@@ -1,5 +1,5 @@
-# config.py
-# Configurações gerais do sistema: empresas, caminhos, constantes etc.
+# config_exemplo.py — modelo para gerar config.py (não use este nome em produção).
+# Copie para config.py, edite COMPRADOR_PADRAO / PASTA_COMPRADOR e caminhos; o guard no final só roda neste arquivo modelo.
 
 import os
 
@@ -14,10 +14,6 @@ if not COMPRADOR_PADRAO or COMPRADOR_PADRAO == "SEU_NOME":
 
 if not PASTA_COMPRADOR or PASTA_COMPRADOR == "SuaPasta":
     raise ValueError("Defina PASTA_COMPRADOR com o nome da pasta (ex: Iury, Thamyres, Joao)")
-
-raise ValueError(
-    "Arquivo de exemplo. Copie para config.py e configure antes de rodar o sistema."
-)
 
 DATABASE_PATH = r"Z:\0 OBRAS\brasul_pedidos\cotacao_rede.db"
 PEDIDOS_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\pdfs de pedidos"
@@ -105,3 +101,10 @@ CONDICOES_PAGAMENTO = [
 ]
 
 FORMAS_PAGAMENTO = ["BOLETO", "PIX", "CARTÃO"]
+
+# Impede uso acidental deste arquivo como config em produção (só quando o nome do arquivo continua config_exemplo.py).
+if os.path.basename(os.path.abspath(__file__)).lower() == "config_exemplo.py":
+    raise ValueError(
+        "Este é o arquivo de exemplo. Copie para config.py, ajuste COMPRADOR_PADRAO, "
+        "PASTA_COMPRADOR e os caminhos abaixo; na cópia o nome do arquivo deixa de ser config_exemplo.py."
+    )

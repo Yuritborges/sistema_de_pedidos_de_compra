@@ -14,15 +14,10 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
     QLineEdit, QComboBox, QPushButton, QMessageBox,
     QGridLayout, QAbstractItemView, QGraphicsDropShadowEffect,
-    QCompleter, QSplitter, QProgressBar
+    QCompleter, QSplitter, QProgressBar, QScrollArea,
 )
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame,
-    QTableWidget, QTableWidgetItem, QHeaderView,
-    QLineEdit, QComboBox, QPushButton, QMessageBox,
-    QGridLayout, QAbstractItemView, QGraphicsDropShadowEffect,
-    QCompleter, QSplitter, QProgressBar, QScrollArea
-)
+
+from app.core.funcionarios import listar as listar_funcionarios
 
 REDE_DB = r"Z:\0 OBRAS\brasul_pedidos\cotacao_rede.db"
 
@@ -352,7 +347,11 @@ class ConsultaPatraoWidget(QWidget):
         grid.setVerticalSpacing(10)
 
         self.cb_comprador = QComboBox()
-        self.cb_comprador.addItems(["TODOS", "IURY", "THAMYRES", "SEM COMPRADOR"])
+        try:
+            nomes = list(listar_funcionarios())
+        except Exception:
+            nomes = ["IURY", "THAMYRES"]
+        self.cb_comprador.addItems(["TODOS"] + nomes + ["SEM COMPRADOR"])
 
         self.cb_empresa = QComboBox()
         self.cb_empresa.addItems(["TODAS", "BRASUL", "B&B", "INTERIORANA", "INTERBRAS"])

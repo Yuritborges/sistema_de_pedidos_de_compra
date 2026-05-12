@@ -218,7 +218,7 @@ class MainWindow(QMainWindow):
         return page
 
     def _registrar_atalhos(self):
-        # Ctrl+1 a Ctrl+5 navegam entre abas
+        # Ctrl+1 a Ctrl+6 navegam entre as abas (ORDEM_ABAS)
         for i, key in enumerate(ORDEM_ABAS, start=1):
             atalho = QShortcut(QKeySequence(f"Ctrl+{i}"), self)
             atalho.activated.connect(lambda k=key: self._nav(k))

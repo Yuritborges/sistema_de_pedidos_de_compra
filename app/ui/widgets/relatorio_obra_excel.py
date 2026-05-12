@@ -157,7 +157,7 @@ def gerar_excel(caminho, nome_obra, dados_obra, pedidos, itens_por_pedido):
     por_empresa = defaultdict(lambda: {"n":0,"v":0.0})
     for p in pedidos:
         try: emp = str(p["empresa_faturadora"] or "—")
-        except: emp = "—"
+        except Exception: emp = "—"
         por_empresa[emp]["n"] += 1
         por_empresa[emp]["v"] += _fmt_val(p["valor_total"])
 
@@ -199,7 +199,7 @@ def gerar_excel(caminho, nome_obra, dados_obra, pedidos, itens_por_pedido):
     por_forn = defaultdict(lambda: {"n":0,"v":0.0})
     for p in pedidos:
         try: fn = str(p["fornecedor_nome"] or "—").upper()
-        except: fn = "—"
+        except Exception: fn = "—"
         por_forn[fn]["n"] += 1
         por_forn[fn]["v"] += _fmt_val(p["valor_total"])
 
@@ -268,7 +268,7 @@ def gerar_excel(caminho, nome_obra, dados_obra, pedidos, itens_por_pedido):
         bg = COR_ALT1 if i%2==0 else COR_ALT2
         def _pg(key, default=""):
             try: v = p[key]; return v if v is not None else default
-            except: return default
+            except Exception: return default
 
         num = str(_pg("numero",""))
         n_itens_ped = len(itens_por_pedido.get(num, []))
@@ -341,7 +341,7 @@ def gerar_excel(caminho, nome_obra, dados_obra, pedidos, itens_por_pedido):
     for p in pedidos:
         def _pg2(key, default=""):
             try: v = p[key]; return v if v is not None else default
-            except: return default
+            except Exception: return default
 
         num  = str(_pg2("numero",""))
         data = str(_pg2("data_pedido",""))
@@ -354,12 +354,12 @@ def gerar_excel(caminho, nome_obra, dados_obra, pedidos, itens_por_pedido):
                 bg = COR_ALT1 if linha%2==0 else COR_ALT2
                 def _ig(key, default=""):
                     try: v = item[key]; return v if v is not None else default
-                    except: return default
+                    except Exception: return default
 
                 try:
                     qtd = float(_ig("quantidade", 0))
                     qtd_fmt = int(qtd) if qtd == int(qtd) else round(qtd, 3)
-                except: qtd_fmt = 0
+                except Exception: qtd_fmt = 0
 
                 row_vals = [
                     f"#{num}", data, forn, emp,
@@ -460,12 +460,12 @@ def gerar_excel(caminho, nome_obra, dados_obra, pedidos, itens_por_pedido):
     for p in pedidos:
         def _pg3(key, d=""):
             try: v=p[key]; return v if v is not None else d
-            except: return d
+            except Exception: return d
         num = str(_pg3("numero",""))
         for item in itens_por_pedido.get(num, []):
             def _ig3(key, d=""):
                 try: v=item[key]; return v if v is not None else d
-                except: return d
+                except Exception: return d
             cat_raw = str(_ig3("categoria","") or "").strip().upper()
             cat = cat_raw if cat_raw and cat_raw not in ("NAN","NONE","") else "SEM CATEGORIA"
             por_cat[cat]["qtd_itens"]  += 1
@@ -543,5 +543,5 @@ def gerar_excel(caminho, nome_obra, dados_obra, pedidos, itens_por_pedido):
 def _fmt_brl(v):
     try:
         return f"{float(v):,.2f}".replace(",","X").replace(".",",").replace("X",".")
-    except:
+    except Exception:
         return "0,00"

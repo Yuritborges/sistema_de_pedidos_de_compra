@@ -474,7 +474,7 @@ class ObrasWidget(QWidget):
 
         def _vt(p):
             try: v = p["valor_total"]; return float(v) if v is not None else 0.0
-            except: return 0.0
+            except Exception: return 0.0
 
         total_gasto = sum(_vt(p) for p in pedidos)
         for lv in self._card_npedidos.findChildren(QLabel):
@@ -498,7 +498,7 @@ class ObrasWidget(QWidget):
 
             def _pf(key, default="—"):
                 try: v = p[key]; return str(v) if v is not None else default
-                except: return default
+                except Exception: return default
 
             self._tabela_pedidos.setItem(r, 0, _it2(f"#{_pf('numero','?')}", Qt.AlignVCenter|Qt.AlignCenter, cor=RED, bold=True))
             self._tabela_pedidos.setItem(r, 1, _it2(_pf("data_pedido"), Qt.AlignVCenter|Qt.AlignCenter, cor=TXT_S))

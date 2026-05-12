@@ -1628,24 +1628,24 @@ class CotacaoWidget(QWidget):
         if txt is None or txt == "": return None
         try:
             return float(str(txt).replace("R$","").replace(" ","").replace(".","").replace(",","."))
-        except: return None
+        except Exception: return None
 
     @staticmethod
     def _f(v):
         try: return f"{float(v):,.2f}".replace(",","X").replace(".",",").replace("X",".")
-        except: return "0,00"
+        except Exception: return "0,00"
 
     @staticmethod
     def _fb(v):
         try: return f"{float(v):,.2f}".replace(",","X").replace(".",",").replace("X",".")
-        except: return ""
+        except Exception: return ""
 
     @staticmethod
     def _fn(v):
         try:
             f = float(v)
             return str(int(f)) if f == int(f) else f"{f:.3f}".rstrip("0").rstrip(".")
-        except: return "1"
+        except Exception: return "1"
 
     def showEvent(self, e):
         super().showEvent(e)
