@@ -33,6 +33,32 @@ C_BG = "#F0EDED"
 ORDEM_ABAS = ["pedido", "pedidos", "cotacao", "ferramentas", "locacoes", "cadastros"]
 
 
+def _qss_nav_pushbutton() -> str:
+    """Estilo base dos botões da sidebar (exceto variantes de alerta em Locações)."""
+    return f"""
+                QPushButton {{
+                    text-align: left;
+                    color: {S_TEXT};
+                    background: transparent;
+                    border: none;
+                    border-left: 4px solid transparent;
+                    font-size: 13px;
+                    padding-left: 18px;
+                }}
+                QPushButton:hover {{
+                    color: #C0392B;
+                    background: {S_ITEM};
+                    border-left: 4px solid #E8A090;
+                }}
+                QPushButton:checked {{
+                    color: {S_ATXT};
+                    background: {S_SEL};
+                    border-left: 4px solid {S_EDGE};
+                    font-weight: bold;
+                }}
+            """
+
+
 def _icone_app_path():
     base = os.path.normpath(os.path.join(_HERE, "..", ".."))
     candidatos = [
@@ -109,6 +135,12 @@ class MainWindow(QMainWindow):
         self.resize(1300, 820)
         self._build()
         self._registrar_atalhos()
+        self._title_base = self.windowTitle()
+        self._locacoes_venc = 0
+        self._locacoes_alert = 0
+        self._locacoes_blink_phase = False
+        self._locacoes_btn_caption = "  🏗   Locações"
+        self._setup_locacoes_sidebar_alerta()
 
         # Ícone da janela (mantém fallback único)
         icon_path = _icone_app_path()
@@ -283,31 +315,12 @@ class MainWindow(QMainWindow):
             btn.setFixedHeight(50)
             btn.setCursor(Qt.PointingHandCursor)
             btn.setToolTip(f"Ctrl+{i}")
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    text-align: left;
-                    color: {S_TEXT};
-                    background: transparent;
-                    border: none;
-                    border-left: 4px solid transparent;
-                    font-size: 13px;
-                    padding-left: 18px;
-                }}
-                QPushButton:hover {{
-                    color: #C0392B;
-                    background: {S_ITEM};
-                    border-left: 4px solid #E8A090;
-                }}
-                QPushButton:checked {{
-                    color: {S_ATXT};
-                    background: {S_SEL};
-                    border-left: 4px solid {S_EDGE};
-                    font-weight: bold;
-                }}
-            """)
+            btn.setStyleSheet(_qss_nav_pushbutton())
             btn.setText(f"  {ico}   {label}")
             btn.clicked.connect(lambda _, k=key: self._nav(k))
             self._btns[key] = btn
+            if key == "locacoes":
+                self._locacoes_btn_caption = f"  {ico}   {label}"
             vl.addWidget(btn)
 
         # Divisória
@@ -357,6 +370,115 @@ class MainWindow(QMainWindow):
             widget.carregar_dados()
         elif hasattr(widget, '_carregar_tudo'):
             widget._carregar_tudo()
+
+        self._sync_locacoes_nav_alerta_ui()
+
+    def _qss_nav_locacoes_alerta(self, blink_high: bool) -> str:
+        accent = "#B71C1C" if blink_high else "#E65100"
+        bg = "#FFEBEE" if blink_high else "#FFF8E1"
+        return f"""
+                QPushButton {{
+                    text-align: left;
+                    color: {S_TEXT};
+                    background: transparent;
+                    border: none;
+                    border-left: 4px solid transparent;
+                    font-size: 13px;
+                    padding-left: 18px;
+                }}
+                QPushButton:hover {{
+                    color: #C0392B;
+                    background: {S_ITEM};
+                    border-left: 4px solid #E8A090;
+                }}
+                QPushButton:!checked {{
+                    color: {accent};
+                    font-weight: bold;
+                    border-left: 4px solid {accent};
+                    background: {bg};
+                }}
+                QPushButton:checked {{
+                    color: {S_ATXT};
+                    background: {S_SEL};
+                    border-left: 4px solid {S_EDGE};
+                    font-weight: bold;
+                }}
+            """
+
+    def _setup_locacoes_sidebar_alerta(self):
+        self._timer_locacoes_poll = QTimer(self)
+        self._timer_locacoes_poll.setInterval(60_000)
+        self._timer_locacoes_poll.timeout.connect(self._poll_locacoes_vencimento)
+        self._timer_locacoes_poll.start()
+
+        self._timer_locacoes_blink = QTimer(self)
+        self._timer_locacoes_blink.setInterval(750)
+        self._timer_locacoes_blink.timeout.connect(self._toggle_locacoes_blink)
+
+        QTimer.singleShot(2500, self._poll_locacoes_vencimento)
+
+    def _poll_locacoes_vencimento(self):
+        try:
+            from app.data.locacoes_import import contar_locacoes_vencimento_e_alerta
+
+            v, a = contar_locacoes_vencimento_e_alerta()
+        except Exception:
+            v, a = 0, 0
+        self._locacoes_venc = int(v)
+        self._locacoes_alert = int(a)
+        self._sync_locacoes_nav_alerta_ui()
+
+    def _toggle_locacoes_blink(self):
+        self._locacoes_blink_phase = not self._locacoes_blink_phase
+        self._apply_locacoes_blink_frame()
+
+    def _apply_locacoes_blink_frame(self):
+        btn = self._btns.get("locacoes")
+        if not btn:
+            return
+        total = self._locacoes_venc + self._locacoes_alert
+        if total <= 0 or btn.isChecked():
+            return
+        btn.setStyleSheet(self._qss_nav_locacoes_alerta(self._locacoes_blink_phase))
+        cap = self._locacoes_btn_caption
+        btn.setText(cap + (f"  ⚠ {total}" if self._locacoes_blink_phase else f"  ({total})"))
+
+    def _sync_locacoes_nav_alerta_ui(self):
+        btn = self._btns.get("locacoes")
+        if not btn:
+            return
+        total = self._locacoes_venc + self._locacoes_alert
+        if total <= 0:
+            self._timer_locacoes_blink.stop()
+            btn.setStyleSheet(_qss_nav_pushbutton())
+            btn.setText(self._locacoes_btn_caption)
+            self.setWindowTitle(self._title_base)
+            idx = ORDEM_ABAS.index("locacoes") + 1
+            btn.setToolTip(f"Ctrl+{idx}")
+            return
+
+        n_v, n_a = self._locacoes_venc, self._locacoes_alert
+        partes = []
+        if n_v:
+            partes.append(f"{n_v} venc.")
+        if n_a:
+            partes.append(f"{n_a} próx. venc.")
+        self.setWindowTitle(f"{self._title_base}  —  Locações: {', '.join(partes)}")
+        idx = ORDEM_ABAS.index("locacoes") + 1
+        tip_extra = f"Atenção: {n_v} vencido(s), {n_a} a vencer (≤7 dias).\n"
+
+        if btn.isChecked():
+            self._timer_locacoes_blink.stop()
+            btn.setStyleSheet(_qss_nav_pushbutton())
+            btn.setText(self._locacoes_btn_caption)
+            btn.setToolTip(f"{tip_extra}Ctrl+{idx}")
+            return
+
+        btn.setToolTip(f"{tip_extra}Ctrl+{idx}")
+
+        if not self._timer_locacoes_blink.isActive():
+            self._timer_locacoes_blink.start()
+        self._apply_locacoes_blink_frame()
 
     def obter_pagina(self, key):
         if key not in self._pages:

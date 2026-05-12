@@ -5,7 +5,7 @@ import sys
 from functools import partial
 from datetime import datetime, date, timedelta
 
-from PySide6.QtCore import Qt, QDate, QUrl
+from PySide6.QtCore import Qt, QDate, QUrl, QTimer
 from PySide6.QtWidgets import (
     QCompleter,
     QFileDialog,
@@ -1091,6 +1091,16 @@ class LocacoesWidget(QWidget):
             QMessageBox.critical(self, "Erro", f"Não foi possível carregar locações.\n\n{e}")
         self._atualizar_kpis()
         self._aplicar_filtro()
+        self._notificar_mainwindow_locacoes_atualizadas()
+
+    def _notificar_mainwindow_locacoes_atualizadas(self):
+        """Atualiza alerta na sidebar / título assim que os dados de locações mudam."""
+        try:
+            mw = self.window()
+            if mw is not None and hasattr(mw, "_poll_locacoes_vencimento"):
+                QTimer.singleShot(0, mw._poll_locacoes_vencimento)
+        except Exception:
+            pass
 
     def _passa_preset(self, r):
         sit = str(r.get("situacao", "")).strip().upper()

@@ -200,6 +200,40 @@ def import_locacoes_into_connection(conn, path: str, substituir: bool) -> int:
     return inseridos
 
 
+def contar_locacoes_vencimento_e_alerta() -> tuple[int, int]:
+    """
+    Conta linhas com situação derivada VENCIDO ou ATUALIZAR (vence em até 7 dias),
+    usando a mesma regra que `calcular_derivados_locacao` / aba Locações.
+    Retorna (n_vencidos, n_proximo_vencer).
+    """
+    try:
+        from app.data.database import get_locacoes_connection
+    except Exception:
+        return 0, 0
+    try:
+        with get_locacoes_connection() as conn:
+            rows = conn.execute(
+                "SELECT data_pedido, periodo_dias, data_vencimento, pedido_ok "
+                "FROM locacoes_registros"
+            ).fetchall()
+    except Exception:
+        return 0, 0
+    venc = 0
+    alert = 0
+    for r in rows:
+        _, _, sit = calcular_derivados_locacao(
+            clean_str(r["data_pedido"]),
+            r["periodo_dias"],
+            clean_str(r["data_vencimento"]),
+            clean_str(r["pedido_ok"]),
+        )
+        if sit == "VENCIDO":
+            venc += 1
+        elif sit == "ATUALIZAR":
+            alert += 1
+    return venc, alert
+
+
 def _meta_get(conn, chave: str) -> str | None:
     row = conn.execute(
         "SELECT valor FROM locacoes_meta WHERE chave=?",
