@@ -2,6 +2,14 @@ import os
 import sqlite3
 from datetime import datetime
 
+import sys
+
+_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from app.core.material_obra import migrar_coluna_material_ok_na_obra_sqlite
+
 
 BASE_REDE = r"Z:\0 OBRAS\brasul_pedidos"
 DB_IURY = os.path.join(BASE_REDE, "Iury", "cotacao_iury.db")
@@ -55,6 +63,7 @@ def _parse_emitido(raw):
 
 
 def _upsert_pedido(dst_conn, pedido):
+    migrar_coluna_material_ok_na_obra_sqlite(dst_conn)
     numero = str(pedido["numero"] or "").strip()
     comprador = str(pedido.get("comprador") or "").strip().upper()
     if not numero:
@@ -72,6 +81,7 @@ def _upsert_pedido(dst_conn, pedido):
         "percentual_final", "marco_percentual_final",
         "prazo_entrega", "comprador", "valor_total",
         "caminho_pdf", "status", "emitido_em", "material_entregue_em",
+        "material_ok_na_obra",
     ]
     cols_destino = {
         r[1] for r in dst_conn.execute("PRAGMA table_info(pedidos)").fetchall()
@@ -168,10 +178,17 @@ def main():
             raise FileNotFoundError(f"Arquivo não encontrado: {caminho}")
 
     _backup_rede()
+    from app.core.material_obra import (
+        migracao_uma_vez_zera_flags_ok_obra_sqlite,
+        migracao_uma_vez_ok_legado_todos_pedidos_sqlite,
+    )
+
     with sqlite3.connect(DB_REDE) as rede:
         rede.execute("PRAGMA foreign_keys = ON")
+        migracao_uma_vez_zera_flags_ok_obra_sqlite(rede)
         _copiar_de_origem(DB_IURY, rede)
         _copiar_de_origem(DB_THAMYRES, rede)
+        migracao_uma_vez_ok_legado_todos_pedidos_sqlite(rede)
         rede.commit()
     print("[FIM] Consolidação concluída.")
 

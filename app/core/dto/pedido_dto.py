@@ -63,6 +63,8 @@ class PedidoDTO:
     desconto:           float = 0.0
     # Preenchido ao reemitir / editar do banco: cor da caixa "DATA PREVISTA" no PDF.
     material_entregue_em: str = ""
+    # 1 só após «OK NA OBRA» no banco; lista e PDF usam isto (não inferem só pelo carimbo).
+    material_ok_na_obra: int = 0
 
     # Itens do pedido
     itens: List[ItemPedidoDTO] = field(default_factory=list)

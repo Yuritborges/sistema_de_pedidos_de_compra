@@ -60,6 +60,9 @@ def parse_emitido(raw):
 
 
 def upsert_pedido(dst_conn, pedido):
+    from app.core.material_obra import migrar_coluna_material_ok_na_obra_sqlite
+
+    migrar_coluna_material_ok_na_obra_sqlite(dst_conn)
     numero = str(pedido["numero"] or "").strip()
     comprador = str(pedido.get("comprador") or "").strip().upper()
     if not numero:
@@ -93,6 +96,7 @@ def upsert_pedido(dst_conn, pedido):
         "status",
         "emitido_em",
         "material_entregue_em",
+        "material_ok_na_obra",
     ]
     cols_destino = {r[1] for r in dst_conn.execute("PRAGMA table_info(pedidos)").fetchall()}
     cols = [c for c in cols if c in cols_destino and c in pedido]
@@ -195,10 +199,17 @@ def run_full_consolidation() -> None:
             raise FileNotFoundError(f"Arquivo não encontrado: {caminho}")
 
     backup_cotacao_rede()
+    from app.core.material_obra import (
+        migracao_uma_vez_zera_flags_ok_obra_sqlite,
+        migracao_uma_vez_ok_legado_todos_pedidos_sqlite,
+    )
+
     with sqlite3.connect(DB_REDE) as rede:
         rede.execute("PRAGMA foreign_keys = ON")
+        migracao_uma_vez_zera_flags_ok_obra_sqlite(rede)
         merge_origem_path_into_rede(rede, DB_IURY)
         merge_origem_path_into_rede(rede, DB_THAMYRES)
+        migracao_uma_vez_ok_legado_todos_pedidos_sqlite(rede)
         rede.commit()
     print("[FIM] Consolidação concluída.")
 

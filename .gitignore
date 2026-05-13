@@ -19,6 +19,7 @@ backup/
 pedidos_gerados/
 assets/cotacoes_salvas/
 assets/pedidos_salvos/
+assets/**/*.bak_*
 
 Z:/
 

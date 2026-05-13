@@ -31,7 +31,6 @@ from app.ui.style import (
 from config import PEDIDOS_DIR, COMPRADOR_PADRAO
 
 from app.infrastructure.prazo_entrega_imagem import prazo_entrega_dias_efetivo
-from app.core.material_obra import material_entregue_obra_confirmado
 
 
 def _pixmap_logo_sem_fundo_branco(pix: QPixmap, limiar: int = 248) -> QPixmap:
@@ -342,6 +341,7 @@ class PedidosWidget(QWidget):
                             p.caminho_pdf,
                             p.comprador,
                             p.material_entregue_em,
+                            COALESCE(p.material_ok_na_obra, 0) AS material_ok_na_obra,
                             p.prazo_entrega,
                             COALESCE(it.itens_texto, '') AS itens_texto
                         FROM pedidos p
@@ -370,6 +370,7 @@ class PedidosWidget(QWidget):
                             p.caminho_pdf,
                             p.comprador,
                             p.material_entregue_em,
+                            COALESCE(p.material_ok_na_obra, 0) AS material_ok_na_obra,
                             p.prazo_entrega,
                             COALESCE(it.itens_texto, '') AS itens_texto
                         FROM pedidos p
@@ -423,9 +424,8 @@ class PedidosWidget(QWidget):
                     "itens_texto":        str(row["itens_texto"] or ""),
                     "comprador":          row["comprador"] or "",
                     "material_entregue_em": row["material_entregue_em"] or "",
-                    "material_ok_obra": material_entregue_obra_confirmado(
-                        row["material_entregue_em"]
-                    ),
+                    "material_ok_na_obra": int(row["material_ok_na_obra"] or 0),
+                    "material_ok_obra": int(row["material_ok_na_obra"] or 0) != 0,
                     "data_prevista_entrega": data_prevista_entrega,
                 })
 
@@ -648,7 +648,15 @@ class PedidosWidget(QWidget):
             if cor:  it.setForeground(QColor(cor))
             return it
 
-        self.tabela.setItem(r, 0, _it(f"#{dados['numero']}", Qt.AlignVCenter|Qt.AlignCenter, bold=True, cor=RED))
+        num_item = _it(f"#{dados['numero']}", Qt.AlignVCenter|Qt.AlignCenter, bold=True, cor=RED)
+        if mat:
+            stamp = str(dados.get("material_entregue_em") or "").strip()
+            num_item.setToolTip(
+                "Linha verde: OK NA OBRA confirmado no banco.\n"
+                f"Carimbo (material_entregue_em):\n{stamp or '—'}\n\n"
+                "Clique em «OK NA OBRA» de novo para voltar ao vermelho."
+            )
+        self.tabela.setItem(r, 0, num_item)
         self.tabela.setItem(r, 1, _it(dados["data"].strftime("%d/%m/%Y"), Qt.AlignVCenter|Qt.AlignCenter, cor=TXT_S))
         self.tabela.setItem(r, 2, _it(dados["obra"], bold=True))
         self.tabela.setItem(r, 3, _it(dados.get("fornecedor", "—"), cor=TXT_S))
@@ -1163,7 +1171,7 @@ class PedidosWidget(QWidget):
         try:
             with get_connection() as conn:
                 row = conn.execute(
-                    "SELECT material_entregue_em FROM pedidos WHERE id = ?",
+                    "SELECT material_ok_na_obra FROM pedidos WHERE id = ?",
                     (pedido_id,),
                 ).fetchone()
         except Exception as e:
@@ -1174,7 +1182,7 @@ class PedidosWidget(QWidget):
             QMessageBox.warning(self, "OK NA OBRA", "Pedido não encontrado.")
             return
 
-        ja_marcado = material_entregue_obra_confirmado(row["material_entregue_em"])
+        ja_marcado = int(row["material_ok_na_obra"] or 0) != 0
 
         if not ja_marcado:
             if not _pergunta_sim_nao(
@@ -1334,6 +1342,7 @@ class PedidosWidget(QWidget):
                 marco_percentual_final=str(ped["marco_percentual_final"] or "FINALIZAÇÃO"),
                 prazo_entrega=int(ped["prazo_entrega"] or 0),
                 material_entregue_em=str(ped.get("material_entregue_em") or ""),
+                material_ok_na_obra=int(ped.get("material_ok_na_obra") or 0),
                 itens=itens,
             )
 

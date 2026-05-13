@@ -12,7 +12,11 @@ import threading
 import time
 from datetime import datetime
 from config import DATABASE_PATH, BACKUP_DIR, BASE_REDE_DIR
-from app.core.material_obra import material_entregue_obra_confirmado
+from app.core.material_obra import (
+    migrar_coluna_material_ok_na_obra_sqlite,
+    migracao_uma_vez_zera_flags_ok_obra_sqlite,
+    migracao_uma_vez_ok_legado_todos_pedidos_sqlite,
+)
 
 
 try:
@@ -301,6 +305,7 @@ def init_db():
                 marco_percentual_final TEXT,
                 prazo_entrega       INTEGER,
                 material_entregue_em TEXT,
+                material_ok_na_obra INTEGER NOT NULL DEFAULT 0,
                 comprador           TEXT,
                 valor_total         REAL,
                 caminho_pdf         TEXT,
@@ -411,6 +416,9 @@ def init_db():
         """)
         _garantir_colunas_pagamento_etapas(conn)
         _garantir_coluna_material_entregue_obra(conn)
+        _garantir_coluna_material_ok_na_obra(conn)
+        migracao_uma_vez_zera_flags_ok_obra_sqlite(conn)
+        migracao_uma_vez_ok_legado_todos_pedidos_sqlite(conn)
     marcar("schema-e-migracoes")
 
     print(f"[DB] Banco inicializado: {DATABASE_PATH}")
@@ -476,6 +484,14 @@ def _garantir_coluna_material_entregue_obra(conn):
         )
 
 
+def _garantir_coluna_material_ok_na_obra(conn):
+    """
+    Flag explícita: 0 = lista vermelha (pendente); 1 = usuário marcou OK NA OBRA.
+    O carimbo em material_entregue_em segue só como registro/data no PDF; o verde vem desta coluna.
+    """
+    migrar_coluna_material_ok_na_obra_sqlite(conn)
+
+
 # ============================================================
 # CONTADOR DE PEDIDOS
 # ============================================================
@@ -532,7 +548,8 @@ def atualizar_numero_pedido_se_maior(numero):
 
 def marcar_material_entregue_na_obra_toggle(pedido_id: int) -> tuple[bool, str]:
     """
-    Alterna material_entregue_em (Pedidos Gerados — OK na obra / linha verde).
+    Alterna material_ok_na_obra (Pedidos Gerados — linha verde só com OK explícito).
+    material_entregue_em guarda o carimbo ao marcar; limpa ao desmarcar.
     Retorna (ok, mensagem).
     """
     pid = int(pedido_id)
@@ -541,21 +558,31 @@ def marcar_material_entregue_na_obra_toggle(pedido_id: int) -> tuple[bool, str]:
     try:
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT id, material_entregue_em FROM pedidos WHERE id = ?",
+                "SELECT id, material_ok_na_obra FROM pedidos WHERE id = ?",
                 (pid,),
             ).fetchone()
             if not row:
                 return False, "Pedido não encontrado."
-            marcado = material_entregue_obra_confirmado(row["material_entregue_em"])
+            marcado = int(row["material_ok_na_obra"] or 0) != 0
             if marcado:
                 conn.execute(
-                    "UPDATE pedidos SET material_entregue_em = NULL WHERE id = ?",
+                    """
+                    UPDATE pedidos
+                       SET material_ok_na_obra = 0,
+                           material_entregue_em = NULL
+                     WHERE id = ?
+                    """,
                     (pid,),
                 )
                 msg = "Marcação na obra removida."
             else:
                 conn.execute(
-                    "UPDATE pedidos SET material_entregue_em = datetime('now') WHERE id = ?",
+                    """
+                    UPDATE pedidos
+                       SET material_ok_na_obra = 1,
+                           material_entregue_em = datetime('now')
+                     WHERE id = ?
+                    """,
                     (pid,),
                 )
                 msg = "Marcado como entregue na obra."

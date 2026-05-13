@@ -701,7 +701,8 @@ class PedidoWidget(QWidget):
         self._desconto_tipo = "%"   # "%" ou "R$"
         self._arquivo_pedido_atual = None  # caminho do rascunho carregado/salvo
         self._pedido_editando_numero = None  # número do pedido aberto pela tela Pedidos Gerados
-        self._material_entregue_em_db = ""  # OK na obra (vem do banco ao editar pedido existente)
+        self._material_entregue_em_db = ""  # carimbo ao marcar OK (só leitura no PDF)
+        self._material_ok_na_obra_db = 0  # 1 só após OK NA OBRA no banco
         self._fornecedor_pix = ""
         self._fornecedor_favorecido = ""
         self._build()
@@ -1927,6 +1928,7 @@ class PedidoWidget(QWidget):
         try:
             self._pedido_editando_numero = str(pedido["numero"])
             self._material_entregue_em_db = str(pedido.get("material_entregue_em") or "")
+            self._material_ok_na_obra_db = int(pedido.get("material_ok_na_obra") or 0)
 
             # Dados principais
             self.e_num.setText(str(pedido["numero"] or ""))
@@ -2066,6 +2068,7 @@ class PedidoWidget(QWidget):
             self._arquivo_pedido_atual = None
             self._pedido_editando_numero = None
             self._material_entregue_em_db = ""
+            self._material_ok_na_obra_db = 0
             self.e_num.setText(proximo_numero_pedido())
 
         except ValueError as e:
@@ -2143,6 +2146,7 @@ class PedidoWidget(QWidget):
             observacao_extra=self.e_obs.toPlainText().strip(),
             desconto=desconto_reais,
             material_entregue_em=getattr(self, "_material_entregue_em_db", "") or "",
+            material_ok_na_obra=int(getattr(self, "_material_ok_na_obra_db", 0) or 0),
             itens=itens,
         )
 
@@ -2194,6 +2198,7 @@ class PedidoWidget(QWidget):
         self.e_obs.clear(); self.lbl_obs_padrao.setVisible(False)
         self._pedido_editando_numero = None
         self._material_entregue_em_db = ""
+        self._material_ok_na_obra_db = 0
 
     # ══════════════════════════════════════════════════════════════════════════
     # INTEGRAÇÃO COTAÇÃO → PEDIDO (Sprint 3)

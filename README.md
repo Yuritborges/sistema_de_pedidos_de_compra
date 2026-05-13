@@ -1,192 +1,220 @@
 # Sistema de Pedidos — Brasul Construtora
 
-Sistema interno de geração de pedidos de compra, cotação comparativa e controle de obras.
+**Versão:** 2 (interface desktop)  
+**Stack:** Python 3.11+, PySide6 (Qt), SQLite, ReportLab, OpenPyXL, Pandas  
+**Uso:** sistema interno da **Brasul Construtora Ltda** para emissão de pedidos de compra, cotação comparativa entre fornecedores, cadastros compartilhados, locações e integração com pasta de rede.
+
+Este documento descreve o software de forma que **qualquer leitor** (docente, colega ou novo colaborador) compreenda o propósito, a arquitetura e como instalar, configurar e gerar o executável.
 
 ---
 
-## Instalação (Windows)
+## 1. Resumo executivo
 
-### 1. Instalar Python
-Use **Python 3.11 ou superior** (recomendado uma versão estável LTS). Baixe em: https://www.python.org/downloads/
+O sistema substitui fluxos manuais dispersos (planilhas, Word, e-mail) por uma **aplicação única** com:
 
-> Marque a opção **"Add Python to PATH"** durante a instalação.
+- **Pedido de compra** padronizado em PDF, com numeração sequencial, múltiplas empresas faturadoras e dados de obra/fornecedor.
+- **Pedidos gerados**: consulta, filtros, impressão de relações, reimpressão, edição, controle visual de **entrega na obra** (OK na obra) e sincronização com banco na rede.
+- **Cotação comparativa** entre até três fornecedores, com destaque de preços e texto auxiliar para negociação.
+- **Locações**, **ferramentas** auxiliares e **cadastros** (fornecedores, obras, funcionários em JSON).
 
-### 2. Abrir o terminal na pasta do projeto
-Clique com botão direito na pasta do projeto → "Abrir no Terminal"
-
-### 3. Instalar dependências
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Configurar `config.py`
-Copie `config_exemplo.py` para `config.py`, defina `COMPRADOR_PADRAO`, `PASTA_COMPRADOR` e os caminhos de rede/pastas conforme o ambiente.
-
-### 5. Executar o sistema
-```bash
-python main.py
-```
+Os dados operacionais vivem em **SQLite** (local por comprador e consolidado na rede), com opção de **espelhamento** periódico para pastas compartilhadas.
 
 ---
 
-## Build do executável (rede)
+## 2. Contexto e problema de negócio
 
-Para gerar o `SistemaPedidosV2.exe` em `current/` (atalhos da rede):
+Construtoras geram grande volume de **pedidos de material** com requisitos distintos por obra, fornecedor e empresa do grupo econômico. Sem um sistema único, surgem inconsistências de numeração, dificuldade de rastrear o que já foi emitido e pouca visibilidade para o financeiro e para o canteiro.
+
+**Este sistema** centraliza a geração do documento oficial (PDF), mantém histórico consultável e apoia a equipe de compras com cotação lado a lado e cadastros reutilizáveis.
+
+---
+
+## 3. Objetivos
+
+| Objetivo | Como o sistema atende |
+|----------|------------------------|
+| Padronizar pedidos | Layout PDF único por empresa faturadora, dados vindos de formulário validado |
+| Rastrear pedidos emitidos | Tabela em SQLite + pasta de PDFs + aba Pedidos Gerados |
+| Apoiar negociação | Cotação comparativa com ranking visual e texto copiável |
+| Trabalho em rede | `DATABASE_PATH` e pastas em servidor; scripts de backup e consolidação |
+| Distribuição simples | Build com PyInstaller → `SistemaPedidosV2.exe` |
+
+---
+
+## 4. Requisitos técnicos
+
+| Requisito | Detalhe |
+|-----------|---------|
+| Sistema operacional | Windows 10/11 (principal); desenvolvimento testado neste ambiente |
+| Python | 3.11 ou superior (recomendado LTS estável) |
+| Rede | Pastas mapeadas (ex.: `Z:\...`) para banco e PDFs, conforme `config.py` |
+| Permissões | Leitura/escrita nas pastas de pedidos, backup e cadastros compartilhados |
+
+Dependências Python: ver `requirements.txt` (PySide6, reportlab, openpyxl, pandas, matplotlib onde usado em relatórios).
+
+---
+
+## 5. Arquitetura do projeto
+
+Organização em camadas dentro de `app/`:
+
+```
+app/
+├── core/           # Regras de negócio leves, DTOs, serviços (ex.: pedido_service)
+├── data/           # SQLite, migrações na inicialização, sync com cotacao_rede.db
+├── infrastructure/ # PDF (pedido, relação de pedidos), imagens (prazo na obra)
+└── ui/             # main_window, estilos, widgets por módulo, diálogos
+```
+
+- **`main.py`**: entrada do programa; seleção de utilizador (`BRASUL_USUARIO`), splash, `init_db()`, janela principal.
+- **`main_patrao.py`**: variante com `main_window_patrao` (ex.: consulta consolidada para patrão) — fluxo separado do comprador.
+- **`config.py`**: **não versionado**; cada máquina copia de `config_exemplo.py` e ajusta caminhos e `COMPRADOR_PADRAO`.
+
+Fluxo típico de um pedido:
+
+1. Utilizador preenche **Pedido de Compra** → `PedidoService` valida → `pdf_generator` gera PDF → `pedido_service` grava pedido e itens no SQLite → opcionalmente sincroniza com `cotacao_rede.db`.
+
+2. **Pedidos Gerados** lê o mesmo SQLite, lista PDFs, aplica filtros e ações (abrir, exportar, OK na obra, excluir).
+
+---
+
+## 6. Módulos da interface (abas)
+
+A barra lateral (`app/ui/main_window.py`) carrega páginas sob demanda (*lazy load*). Atalhos **Ctrl+1** … **Ctrl+6** seguem a ordem abaixo.
+
+| # | Aba | Ficheiro principal | Função |
+|---|-----|-------------------|--------|
+| 1 | Pedido de Compra | `formulario_pedido.py` | Montagem do pedido, itens, desconto, empresa faturadora; geração via `PedidoService` |
+| 2 | Pedidos Gerados | `pedidos_widget.py` | Lista, busca, filtros de data, «A Entregar» / «Entregue», cards, impressão de relação, OK na obra |
+| 3 | Cotação | `cotacao_widget.py` | Comparação de preços, persistência em JSON na pasta configurada |
+| 4 | Ferramentas | `ferramentas_widget.py` | Utilitários internos (importações, apoio operacional) |
+| 5 | Locações | `locacoes_widget.py` | Registros em banco compartilhado, alertas de vencimento na sidebar |
+| 6 | Cadastros | `cadastros_widget.py` | Fornecedores, obras e funcionários (JSON em `assets/` + regras em `cadastros_store.py`) |
+
+**Consulta patrão:** `consulta_patrao_widget.py` é usada pela janela `main_window_patrao.py`, não pela barra lateral do fluxo principal de compras.
+
+---
+
+## 7. Banco de dados e regras importantes
+
+### 7.1 Ficheiros SQLite
+
+- **Banco local do comprador:** caminho em `DATABASE_PATH` (ex.: `cotacao_iury.db` na pasta do comprador na rede).
+- **Consolidado:** `cotacao_rede.db` na raiz da pasta de rede (merge de compradores), atualizado por scripts e por hooks após salvar pedido (ver `app/data/cotacao_rede_sync.py`).
+- **Locações:** ficheiro partilhado em `_shared/locacoes.db` (conforme configuração em `database.py`).
+
+### 7.2 Tabela `pedidos` (conceito)
+
+Campos relevantes incluem: número único, datas, obra, fornecedor, empresa faturadora, valores, caminho do PDF, comprador, prazo de entrega, **`material_ok_na_obra`** (0/1) e **`material_entregue_em`** (carimbo de data/hora quando aplicável).
+
+### 7.3 «OK na obra» (Pedidos Gerados)
+
+- A cor da linha (pendente / OK) e a caixa **DATA PREVISTA DA ENTREGA** no PDF seguem a **flag** `material_ok_na_obra`, gravada apenas pelo botão **OK NA OBRA**.
+- Migrações controladas por tabelas-marca em SQLite garantem: correção de dados legados, «baseline» de todos os pedidos antigos como OK num release específico, e **pedidos novos** continuam com flag **0** até confirmação explícita. Detalhe da lógica: `app/core/material_obra.py` e `app/data/database.py` (`init_db`).
+
+---
+
+## 8. Configuração (`config.py`)
+
+Copie `config_exemplo.py` → `config.py` e ajuste no mínimo:
+
+| Variável | Função |
+|----------|--------|
+| `COMPRADOR_PADRAO` | Nome do comprador (ex.: IURY) |
+| `PASTA_COMPRADOR` | Subpasta na rede (ex.: Iury) |
+| `DATABASE_PATH` | SQLite de trabalho desse comprador |
+| `BASE_REDE_DIR` | Raiz onde estão pastas por comprador e `cotacao_rede.db` |
+| `PEDIDOS_DIR` / `COTACOES_DIR` / `BACKUP_DIR` / `RELACOES_DIR` | Pastas de saída e backup |
+| `EMPRESAS_FATURADORAS` | Dados e logos por empresa para o PDF |
+| `REDE_SYNC_INTERVALO_SEGUNDOS` | Espelhamento periódico (0 = desligado) |
+| `REDE_SYNC_MESCLAR_CONSOLIDADO` | Merge pesado no consolidado (uso avançado) |
+
+O ficheiro exemplo valida placeholders e cria pastas necessárias ao importar.
+
+---
+
+## 9. Instalação (modo desenvolvimento)
+
+1. Instale **Python 3.11+** (opção «Add Python to PATH» no instalador Windows).  
+2. Na raiz do projeto: `python -m venv .venv` e ative o ambiente virtual.  
+3. `pip install -r requirements.txt`  
+4. Copie `config_exemplo.py` para `config.py` e edite caminhos.  
+5. Execute: `python main.py`  
+6. Na primeira execução, escolha o utilizador na caixa de diálogo (lista em `assets/usuarios.json` + padrões no código).
+
+---
+
+## 10. Build e distribuição (executável)
+
+Scripts PowerShell em `tools/`:
+
+| Script | Descrição |
+|--------|-----------|
+| `release_full.ps1` | Encerra o app local → **backup pré-release** (`backup_pre_release.py`) → **PyInstaller** → cópias para `releases/` e `current/` |
+| `build_release.ps1` | Apenas gera `dist/` e copia para `releases/` e opcionalmente `current/` |
+| `backup_pre_release.py` | Zip do código + cópia SQLite (local, rede, locações, cadastros) para `backups/pre_release_*` |
+| `sync_current_from_dist.ps1` | Atualiza `current/` quando o robocopy falhou por ficheiro em uso na rede |
+| `consolidar_rede.py` | Merge manual dos `.db` dos compradores no consolidado (Python, com `sys.path` para `app`) |
+
+Comando típico na raiz:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools\build_release.ps1
+powershell -ExecutionPolicy Bypass -File tools\release_full.ps1
 ```
 
-Feche o programa em todos os PCs antes do fim do script. Se a cópia para `current/` falhar (arquivo em uso), rode:
+Use `-IncludePythonMain` se estiver a correr `main.py` em modo desenvolvimento; `-SkipCurrent` se não quiser atualizar `current/` enquanto outros PCs tiverem o `.exe` aberto.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\sync_current_from_dist.ps1
-```
+O ficheiro de especificação do PyInstaller é `SistemaPedidosV2.spec`.
 
 ---
 
-## Estrutura de pastas
+## 11. Pastas e artefactos gerados
 
-```
-sistema_de_pedidos_brasulv2/
-│
-├── main.py                    ← Entrada principal (desenvolvimento)
-├── config_exemplo.py          ← Modelo para criar config.py (não usar o nome em produção)
-├── config.py                  ← Criado localmente (não versionado): caminhos e empresas
-├── SistemaPedidosV2.spec      ← PyInstaller (build Release)
-├── requirements.txt
-├── tools/                     ← backup_pre_release, backup_diario, build_release, sync rede
-├── current/                   ← Saída do build (exe na rede; não versionar)
-├── releases/                  ← Histórico de builds (não versionar)
-├── backups/                   ← Snapshots manuais pre_release (não versionar)
-│
-├── app/
-│   ├── core/                  ← DTOs, pedido_service, funcionarios
-│   ├── data/                  ← database.py, locacoes_import, cotacao_rede_sync, cadastros_store
-│   ├── infrastructure/        ← PDFs (pedido, relação)
-│   └── ui/                    ← main_window, widgets por aba
-│
-├── assets/                    ← logos, funcionarios.json, obras.json
-├── database/                  ← SQLite local (não versionar em produção)
-└── pedidos_gerados/           ← PDFs emitidos (não versionar)
-```
-
-Principais widgets de interface: `formulario_pedido`, `pedidos_widget`, `cotacao_widget`, `ferramentas_widget`, `locacoes_widget`, `cadastros_widget`, `historico_widget`, `obras_widget`, `consulta_patrao_widget` (visão consolidada).
+| Pasta / ficheiro | Conteúdo | Versionar no Git? |
+|------------------|----------|---------------------|
+| `app/`, `main.py`, `tools/*.py` | Código-fonte | Sim |
+| `config.py` | Segredos/caminhos locais | **Não** (`.gitignore`) |
+| `dist/`, `build/`, `releases/`, `current/` | Saída PyInstaller | Não |
+| `backups/` | Snapshots `pre_release_*` | Não |
+| `pedidos_gerados/` (ou pasta em rede) | PDFs emitidos | Não |
+| `assets/*.json` | Cadastros exemplo / dados | Sim (sem backups `.bak_*`) |
+| `assets/logos/` | Logos para PDF | Sim |
 
 ---
 
-## Funcionalidades
+## 12. Logos no PDF
 
-### Pedido de Compra
-- Geração de PDF com layout profissional para 5 empresas faturadoras
-- Numeração automática e sequencial de pedidos
-- Campos completos: obra, fornecedor, itens, condições de pagamento
-
-### Pedidos Gerados
-- Lista todos os pedidos emitidos com filtros por data e empresa
-- Impressão da Relação de Pedidos para o financeiro (PDF)
-- Recarrega automaticamente ao acessar a aba
-
-### Cotação Comparativa
-- Compara até 3 fornecedores item a item
-- Destaque automático: verde = mais barato, vermelho = mais caro
-- Análise de negociação: identifica itens onde o concorrente foi mais barato
-- Gera texto de negociação pronto para copiar ou enviar por WhatsApp
-- Salva e carrega cotações em JSON
-
-### Ferramentas
-- Utilitários internos (importações, manutenção, apoio operacional).
-
-### Locações
-- Controle de itens locados (banco compartilhado na rede), situação na obra, vencimentos e exportação.
-
-### Cadastros
-- Manutenção de dados auxiliares usados pelo sistema.
-
-### Histórico
-- Dashboard com totais, obras ativas e ticket médio
-- Gráfico mensal de pedidos
-- Filtros encadeados por ano, empresa, obra e busca por texto
-
-### Obras
-- Cadastro completo com endereço de entrega
-- Empresa faturadora associada (preenchimento automático nos pedidos)
+Coloque imagens em `assets/logos/` conforme nomes referenciados em `EMPRESAS_FATURADORAS` no `config.py` (ex.: `logo_brasul.png`, `logo_jb.png`, …). Tamanho sugerido na ordem de **200×80 px**, fundo branco ou transparente.
 
 ---
 
-## Atalhos de teclado
+## 13. Testes e qualidade de código
 
-| Atalho | Aba |
-|--------|-----|
-| Ctrl+1 | Pedido de Compra |
-| Ctrl+2 | Pedidos Gerados |
-| Ctrl+3 | Cotação |
-| Ctrl+4 | Ferramentas |
-| Ctrl+5 | Locações |
-| Ctrl+6 | Cadastros |
-
-> **Obras:** cadastro em **Cadastros → Obras**. O módulo **Histórico** (`historico_widget.py`) existe no repositório, mas **não está na barra lateral** desta versão do `main_window` — confira se outro fluxo ou build ainda o utiliza.
+- **Sintaxe:** na raiz do projeto, `python -m compileall -q app main.py main_patrao.py tools` deve concluir sem erros.  
+- **Testes automatizados:** o repositório não inclui suíte pytest extensa; validação principal é execução manual do `main.py` e do `.exe` após build.  
+- **Logs:** `startup_v2.log` na raiz do projeto pode registar tempos de arranque e etapas de `init_db` / janela principal.
 
 ---
 
-## Configurações em `config.py`
+## 14. Referência académica (sugestão de citação)
 
-| Parâmetro | O que faz |
-|-----------|-----------|
-| `COMPRADOR_PADRAO` | Nome padrão no campo Comprador |
-| `EMPRESAS_FATURADORAS` | Dados de cada empresa (endereço, logo, cor, observação padrão) |
-| `PEDIDOS_DIR` | Pasta onde os PDFs são salvos |
-| `COTACOES_DIR` | Pasta onde as cotações JSON são salvas |
-| `BACKUP_DIR` | Pasta dos backups semanais do banco |
+> **Título do trabalho (exemplo):** Sistema desktop de gestão de pedidos de compra e cotações para construção civil — estudo de caso Brasul Construtora.  
+> **Tecnologias:** Python, Qt (PySide6), SQLite, geração de PDF, integração com partilha de ficheiros em rede.
 
-> O número do último pedido é controlado exclusivamente pelo banco de dados (`contador_pedidos`). Não edite manualmente.
+Autor do software no âmbito empresarial: **Yuri Borges** — Brasul Construtora Ltda (conforme rodapé histórico do README).
 
 ---
 
-## Logos das empresas
+## 15. Licença e uso
 
-Coloque os arquivos na pasta `assets/logos/`:
-
-| Arquivo | Empresa |
-|---------|---------|
-| `logo_brasul.png` | Brasul Construtora |
-| `logo_jb.png` | JB Construções |
-| `logo_bb.png` | B&B Engenharia |
-| `logo_interiorana.png` | Interiorana |
-| `logo_interbras.png` | Interbras |
-
-> Tamanho recomendado: 200×80 px, fundo branco ou transparente.
+Software de **uso interno** da Brasul Construtora. Não é distribuição pública genérica; reprodução fora do contexto autorizado deve seguir política da empresa e da instituição de ensino.
 
 ---
 
-## Backup do banco de dados e da rede
+## 16. Histórico de alterações deste README
 
-- **Automático (semana):** o app mantém cópias na pasta de backup configurada em `config.py` / `database` local, conforme `database.py`.
-- **Antes de release / manutenção:** na raiz do projeto, com a rede disponível:
+- Documentação alargada para trabalho académico: visão de produto, arquitetura, base de dados, OK na obra, build e tabelas de referência.
+- Remoção de módulos UI não referenciados pelo `main_window` (evitar duplicação e confusão): listagem simples antiga de pedidos, widgets de histórico/obras autónomos não ligados ao menu atual.
+- Limpeza de ficheiro de backup acidental em `assets/` e regra `.gitignore` para `*.bak_*` gerados pelo editor de cadastros.
 
-```bash
-python tools/backup_pre_release.py
-```
-
-Esse script grava em `backups/pre_release_<data>/`: zip do código-fonte, cópia do banco local (via `config.py`), pasta de backups do comprador, espelhos de `cotacao_iury.db`, `cotacao_thamyres.db`, `cotacao_rede.db`, `locacoes.db` e pasta `cadastros_compartilhados` em `Z:\0 OBRAS\brasul_pedidos\` quando acessíveis.
-
-- **Agendado:** `tools/backup_diario.py` (ajuste agendador do Windows conforme a política da empresa).
-
-Para restaurar manualmente um `.db` local: copie o arquivo desejado para o caminho apontado por `DATABASE_PATH` no `config.py`.
-
----
-
-## Dependências
-
-```
-PySide6       — interface gráfica
-reportlab     — geração de PDF
-openpyxl      — relatórios Excel
-pandas        — ferramentas / relatórios tabulares
-matplotlib    — gráficos (histórico, quando integrado)
-```
-
----
-
-## Desenvolvido por
-Yuri Borges — Brasul Construtora Ltda
+Para questões técnicas ou melhorias futuras, usar o repositório e o fluxo de issues/commits da equipa.

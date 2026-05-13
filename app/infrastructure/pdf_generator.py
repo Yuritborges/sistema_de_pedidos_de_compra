@@ -6,7 +6,6 @@ from reportlab.pdfgen import canvas as rl_canvas
 from app.data.database import copiar_arquivo_para_rede
 from config import EMPRESAS_FATURADORAS, PEDIDOS_DIR
 from app.core.dto.pedido_dto import PedidoDTO
-from app.core.material_obra import material_entregue_obra_confirmado
 
 
 def _resolver_empresa_faturadora(empresa_faturadora: str) -> dict:
@@ -502,8 +501,8 @@ class PedidoCompraGenerator:
         c.setFont("Helvetica-Bold", 8); c.setFillColor(C_ESCURO)
         c.drawRightString(W-M-30*mm, y-11*mm, "DATA PREVISTA DA ENTREGA")
 
-        # Caixinha DATA PREVISTA: vermelho até OK na obra válido; verde só após OK.
-        ok_caixa = material_entregue_obra_confirmado(getattr(dto, "material_entregue_em", ""))
+        # Caixinha DATA PREVISTA: vermelho até OK na obra; verde só com flag explícita no banco.
+        ok_caixa = int(getattr(dto, "material_ok_na_obra", 0) or 0) != 0
         c.setStrokeColor(C_LINHA)
         c.setFillColor(C_PREVISTA_COM_OK if ok_caixa else C_PREVISTA_SEM_OK)
         c.rect(W-M-28*mm, y-14*mm, 25*mm, 6.5*mm, fill=1, stroke=1)
