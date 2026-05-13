@@ -119,9 +119,25 @@ def main():
 
         sys.exit(app.exec())
 
-    except ImportError:
-        print("PySide6 não instalado. Rodando demo CLI...")
-        _demo_cli()
+    except ImportError as e:
+        # Não confundir "DLL load failed" (rede, antivírus, PySide na rede) com "pacote não instalado".
+        msg = str(e).lower()
+        print("ERRO: não foi possível carregar a interface gráfica (PySide6 / Qt).", file=sys.stderr)
+        print(f"Detalhe: {e}", file=sys.stderr)
+        if "dll" in msg or "rede" in msg or "network" in msg or "126" in msg:
+            print(
+                "\nSe o programa está numa pasta de rede (Z: ou \\\\servidor), copie a pasta "
+                "'SistemaPedidosV2' para o disco local (ex.: C:\\Apps\\) e execute de lá, "
+                "ou verifique VPN, cabo e antivírus bloqueando DLLs.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "\nInstale as dependências na máquina de desenvolvimento:\n"
+                "  pip install -r requirements.txt",
+                file=sys.stderr,
+            )
+        sys.exit(1)
 
 
 def _users_file_path():
@@ -341,11 +357,14 @@ def _selecionar_usuario(app) -> str:
 
 
 def _demo_cli():
+    """Só para teste manual (não é chamado no arranque normal). Ex.: definir BRASUL_DEMO_CLI=1."""
     from app.core.services.pedido_service import PedidoService
     from app.core.dto.pedido_dto import PedidoDTO, ItemPedidoDTO
+    from app.data.database import proximo_numero_pedido
 
     dto = PedidoDTO(
-        numero="2549", data_pedido="09/04/2026",
+        numero=proximo_numero_pedido(),
+        data_pedido="09/04/2026",
         empresa_faturadora="BRASUL", comprador="IURY",
         obra="MARIA RITA ARAÚJO", escola="E.E Maria Rita Araújo",
         endereco_entrega="R. Ernesto Bergamasco, 665",
@@ -366,4 +385,7 @@ def _demo_cli():
 
 
 if __name__ == "__main__":
-    main()
+    if os.environ.get("BRASUL_DEMO_CLI", "").strip() in ("1", "true", "yes", "sim"):
+        _demo_cli()
+    else:
+        main()
