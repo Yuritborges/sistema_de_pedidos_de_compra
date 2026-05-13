@@ -701,6 +701,7 @@ class PedidoWidget(QWidget):
         self._desconto_tipo = "%"   # "%" ou "R$"
         self._arquivo_pedido_atual = None  # caminho do rascunho carregado/salvo
         self._pedido_editando_numero = None  # número do pedido aberto pela tela Pedidos Gerados
+        self._pedido_editando_id = None  # id na tabela pedidos — só regrava UPDATE com este id
         self._material_entregue_em_db = ""  # carimbo ao marcar OK (só leitura no PDF)
         self._material_ok_na_obra_db = 0  # 1 só após OK NA OBRA no banco
         self._fornecedor_pix = ""
@@ -1434,7 +1435,7 @@ class PedidoWidget(QWidget):
     # LÓGICA DA TABELA
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _add_row(self):
+    def _add_row(self, abrir_editor_descricao: bool = True):
         """
         Insere linha na tabela.
 
@@ -1492,8 +1493,11 @@ class PedidoWidget(QWidget):
         self.tabela.setItem(r, 4, it)
 
         self.tabela.blockSignals(False)
-        self.tabela.setCurrentCell(r, 0)
-        self.tabela.editItem(self.tabela.item(r, 0))
+        if abrir_editor_descricao:
+            self.tabela.setCurrentCell(r, 0)
+            it0 = self.tabela.item(r, 0)
+            if it0 is not None:
+                self.tabela.editItem(it0)
 
     def _rem_row(self):
         r = self.tabela.currentRow()
@@ -1861,7 +1865,7 @@ class PedidoWidget(QWidget):
         # Itens
         self.tabela.setRowCount(0)
         for item in dados.get("itens", []):
-            self._add_row()
+            self._add_row(False)
             r = self.tabela.rowCount() - 1
 
             it_desc = self.tabela.item(r, 0)
@@ -1926,7 +1930,14 @@ class PedidoWidget(QWidget):
           da obra/fornecedor quando possível.
         """
         try:
+            # sqlite3.Row não tem .get(); sempre usar dict (cópia rasa).
+            if pedido is None:
+                raise ValueError("Pedido vazio.")
+            pedido = dict(pedido)
+            itens = [dict(r) for r in (itens if itens is not None else ())]
+
             self._pedido_editando_numero = str(pedido["numero"])
+            self._pedido_editando_id = int(pedido["id"])
             self._material_entregue_em_db = str(pedido.get("material_entregue_em") or "")
             self._material_ok_na_obra_db = int(pedido.get("material_ok_na_obra") or 0)
 
@@ -1934,62 +1945,62 @@ class PedidoWidget(QWidget):
             self.e_num.setText(str(pedido["numero"] or ""))
             self.e_data.setText(str(pedido["data_pedido"] or datetime.now().strftime("%d/%m/%Y")))
             self.chk_data_manual.setChecked(True)
-            self.e_prazo.setValue(int(pedido["prazo_entrega"] or 0))
+            self.e_prazo.setValue(int(pedido.get("prazo_entrega") or 0))
 
-            self._set_combo_text(self.e_cond, str(pedido["condicao_pagamento"] or ""))
-            self._set_combo_text(self.e_forma, str(pedido["forma_pagamento"] or ""))
-            self.chk_pag_etapas.setChecked(bool(pedido["pagamento_etapas_ativo"] or 0))
-            self.e_pg_entrada.setValue(int(pedido["percentual_entrada"] or 0))
-            self.e_pg_marco.setCurrentText(str(pedido["marco_percentual_final"] or "FINALIZAÇÃO"))
+            self._set_combo_text(self.e_cond, str(pedido.get("condicao_pagamento") or ""))
+            self._set_combo_text(self.e_forma, str(pedido.get("forma_pagamento") or ""))
+            self.chk_pag_etapas.setChecked(bool(pedido.get("pagamento_etapas_ativo") or 0))
+            self.e_pg_entrada.setValue(int(pedido.get("percentual_entrada") or 0))
+            self.e_pg_marco.setCurrentText(str(pedido.get("marco_percentual_final") or "FINALIZAÇÃO"))
             self._sync_pagamento_etapas()
 
-            comprador = str(pedido["comprador"] or COMPRADOR_PADRAO)
+            comprador = str(pedido.get("comprador") or COMPRADOR_PADRAO)
             self._comprador_atual = comprador
             self.btn_comprador.setText(f"👤  {comprador}")
 
             # Obra
-            obra = str(pedido["obra_nome"] or "")
+            obra = str(pedido.get("obra_nome") or "")
             self.e_obra.blockSignals(True)
             self._set_combo_text(self.e_obra, obra)
             self.e_obra.blockSignals(False)
             self._fill_obra(obra)
 
-            if pedido["escola"]:
-                self.e_escola.setText(str(pedido["escola"] or ""))
+            if pedido.get("escola"):
+                self.e_escola.setText(str(pedido.get("escola") or ""))
 
-            empresa = str(pedido["empresa_faturadora"] or "")
+            empresa = str(pedido.get("empresa_faturadora") or "")
             if empresa:
                 self._set_combo_text(self.e_fat, empresa)
                 self._atualizar_obs_padrao()
 
             # Fornecedor
-            fornecedor = str(pedido["fornecedor_nome"] or "")
+            fornecedor = str(pedido.get("fornecedor_nome") or "")
             self.e_fsel.blockSignals(True)
             self._set_combo_text(self.e_fsel, fornecedor)
             self.e_fsel.blockSignals(False)
             self._fill_forn(fornecedor)
 
             self.e_fn.setText(fornecedor)
-            self.e_fraz.setText(str(pedido["fornecedor_razao"] or ""))
+            self.e_fraz.setText(str(pedido.get("fornecedor_razao") or ""))
 
-            # Itens
+            # Itens (sem abrir editor a cada linha — várias chamadas a editItem() quebram o Qt)
             self.tabela.setRowCount(0)
 
             for item in itens:
-                self._add_row()
+                self._add_row(False)
                 row = self.tabela.rowCount() - 1
 
                 desc = self.tabela.item(row, 0)
                 if desc:
-                    desc.setText(str(item["descricao"] or "").upper())
+                    desc.setText(str(item.get("descricao") or "").upper())
 
                 qtd = self.tabela.cellWidget(row, 1)
                 if qtd:
-                    qtd.setValue(float(item["quantidade"] or 0))
+                    qtd.setValue(float(item.get("quantidade") or 0))
 
                 un = self.tabela.cellWidget(row, 2)
                 if un:
-                    unidade = str(item["unidade"] or "UNID.")
+                    unidade = str(item.get("unidade") or "UNID.")
                     idx = un.findText(unidade)
                     if idx >= 0:
                         un.setCurrentIndex(idx)
@@ -1998,7 +2009,7 @@ class PedidoWidget(QWidget):
 
                 vl = self.tabela.cellWidget(row, 3)
                 if vl:
-                    vl.setValue(float(item["valor_unitario"] or 0))
+                    vl.setValue(float(item.get("valor_unitario") or 0))
 
             # Desconto e observações não existem em todos os bancos antigos.
             self._desconto_tipo = "%"
@@ -2007,13 +2018,6 @@ class PedidoWidget(QWidget):
 
             self._arquivo_pedido_atual = None
             self._recalc()
-
-            QMessageBox.information(
-                self,
-                "Modo edição",
-                f"Pedido Nº {self._pedido_editando_numero} carregado para edição.\n\n"
-                "Após alterar, clique no botão da empresa para gerar novamente."
-            )
 
         except Exception as e:
             QMessageBox.critical(self, "Erro ao carregar pedido", str(e))
@@ -2067,12 +2071,13 @@ class PedidoWidget(QWidget):
 
             self._arquivo_pedido_atual = None
             self._pedido_editando_numero = None
+            self._pedido_editando_id = None
             self._material_entregue_em_db = ""
             self._material_ok_na_obra_db = 0
             self.e_num.setText(proximo_numero_pedido())
 
         except ValueError as e:
-            QMessageBox.warning(self, "Campos obrigatórios", str(e))
+            QMessageBox.warning(self, "Pedido não salvo", str(e))
         except Exception as e:
             QMessageBox.critical(self, "Erro", str(e))
 
@@ -2148,6 +2153,7 @@ class PedidoWidget(QWidget):
             material_entregue_em=getattr(self, "_material_entregue_em_db", "") or "",
             material_ok_na_obra=int(getattr(self, "_material_ok_na_obra_db", 0) or 0),
             itens=itens,
+            pedido_existente_id=self._pedido_editando_id,
         )
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -2197,6 +2203,7 @@ class PedidoWidget(QWidget):
 
         self.e_obs.clear(); self.lbl_obs_padrao.setVisible(False)
         self._pedido_editando_numero = None
+        self._pedido_editando_id = None
         self._material_entregue_em_db = ""
         self._material_ok_na_obra_db = 0
 
@@ -2206,6 +2213,8 @@ class PedidoWidget(QWidget):
 
     def preencher_de_cotacao(self, dados):
                 # Preenche o formulário a partir de uma cotação vencedora (Sprint 3).
+        self._pedido_editando_numero = None
+        self._pedido_editando_id = None
         idx = self.e_obra.findText(dados.get("obra",""))
         if idx >= 0: self.e_obra.setCurrentIndex(idx)
         idx = self.e_fsel.findText(dados.get("fornecedor",""))
@@ -2217,7 +2226,7 @@ class PedidoWidget(QWidget):
         self.e_prazo.setValue(int(dados.get("prazo_entrega",5)))
         self.tabela.setRowCount(0)
         for item in dados.get("itens",[]):
-            self._add_row()
+            self._add_row(False)
             r = self.tabela.rowCount() - 1
             self.tabela.item(r,0).setText(item.get("descricao",""))
             wq = self.tabela.cellWidget(r,1); wu = self.tabela.cellWidget(r,2)
@@ -2244,6 +2253,8 @@ class PedidoWidget(QWidget):
                          valor_unitario, valor_total
         """
         # Limpa tabela sem confirmacao
+        self._pedido_editando_numero = None
+        self._pedido_editando_id = None
         self.tabela.setRowCount(0)
         self.lbl_subtotal.setText("Subtotal: R$ 0,00")
         self.lbl_desconto_info.setVisible(False)
@@ -2287,7 +2298,7 @@ class PedidoWidget(QWidget):
 
         # Itens
         for item in itens:
-            self._add_row()
+            self._add_row(False)
             r = self.tabela.rowCount() - 1
             desc = str(item.get("descricao", "")).strip().upper()
             it_desc = self.tabela.item(r, 0)
