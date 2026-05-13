@@ -3,16 +3,10 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas as rl_canvas
-from datetime import date
-
 from app.data.database import copiar_arquivo_para_rede
 from config import EMPRESAS_FATURADORAS, PEDIDOS_DIR
 from app.core.dto.pedido_dto import PedidoDTO
 from app.core.material_obra import material_entregue_obra_confirmado
-from app.infrastructure.prazo_entrega_imagem import (
-    data_prevista_entrega_como_date,
-    prazo_entrega_dias_efetivo,
-)
 
 
 def _resolver_empresa_faturadora(empresa_faturadora: str) -> dict:
@@ -508,13 +502,8 @@ class PedidoCompraGenerator:
         c.setFont("Helvetica-Bold", 8); c.setFillColor(C_ESCURO)
         c.drawRightString(W-M-30*mm, y-11*mm, "DATA PREVISTA DA ENTREGA")
 
-        # Caixinha: verde só com OK válido e data prevista já alcançada (igual Pedidos Gerados).
-        ok_marca = material_entregue_obra_confirmado(getattr(dto, "material_entregue_em", ""))
-        dp = data_prevista_entrega_como_date(
-            str(getattr(dto, "data_pedido", "") or ""),
-            prazo_entrega_dias_efetivo(getattr(dto, "prazo_entrega", None)),
-        )
-        ok_caixa = ok_marca and (dp is None or date.today() >= dp)
+        # Caixinha DATA PREVISTA: vermelho até OK na obra válido; verde só após OK.
+        ok_caixa = material_entregue_obra_confirmado(getattr(dto, "material_entregue_em", ""))
         c.setStrokeColor(C_LINHA)
         c.setFillColor(C_PREVISTA_COM_OK if ok_caixa else C_PREVISTA_SEM_OK)
         c.rect(W-M-28*mm, y-14*mm, 25*mm, 6.5*mm, fill=1, stroke=1)

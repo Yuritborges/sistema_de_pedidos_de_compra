@@ -200,8 +200,8 @@ class PedidosWidget(QWidget):
         for chave, rotulo in [("entregar", "A Entregar"), ("entregue", "Entregue")]:
             b = btn_filtro(rotulo)
             b.setToolTip(
-                "A Entregar: ainda não concluído (sem OK na obra válido, ou OK antes da data prevista).\n"
-                "Entregue: OK na obra e data prevista de entrega já alcançada."
+                "A Entregar: pedidos sem OK na obra válido (inclui data prevista em vermelho no PDF).\n"
+                "Entregue: pedidos com OK na obra confirmado."
             )
             b.clicked.connect(lambda _, k=chave: self._set_filtro_entrega(k))
             hl_busca.addWidget(b)
@@ -564,9 +564,9 @@ class PedidosWidget(QWidget):
                          self._data_inicio <= r["data"].date() <= self._data_fim]
 
         if self._filtro_entrega == "entregar":
-            resultado = [r for r in resultado if not self._pedido_entrega_concluida(r, hoje)]
+            resultado = [r for r in resultado if not r.get("material_ok_obra")]
         elif self._filtro_entrega == "entregue":
-            resultado = [r for r in resultado if self._pedido_entrega_concluida(r, hoje)]
+            resultado = [r for r in resultado if r.get("material_ok_obra")]
 
         # Armazena resultado filtrado e reseta paginação
         self._filtrados    = resultado
@@ -630,20 +630,6 @@ class PedidosWidget(QWidget):
     # TABELA
     # ══════════════════════════════════════════════════════════════════════════
 
-    @staticmethod
-    def _pedido_entrega_concluida(r: dict, hoje: date) -> bool:
-        """
-        Ciclo de entrega concluído para lista/filtros/cor: OK na obra válido
-        e (sem data prevista calculada ou hoje >= data prevista).
-        OK antes da prevista não conta como entregue na listagem verde.
-        """
-        if not r.get("material_ok_obra"):
-            return False
-        dp = r.get("data_prevista_entrega")
-        if dp is None:
-            return True
-        return hoje >= dp
-
     def _inserir_linha(self, dados):
         """Insere uma única linha na tabela. Usado pela paginação."""
         r = self.tabela.rowCount()
@@ -652,8 +638,7 @@ class PedidosWidget(QWidget):
         hoje = date.today()
         mat = bool(dados.get("material_ok_obra"))
         dp = dados.get("data_prevista_entrega")
-        ent_fim = self._pedido_entrega_concluida(dados, hoje)
-        bg = PEDIDOS_GERADOS_ROW_OK_OBRA if ent_fim else PEDIDOS_GERADOS_ROW_PENDENTE
+        bg = PEDIDOS_GERADOS_ROW_OK_OBRA if mat else PEDIDOS_GERADOS_ROW_PENDENTE
         bg_brush = QBrush(QColor(bg))
 
         def _it(txt, align=Qt.AlignVCenter|Qt.AlignLeft, bold=False, cor=None):
@@ -719,23 +704,16 @@ class PedidosWidget(QWidget):
         )
         bpr.clicked.connect(lambda: self._gerar_imagem_prazo_obra(pid))
         acento, tip = None, None
-        if dp is not None:
-            if mat and hoje < dp:
+        if not mat and dp is not None:
+            if hoje > dp:
                 acento, tip = (
-                    "#F9A825",
-                    f"OK na obra antes da data prevista ({dp.strftime('%d/%m/%Y')}). "
-                    "A linha fica verde a partir dessa data.",
+                    "#B71C1C",
+                    f"Prevista {dp.strftime('%d/%m/%Y')}: em atraso — confirme OK na obra.",
                 )
-            elif not mat:
-                if hoje > dp:
-                    acento, tip = (
-                        "#B71C1C",
-                        f"Prevista {dp.strftime('%d/%m/%Y')}: em atraso — confirme OK na obra.",
-                    )
-                elif hoje == dp:
-                    acento, tip = "#E65100", f"Prevista para hoje ({dp.strftime('%d/%m/%Y')})."
-                elif (dp - hoje).days == 1:
-                    acento, tip = "#F9A825", f"Prevista para amanhã ({dp.strftime('%d/%m/%Y')})."
+            elif hoje == dp:
+                acento, tip = "#E65100", f"Prevista para hoje ({dp.strftime('%d/%m/%Y')})."
+            elif (dp - hoje).days == 1:
+                acento, tip = "#F9A825", f"Prevista para amanhã ({dp.strftime('%d/%m/%Y')})."
         if acento is not None:
             bpr.setToolTip(tip + " " + bpr.toolTip())
             bpr.setStyleSheet(
@@ -760,8 +738,8 @@ class PedidosWidget(QWidget):
         bok.setMinimumWidth(148)
         bok.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         bok.setToolTip(
-            "Registra OK na obra. A linha só fica verde quando a data prevista de entrega "
-            "já foi alcançada; antes disso permanece vermelha clara (OK antecipado). "
+            "Confirma entrega na obra. No PDF a data prevista fica vermelha até este OK; "
+            "depois fica verde. Na lista, verde com OK e vermelho claro sem OK. "
             "Clique de novo para desmarcar."
         )
         bok.clicked.connect(lambda: self._marcar_ok_na_obra(pid))
