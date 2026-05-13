@@ -441,16 +441,14 @@ class PedidosWidget(QWidget):
         self._sincronizar_nav_pedidos_gerados_alerta()
 
     def contar_pedidos_sem_ok_previsto_hoje_ou_atrasado(self) -> int:
-        """Para badge na sidebar: sem OK na obra e data prevista <= hoje."""
-        hoje = date.today()
+        """
+        Para badge na sidebar: mesma regra visual da tabela (fundo vermelho claro)
+        — pedidos sem «OK na obra», entre os que passam pelo filtro atual (data, busca, A entregar).
+        Antes só contava prazo já vencido ou hoje, o que gerava (3) com 4 linhas vermelhas.
+        """
         n = 0
-        for r in self._todos:
-            if r.get("material_ok_obra"):
-                continue
-            dp = r.get("data_prevista_entrega")
-            if dp is None:
-                continue
-            if hoje >= dp:
+        for r in self._filtrados:
+            if not r.get("material_ok_obra"):
                 n += 1
         return n
 
@@ -573,6 +571,7 @@ class PedidosWidget(QWidget):
         self._pagina_atual = 0
         self.tabela.setRowCount(0)
         self._renderizar_pagina()
+        self._sincronizar_nav_pedidos_gerados_alerta()
 
     def _renderizar_pagina(self):
         """Renderiza a próxima fatia de _PAGE_SIZE registros na tabela."""
@@ -1214,7 +1213,7 @@ class PedidosWidget(QWidget):
           e recria os itens/PDF com os novos dados.
         """
         try:
-            from app.data.database import get_connection
+            from app.data.database import get_connection, row_to_dict
 
             with get_connection() as conn:
                 pedido = conn.execute(
@@ -1239,6 +1238,9 @@ class PedidosWidget(QWidget):
                     """,
                     (pedido["id"],)
                 ).fetchall()
+
+            pedido = row_to_dict(pedido)
+            itens = [row_to_dict(r) for r in (itens or ())]
 
             if not itens:
                 resp = QMessageBox.question(
@@ -1302,6 +1304,8 @@ class PedidosWidget(QWidget):
                         f"Pedido #{numero} não encontrado no banco.\n"
                         "Só é possível reimprimir pedidos gerados por este sistema.")
                     return
+
+                ped = dict(ped)
 
                 itens_db = conn.execute(
                     "SELECT descricao, quantidade, unidade, valor_unitario "

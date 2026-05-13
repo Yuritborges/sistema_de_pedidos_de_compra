@@ -196,7 +196,24 @@ Coloque imagens em `assets/logos/` conforme nomes referenciados em `EMPRESAS_FAT
 
 ---
 
-## 14. Referência académica (sugestão de citação)
+## 14. Guia para trabalho académico (faculdade)
+
+Este README serve como **documentação técnica** do projeto para relatório, apresentação ou monografia.
+
+| Sugestão | Detalhe |
+|----------|---------|
+| **Problema** | Volume de pedidos de compra em construção civil, numeração inconsistente, dispersão entre planilhas e PDFs. |
+| **Solução** | Aplicação desktop única: formulário validado, PDF oficial (ReportLab), histórico em SQLite, cotação multi-fornecedor, trabalho em rede. |
+| **Arquitetura** | Camadas `app/core`, `app/data`, `app/infrastructure`, `app/ui` (ver secção 5). |
+| **Dados na demo** | Não versionar `config.py` nem bases reais da empresa. Para demonstração, usar `config_exemplo.py` como base, **caminhos locais** e **dados fictícios** (obras/fornecedores de exemplo em `assets/`). |
+| **Executável** | Após `tools\build_release.ps1`, o `.exe` está em `dist\` ou `releases\`; o atalho interno costuma apontar para `current\`. |
+| **Evoluções recentes (exemplo para “trabalho desenvolvido”)** | Correção de leitura `sqlite3.Row` na edição de pedidos; validação de número de pedido já existente ao editar; alinhamento do contador de numeração com o `MAX` real em `proximo_numero_pedido`; contagem na sidebar **Pedidos Gerados (n)** alinhada aos pedidos **sem OK na obra** na lista filtrada; script de reparação pontual `tools/fix_iury_contador_pedidos.py` (caso de legado em bases antigas). |
+
+**Figuras úteis para o documento:** capturas das abas *Pedido de Compra*, *Pedidos Gerados* (filtros e OK na obra) e *Cotação*; diagrama simples “formulário → DTO → `PedidoService` → PDF + SQLite”.
+
+---
+
+## 15. Referência académica (sugestão de citação)
 
 > **Título do trabalho (exemplo):** Sistema desktop de gestão de pedidos de compra e cotações para construção civil — estudo de caso Brasul Construtora.  
 > **Tecnologias:** Python, Qt (PySide6), SQLite, geração de PDF, integração com partilha de ficheiros em rede.
@@ -205,14 +222,15 @@ Autor do software no âmbito empresarial: **Yuri Borges** — Brasul Construtora
 
 ---
 
-## 15. Licença e uso
+## 16. Licença e uso
 
 Software de **uso interno** da Brasul Construtora. Não é distribuição pública genérica; reprodução fora do contexto autorizado deve seguir política da empresa e da instituição de ensino.
 
 ---
 
-## 16. Histórico de alterações deste README
+## 17. Histórico de alterações deste README
 
+- Secção **«Guia para trabalho académico»** com tabela de problema/solução, dados de demo e evoluções recentes do código.
 - Documentação alargada para trabalho académico: visão de produto, arquitetura, base de dados, OK na obra, build e tabelas de referência.
 - Remoção de módulos UI não referenciados pelo `main_window` (evitar duplicação e confusão): listagem simples antiga de pedidos, widgets de histórico/obras autónomos não ligados ao menu atual.
 - Limpeza de ficheiro de backup acidental em `assets/` e regra `.gitignore` para `*.bak_*` gerados pelo editor de cadastros.

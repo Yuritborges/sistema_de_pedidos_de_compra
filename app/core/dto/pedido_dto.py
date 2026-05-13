@@ -3,7 +3,7 @@
 # Sem lógica de negócio, sem banco. Só organiza os dados.
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -68,6 +68,8 @@ class PedidoDTO:
 
     # Itens do pedido
     itens: List[ItemPedidoDTO] = field(default_factory=list)
+    # Só em regravação a partir de «Pedidos gerados» — evita UPDATE acidental em pedido novo com número repetido.
+    pedido_existente_id: Optional[int] = None
 
     @property
     def subtotal(self):

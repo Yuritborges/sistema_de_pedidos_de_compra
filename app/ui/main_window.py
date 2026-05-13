@@ -456,7 +456,7 @@ class MainWindow(QMainWindow):
         btn.setText(f"{cap}  ({n})")
         btn.setStyleSheet(_qss_nav_pedidos_gerados_alerta_static())
         btn.setToolTip(
-            f"{n} pedido(s) com data prevista hoje ou em atraso e sem OK na obra.\nCtrl+{idx}"
+            f"{n} pedido(s) sem OK na obra na lista atual (filtros da aba Pedidos Gerados).\nCtrl+{idx}"
         )
 
     def _sync_pedidos_gerados_nav_badge_if_loaded(self) -> None:

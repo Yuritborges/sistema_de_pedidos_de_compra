@@ -20,6 +20,7 @@ from app.core.services.pedido_service import PedidoService
 from app.data.database import (
     proximo_numero_pedido,
     atualizar_numero_pedido,
+    row_to_dict,
 )
 from app.data.cadastros_store import OBRAS_JSON as _OBR, FORNECEDORES_JSON as _FOR
 
@@ -1930,16 +1931,17 @@ class PedidoWidget(QWidget):
           da obra/fornecedor quando possível.
         """
         try:
-            # sqlite3.Row não tem .get(); sempre usar dict (cópia rasa).
             if pedido is None:
                 raise ValueError("Pedido vazio.")
-            pedido = dict(pedido)
-            itens = [dict(r) for r in (itens if itens is not None else ())]
+            # Limpa modo edição antes de carregar: se falhar no meio, não fica "preso"
+            # com id antigo — o próximo "Gerar" faria UPDATE e sobrescreveria outro pedido.
+            self._pedido_editando_numero = None
+            self._pedido_editando_id = None
+            self._material_entregue_em_db = ""
+            self._material_ok_na_obra_db = 0
 
-            self._pedido_editando_numero = str(pedido["numero"])
-            self._pedido_editando_id = int(pedido["id"])
-            self._material_entregue_em_db = str(pedido.get("material_entregue_em") or "")
-            self._material_ok_na_obra_db = int(pedido.get("material_ok_na_obra") or 0)
+            pedido = row_to_dict(pedido)
+            itens = [row_to_dict(r) for r in (itens if itens is not None else ())]
 
             # Dados principais
             self.e_num.setText(str(pedido["numero"] or ""))
@@ -2019,7 +2021,17 @@ class PedidoWidget(QWidget):
             self._arquivo_pedido_atual = None
             self._recalc()
 
+            # Só após carregar tudo: modo edição ativo para este pedido.
+            self._material_entregue_em_db = str(pedido.get("material_entregue_em") or "")
+            self._material_ok_na_obra_db = int(pedido.get("material_ok_na_obra") or 0)
+            self._pedido_editando_numero = str(pedido["numero"])
+            self._pedido_editando_id = int(pedido["id"])
+
         except Exception as e:
+            self._pedido_editando_numero = None
+            self._pedido_editando_id = None
+            self._material_entregue_em_db = ""
+            self._material_ok_na_obra_db = 0
             QMessageBox.critical(self, "Erro ao carregar pedido", str(e))
 
 

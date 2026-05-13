@@ -1,9 +1,6 @@
 # =========================
 # DADOS (NUNCA VERSIONAR)
 # =========================
-# Snapshot / restauração local (não versionar no Git)
-brasul_pedidos_restaurado/
-
 *.xlsx
 *.xlsb
 *.xls
@@ -55,7 +52,6 @@ venv/
 # =========================
 # EXECUÇÃO LOCAL
 # =========================
-*.vbs
 *.bat
 *.lnk
 startup.log

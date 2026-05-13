@@ -1,5 +1,7 @@
 # app/core/services/pedido_service.py
-# Responsável por validar o pedido, gerar o PDF e salvar no banco.
+# Responsável por validar, gerar o PDF e salvar no banco.
+
+import os
 
 from app.infrastructure.pdf_generator import PedidoCompraGenerator
 
@@ -20,6 +22,12 @@ class PedidoService:
 
         try:
             self._salvar_no_banco(dto, caminho)
+        except ValueError:
+            try:
+                os.remove(caminho)
+            except OSError:
+                pass
+            raise
         except Exception as e:
             raise RuntimeError(
                 f"O PDF foi gerado, mas o pedido NÃO foi salvo no banco.\n\n"
@@ -47,6 +55,55 @@ class PedidoService:
 
         if erros:
             raise ValueError("\n".join(erros))
+        self._validar_numero_disponivel(dto)
+
+    def _validar_numero_disponivel(self, dto):
+        """
+        Em edição: se o utilizador mudar o Nº para um já usado por outro pedido, bloqueia.
+        Em pedido novo: bloqueia se o Nº já existir.
+        Corre antes de gerar o PDF para feedback imediato.
+        """
+        from app.data.database import get_connection
+
+        numero = str(getattr(dto, "numero", "") or "").strip()
+        if not numero:
+            return
+        editar_id = getattr(dto, "pedido_existente_id", None)
+        with get_connection() as conn:
+            if editar_id is not None:
+                try:
+                    eid = int(editar_id)
+                except (TypeError, ValueError):
+                    return
+                row = conn.execute(
+                    "SELECT numero FROM pedidos WHERE id = ?",
+                    (eid,),
+                ).fetchone()
+                if not row:
+                    return
+                num_atual = str(row["numero"] or "").strip()
+                if numero == num_atual:
+                    return
+                outro = conn.execute(
+                    "SELECT id FROM pedidos WHERE numero = ? AND id != ?",
+                    (numero, eid),
+                ).fetchone()
+                if outro:
+                    raise ValueError(
+                        f"O Nº {numero} já está em uso por outro pedido.\n"
+                        "Informe um número de pedido ainda não utilizado no banco."
+                    )
+            else:
+                ocupado = conn.execute(
+                    "SELECT id FROM pedidos WHERE numero = ?",
+                    (numero,),
+                ).fetchone()
+                if ocupado:
+                    raise ValueError(
+                        f"O Nº {numero} já está registrado no banco.\n"
+                        "Informe um número de pedido ainda não utilizado "
+                        "(pode usar o próximo sugerido na caixa «Nº»)."
+                    )
 
     def _calcular_total_seguro(self, dto):
         try:
@@ -86,18 +143,44 @@ class PedidoService:
         numero = str(getattr(dto, "numero", "")).strip()
         comprador = str(getattr(dto, "comprador", "") or COMPRADOR_PADRAO).strip().upper()
         total = self._calcular_total_seguro(dto)
+        editar_id = getattr(dto, "pedido_existente_id", None)
 
         with get_connection() as conn:
-            existente = conn.execute(
-                "SELECT id FROM pedidos WHERE numero = ?",
-                (numero,)
-            ).fetchone()
+            existente = None
+            if editar_id is not None:
+                existente = conn.execute(
+                    "SELECT id FROM pedidos WHERE id = ?",
+                    (int(editar_id),),
+                ).fetchone()
+
+            if editar_id is not None and not existente:
+                raise ValueError(
+                    "Pedido em edição não foi encontrado no banco (pode ter sido removido). "
+                    "Feche e abra de novo em «Pedidos gerados»."
+                )
 
             if existente:
                 pedido_id = existente["id"]
 
+                row_atual = conn.execute(
+                    "SELECT numero FROM pedidos WHERE id = ?",
+                    (pedido_id,),
+                ).fetchone()
+                num_antigo = str(row_atual["numero"] or "").strip() if row_atual else ""
+                if numero != num_antigo:
+                    outro = conn.execute(
+                        "SELECT id FROM pedidos WHERE numero = ? AND id != ?",
+                        (numero, pedido_id),
+                    ).fetchone()
+                    if outro:
+                        raise ValueError(
+                            f"O Nº {numero} já está em uso por outro pedido.\n"
+                            "Informe um número de pedido ainda não utilizado no banco."
+                        )
+
                 conn.execute("""
                     UPDATE pedidos SET
+                        numero             = ?,
                         data_pedido        = ?,
                         obra_nome          = ?,
                         escola             = ?,
@@ -118,6 +201,7 @@ class PedidoService:
                         status             = 'emitido'
                     WHERE id = ?
                 """, (
+                    numero,
                     getattr(dto, "data_pedido", ""),
                     getattr(dto, "obra", ""),
                     getattr(dto, "escola", ""),
@@ -130,7 +214,7 @@ class PedidoService:
                     int(getattr(dto, "percentual_entrada", 0) or 0),
                     int(getattr(dto, "percentual_final", 0) or 0),
                     getattr(dto, "marco_percentual_final", "") or "",
-                    getattr(dto, "prazo_entrega", 0),
+                    int(getattr(dto, "prazo_entrega", 0) or 0),
                     comprador,
                     total,
                     caminho_pdf,
@@ -140,6 +224,16 @@ class PedidoService:
                 conn.execute("DELETE FROM itens_pedido WHERE pedido_id = ?", (pedido_id,))
 
             else:
+                ocupado = conn.execute(
+                    "SELECT id FROM pedidos WHERE numero = ?",
+                    (numero,),
+                ).fetchone()
+                if ocupado:
+                    raise ValueError(
+                        f"O Nº {numero} já está registrado no banco.\n"
+                        "Informe um número de pedido ainda não utilizado "
+                        "(pode usar o próximo sugerido na caixa «Nº»)."
+                    )
                 cur = conn.execute("""
                     INSERT INTO pedidos (
                         numero,

@@ -73,6 +73,21 @@ def get_connection():
     return conn
 
 
+def row_to_dict(row):
+    """
+    Converte sqlite3.Row (ou outro mapping) em dict comum.
+    Row não implementa .get(); dict(Row) pode falhar ou ser insuficiente em alguns builds.
+    """
+    if row is None:
+        return {}
+    if isinstance(row, dict):
+        return dict(row)
+    keys_fn = getattr(row, "keys", None)
+    if callable(keys_fn):
+        return {k: row[k] for k in keys_fn()}
+    return dict(row)
+
+
 def get_locacoes_connection():
     """
     Banco compartilhado de locações (único para todos os usuários).
@@ -496,13 +511,37 @@ def _garantir_coluna_material_ok_na_obra(conn):
 # CONTADOR DE PEDIDOS
 # ============================================================
 def proximo_numero_pedido():
+    """
+    Próximo número sugerido: acima do contador e do maior pedido já gravado.
+    Evita regressão (ex.: contador 8454 com pedido 8455 já na tabela → 8456, não 8455).
+
+    Se o contador ficou à frente do maior Nº realmente gravado (import, cópia de .db,
+    bug antigo no contador), alinha ``contador_pedidos`` ao MAX(pedidos) para não saltar
+    a sequência (ex.: pedidos até 2667 e contador 6099 → próximo 2668, não 6100).
+    """
     with get_connection() as conn:
         row = conn.execute(
             "SELECT ultimo FROM contador_pedidos WHERE id = 1"
         ).fetchone()
-
-        proximo = (row["ultimo"] if row else 2548) + 1
-        return str(proximo)
+        ultimo = int(row["ultimo"]) if row and row["ultimo"] is not None else 2548
+        mx_row = conn.execute(
+            """
+            SELECT COALESCE(MAX(CAST(numero AS INTEGER)), 0)
+              FROM pedidos
+             WHERE TRIM(IFNULL(numero, '')) <> ''
+               AND TRIM(numero) GLOB '[0-9]*'
+            """
+        ).fetchone()
+        mx = int(mx_row[0]) if mx_row and mx_row[0] is not None else 0
+        if mx > 0 and ultimo > mx:
+            conn.execute(
+                "UPDATE contador_pedidos SET ultimo = ? WHERE id = 1",
+                (mx,),
+            )
+            conn.commit()
+            ultimo = mx
+        base = max(ultimo, mx)
+        return str(base + 1)
 
 
 def incrementar_numero_pedido():
