@@ -197,11 +197,11 @@ class PedidosWidget(QWidget):
         hl_busca.addWidget(btn_periodo)
 
         self._btn_entrega = {}
-        for chave, rotulo in [("entregar", "A ENTREGAR"), ("entregue", "ENTREGUE")]:
+        for chave, rotulo in [("entregar", "A Entregar"), ("entregue", "Entregue")]:
             b = btn_filtro(rotulo)
             b.setToolTip(
-                "A ENTREGAR: ainda não concluído (sem OK na obra válido, ou OK antes da data prevista).\n"
-                "ENTREGUE: OK na obra e data prevista de entrega já alcançada."
+                "A Entregar: ainda não concluído (sem OK na obra válido, ou OK antes da data prevista).\n"
+                "Entregue: OK na obra e data prevista de entrega já alcançada."
             )
             b.clicked.connect(lambda _, k=chave: self._set_filtro_entrega(k))
             hl_busca.addWidget(b)
