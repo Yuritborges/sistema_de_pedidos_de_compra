@@ -200,8 +200,8 @@ class PedidosWidget(QWidget):
         for chave, rotulo in [("entregar", "A ENTREGAR"), ("entregue", "ENTREGUE")]:
             b = btn_filtro(rotulo)
             b.setToolTip(
-                "A ENTREGAR: só pedidos sem OK na obra (fundo vermelho claro).\n"
-                "ENTREGUE: só pedidos com OK na obra confirmado (fundo verde claro)."
+                "A ENTREGAR: ainda não concluído (sem OK na obra válido, ou OK antes da data prevista).\n"
+                "ENTREGUE: OK na obra e data prevista de entrega já alcançada."
             )
             b.clicked.connect(lambda _, k=chave: self._set_filtro_entrega(k))
             hl_busca.addWidget(b)
@@ -564,9 +564,9 @@ class PedidosWidget(QWidget):
                          self._data_inicio <= r["data"].date() <= self._data_fim]
 
         if self._filtro_entrega == "entregar":
-            resultado = [r for r in resultado if not r.get("material_ok_obra")]
+            resultado = [r for r in resultado if not self._pedido_entrega_concluida(r, hoje)]
         elif self._filtro_entrega == "entregue":
-            resultado = [r for r in resultado if r.get("material_ok_obra")]
+            resultado = [r for r in resultado if self._pedido_entrega_concluida(r, hoje)]
 
         # Armazena resultado filtrado e reseta paginação
         self._filtrados    = resultado
@@ -630,6 +630,20 @@ class PedidosWidget(QWidget):
     # TABELA
     # ══════════════════════════════════════════════════════════════════════════
 
+    @staticmethod
+    def _pedido_entrega_concluida(r: dict, hoje: date) -> bool:
+        """
+        Ciclo de entrega concluído para lista/filtros/cor: OK na obra válido
+        e (sem data prevista calculada ou hoje >= data prevista).
+        OK antes da prevista não conta como entregue na listagem verde.
+        """
+        if not r.get("material_ok_obra"):
+            return False
+        dp = r.get("data_prevista_entrega")
+        if dp is None:
+            return True
+        return hoje >= dp
+
     def _inserir_linha(self, dados):
         """Insere uma única linha na tabela. Usado pela paginação."""
         r = self.tabela.rowCount()
@@ -638,7 +652,8 @@ class PedidosWidget(QWidget):
         hoje = date.today()
         mat = bool(dados.get("material_ok_obra"))
         dp = dados.get("data_prevista_entrega")
-        bg = PEDIDOS_GERADOS_ROW_OK_OBRA if mat else PEDIDOS_GERADOS_ROW_PENDENTE
+        ent_fim = self._pedido_entrega_concluida(dados, hoje)
+        bg = PEDIDOS_GERADOS_ROW_OK_OBRA if ent_fim else PEDIDOS_GERADOS_ROW_PENDENTE
         bg_brush = QBrush(QColor(bg))
 
         def _it(txt, align=Qt.AlignVCenter|Qt.AlignLeft, bold=False, cor=None):
@@ -703,29 +718,37 @@ class PedidosWidget(QWidget):
             "Gera a imagem com prazo de entrega e itens para colar no WhatsApp (Ctrl+V)."
         )
         bpr.clicked.connect(lambda: self._gerar_imagem_prazo_obra(pid))
-        # Destaque tipo Locações: sem OK e prazo vencendo / vencido (borda à esquerda).
-        if not mat and dp is not None:
-            if hoje > dp:
-                acento, tip = "#B71C1C", f"Prevista {dp.strftime('%d/%m/%Y')}: em atraso — confirme OK na obra."
-            elif hoje == dp:
-                acento, tip = "#E65100", f"Prevista para hoje ({dp.strftime('%d/%m/%Y')})."
-            elif (dp - hoje).days == 1:
-                acento, tip = "#F9A825", f"Prevista para amanhã ({dp.strftime('%d/%m/%Y')})."
-            else:
-                acento, tip = None, None
-            if acento is not None:
-                bpr.setToolTip(tip + " " + bpr.toolTip())
-                bpr.setStyleSheet(
-                    f"""
-                    QPushButton {{
-                        background:{PEDIDO_ACAO_PRAZO_OBRA}; color:white; font-size:11px;
-                        font-weight:bold; border-radius:6px; border:none; padding:0 14px;
-                        border-left: 5px solid {acento};
-                    }}
-                    QPushButton:hover   {{ background:#21618C; }}
-                    QPushButton:pressed {{ background:#1B4F72; }}
-                    """
+        acento, tip = None, None
+        if dp is not None:
+            if mat and hoje < dp:
+                acento, tip = (
+                    "#F9A825",
+                    f"OK na obra antes da data prevista ({dp.strftime('%d/%m/%Y')}). "
+                    "A linha fica verde a partir dessa data.",
                 )
+            elif not mat:
+                if hoje > dp:
+                    acento, tip = (
+                        "#B71C1C",
+                        f"Prevista {dp.strftime('%d/%m/%Y')}: em atraso — confirme OK na obra.",
+                    )
+                elif hoje == dp:
+                    acento, tip = "#E65100", f"Prevista para hoje ({dp.strftime('%d/%m/%Y')})."
+                elif (dp - hoje).days == 1:
+                    acento, tip = "#F9A825", f"Prevista para amanhã ({dp.strftime('%d/%m/%Y')})."
+        if acento is not None:
+            bpr.setToolTip(tip + " " + bpr.toolTip())
+            bpr.setStyleSheet(
+                f"""
+                QPushButton {{
+                    background:{PEDIDO_ACAO_PRAZO_OBRA}; color:white; font-size:11px;
+                    font-weight:bold; border-radius:6px; border:none; padding:0 14px;
+                    border-left: 5px solid {acento};
+                }}
+                QPushButton:hover   {{ background:#21618C; }}
+                QPushButton:pressed {{ background:#1B4F72; }}
+                """
+            )
 
         row2 = QHBoxLayout()
         row2.setSpacing(10)
@@ -737,8 +760,9 @@ class PedidosWidget(QWidget):
         bok.setMinimumWidth(148)
         bok.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         bok.setToolTip(
-            "Confirma entrega na obra: a linha fica verde claro. "
-            "Sem este OK a linha permanece vermelha clara. Clique de novo para desmarcar."
+            "Registra OK na obra. A linha só fica verde quando a data prevista de entrega "
+            "já foi alcançada; antes disso permanece vermelha clara (OK antecipado). "
+            "Clique de novo para desmarcar."
         )
         bok.clicked.connect(lambda: self._marcar_ok_na_obra(pid))
 
