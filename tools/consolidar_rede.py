@@ -71,7 +71,7 @@ def _upsert_pedido(dst_conn, pedido):
         "forma_pagamento", "pagamento_etapas_ativo", "percentual_entrada",
         "percentual_final", "marco_percentual_final",
         "prazo_entrega", "comprador", "valor_total",
-        "caminho_pdf", "status", "emitido_em"
+        "caminho_pdf", "status", "emitido_em", "material_entregue_em",
     ]
     cols_destino = {
         r[1] for r in dst_conn.execute("PRAGMA table_info(pedidos)").fetchall()

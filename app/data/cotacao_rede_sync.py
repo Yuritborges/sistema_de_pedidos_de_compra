@@ -92,6 +92,7 @@ def upsert_pedido(dst_conn, pedido):
         "caminho_pdf",
         "status",
         "emitido_em",
+        "material_entregue_em",
     ]
     cols_destino = {r[1] for r in dst_conn.execute("PRAGMA table_info(pedidos)").fetchall()}
     cols = [c for c in cols if c in cols_destino and c in pedido]
@@ -284,6 +285,50 @@ def sync_pedido_atual_para_cotacao_rede(numero: str) -> bool:
         return False
     finally:
         rede.close()
+
+
+def merge_local_database_para_rede_consolidado(silencioso: bool = True) -> bool:
+    """
+    Mescla o SQLite local do comprador (DATABASE_PATH) no cotacao_rede.db.
+    Chamado pelo tick periódico quando REDE_SYNC_MESCLAR_CONSOLIDADO está ativo.
+    """
+    if _rede_sync_disabled():
+        return False
+    try:
+        from app.data.database import DATABASE_PATH as _local_db
+    except Exception:
+        return False
+
+    local_path = os.path.abspath(_local_db)
+    if not os.path.isfile(DB_REDE) or not os.path.isfile(local_path):
+        return False
+    if os.path.abspath(DB_REDE).lower() == local_path.lower():
+        return True
+
+    rede = None
+    try:
+        rede = sqlite3.connect(DB_REDE, timeout=30)
+        rede.row_factory = sqlite3.Row
+        rede.execute("PRAGMA foreign_keys = ON")
+        rede.execute("PRAGMA busy_timeout = 30000")
+        merge_origem_path_into_rede(rede, local_path)
+        rede.commit()
+        return True
+    except Exception as e:
+        if not silencioso:
+            print(f"[REDE] merge consolidado: {e}")
+        if rede is not None:
+            try:
+                rede.rollback()
+            except Exception:
+                pass
+        return False
+    finally:
+        if rede is not None:
+            try:
+                rede.close()
+            except Exception:
+                pass
 
 
 def remover_pedido_cotacao_rede(numero: str) -> bool:
