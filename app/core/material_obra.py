@@ -1,19 +1,15 @@
-# Regra única para "OK na obra" no banco: só conta com carimbo de data reconhecível.
-# Evita texto solto ("1", "SIM", "0") deixar a linha verde por engano.
+# Regra única para "OK na obra": só carimbo com data ISO + hora (como datetime('now') do SQLite).
+# Não aceita DD/MM/AAAA sozinho — evita confundir com "data prevista" colada nesse campo.
 import re
 
-_RE_SQLITE_TS = re.compile(
-    r"^\d{4}-\d{2}-\d{2}(?:[ T]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)?"
+# Ex.: 2026-05-12 14:30:45 | 2026-05-12T14:30:45 | com fração de segundo opcional
+_RE_CARIMBO_OK_OBRA = re.compile(
+    r"^\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?"
 )
-_RE_BR_DATA = re.compile(r"^\d{2}/\d{2}/\d{4}")
 
 
 def material_entregue_obra_confirmado(val) -> bool:
     s = str(val or "").strip()
     if not s:
         return False
-    if _RE_SQLITE_TS.match(s):
-        return True
-    if _RE_BR_DATA.match(s):
-        return True
-    return False
+    return bool(_RE_CARIMBO_OK_OBRA.match(s))
