@@ -563,7 +563,8 @@ class MainWindow(QMainWindow):
                 and cur is loc
                 and hasattr(cur, "_carregar")
             ):
-                cur._carregar()
+                # Evita loop: _carregar() reagenda _poll_locacoes_vencimento via notify.
+                cur._carregar(notificar_sidebar=False)
         except Exception:
             pass
 

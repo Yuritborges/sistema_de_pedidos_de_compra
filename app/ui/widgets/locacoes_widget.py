@@ -1036,7 +1036,7 @@ class LocacoesWidget(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Erro ao importar", f"Falha na importação:\n\n{e}")
 
-    def _carregar(self):
+    def _carregar(self, notificar_sidebar: bool = True):
         self._todos = []
         try:
             with get_locacoes_connection() as conn:
@@ -1072,7 +1072,8 @@ class LocacoesWidget(QWidget):
             QMessageBox.critical(self, "Erro", f"Não foi possível carregar locações.\n\n{e}")
         self._atualizar_kpis()
         self._aplicar_filtro()
-        self._notificar_mainwindow_locacoes_atualizadas()
+        if notificar_sidebar:
+            self._notificar_mainwindow_locacoes_atualizadas()
 
     def _notificar_mainwindow_locacoes_atualizadas(self):
         """Atualiza alerta na sidebar / título assim que os dados de locações mudam."""
