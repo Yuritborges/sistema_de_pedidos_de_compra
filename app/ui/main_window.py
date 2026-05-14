@@ -553,6 +553,19 @@ class MainWindow(QMainWindow):
         self._locacoes_venc = int(v)
         self._locacoes_alert = int(a)
         self._sync_locacoes_nav_alerta_ui()
+        # Se a aba Locações está visível, recarrega a grade (outro comprador gravou no mesmo .db).
+        try:
+            cur = self._stack.currentWidget()
+            loc = self._pages.get("locacoes")
+            if (
+                cur is not None
+                and loc is not None
+                and cur is loc
+                and hasattr(cur, "_carregar")
+            ):
+                cur._carregar()
+        except Exception:
+            pass
 
     def _toggle_locacoes_blink(self):
         self._locacoes_blink_phase = not self._locacoes_blink_phase

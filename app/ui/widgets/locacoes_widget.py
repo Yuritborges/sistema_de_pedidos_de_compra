@@ -390,7 +390,7 @@ class LocacaoDialog(QDialog):
 
         self.e_tipo = QComboBox()
         self.e_tipo.addItem("Obra / equipamento (período livre)", "")
-        self.e_tipo.addItem("Caçamba (3 a 5 dias na obra)", "CACAMBA")
+        self.e_tipo.addItem("Caçamba (período em dias na obra — livre)", "CACAMBA")
         tipo_db = _clean(dados.get("tipo")).upper()
         ti = self.e_tipo.findData("CACAMBA")
         if tipo_db == "CACAMBA" and ti >= 0:
@@ -459,14 +459,14 @@ class LocacaoDialog(QDialog):
         self.e_pedido_compra.setText(self.e_pedido.text())
 
     def _ajustar_periodo_por_tipo(self):
+        # Mesmo intervalo para todos os tipos: caçambas podem ficar 7, 10+ dias na obra.
+        self.e_periodo.setRange(0, 3650)
         if self.e_tipo.currentData() == "CACAMBA":
-            self.e_periodo.setRange(3, 5)
-            self.e_periodo.setToolTip("Caçambas: permanência típica de 3 a 5 dias na obra.")
-            v = self.e_periodo.value()
-            if v < 3 or v > 5:
-                self.e_periodo.setValue(4)
+            self.e_periodo.setToolTip(
+                "Dias que a caçamba permanece na obra (ex.: 3, 7, 10). "
+                "Use 0 se quiser só controlar pela data de vencimento manual."
+            )
         else:
-            self.e_periodo.setRange(0, 3650)
             self.e_periodo.setToolTip("")
 
     def resultado(self):
