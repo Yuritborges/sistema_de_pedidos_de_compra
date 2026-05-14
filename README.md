@@ -116,7 +116,7 @@ Campos relevantes incluem: número único, datas, obra, fornecedor, empresa fatu
 
 - **Um único `locacoes.db`** em `BASE_REDE_DIR/_shared/`: todos os compradores leem e gravam o mesmo ficheiro (desde que o `config.py` de cada máquina aponte para a **mesma** `BASE_REDE_DIR` na rede).
 - A **barra lateral** (contagem / piscar) atualiza a cada ~60 s a partir do banco.
-- A **tabela** da aba Locações recarrega ao **mudar para essa aba**, ao clicar em **Atualizar** e, enquanto a aba estiver aberta, **no mesmo ciclo** de atualização da sidebar (~60 s), para ver linhas que outro utilizador acabou de inserir.
+- A **tabela** da aba Locações recarrega ao **mudar para essa aba**, ao clicar em **Atualizar** ou após gravar/editar — use **Atualizar** para ver o que outro utilizador acabou de lançar no mesmo `locacoes.db`.
 - O filtro **«Grade por vencimento»** (±30/60/90 dias ou «Todos») pode **ocultar** linhas cuja data de pedido e de vencimento caem fora da janela (exceto situação **VENCIDO**, que entra sempre). Use **«Todos (sem filtro de data)»** se algo «sumiu» da lista.
 
 ---

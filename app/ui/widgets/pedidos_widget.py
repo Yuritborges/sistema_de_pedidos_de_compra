@@ -59,6 +59,10 @@ class PedidosWidget(QWidget):
         self._filtro_entrega    = None  # None | "entregar" | "entregue"
         self._data_inicio       = None
         self._data_fim          = None
+        self._badge_debounce = QTimer(self)
+        self._badge_debounce.setSingleShot(True)
+        self._badge_debounce.setInterval(280)
+        self._badge_debounce.timeout.connect(self._sincronizar_nav_pedidos_gerados_alerta)
         self._build()
         self._set_filtro_data("todos")
         self._carregar()
@@ -438,7 +442,6 @@ class PedidosWidget(QWidget):
 
         self._aplicar_filtros()
         self._atualizar_cards()
-        self._sincronizar_nav_pedidos_gerados_alerta()
 
     def contar_pedidos_sem_ok_previsto_hoje_ou_atrasado(self) -> int:
         """
@@ -571,7 +574,7 @@ class PedidosWidget(QWidget):
         self._pagina_atual = 0
         self.tabela.setRowCount(0)
         self._renderizar_pagina()
-        self._sincronizar_nav_pedidos_gerados_alerta()
+        self._badge_debounce.start()
 
     def _renderizar_pagina(self):
         """Renderiza a próxima fatia de _PAGE_SIZE registros na tabela."""
