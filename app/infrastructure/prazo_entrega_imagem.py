@@ -219,7 +219,7 @@ def gerar_imagem_prazo_entrega(parent: QWidget, pedido_id: int) -> None:
         with get_connection() as conn:
             p = conn.execute(
                 """
-                SELECT numero, data_pedido, obra_nome, fornecedor_nome, prazo_entrega
+                SELECT numero, data_pedido, obra_nome, escola, fornecedor_nome, prazo_entrega
                 FROM pedidos WHERE id = ?
                 """,
                 (pedido_id,),
@@ -254,7 +254,7 @@ def gerar_imagem_prazo_entrega(parent: QWidget, pedido_id: int) -> None:
 
         dados = DadosPrazoCard(
             numero_pedido=str(p["numero"] or ""),
-            obra=str(p["obra_nome"] or ""),
+            obra=str((p["escola"] or "").strip() or p["obra_nome"] or ""),
             fornecedor=str(p["fornecedor_nome"] or ""),
             data_pedido=str(p["data_pedido"] or ""),
             prazo_dias=prazo_entrega_dias_efetivo(p["prazo_entrega"]),

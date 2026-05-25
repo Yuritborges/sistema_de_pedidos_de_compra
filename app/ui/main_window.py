@@ -431,9 +431,12 @@ class MainWindow(QMainWindow):
             return
         self._stack.setCurrentWidget(widget)
 
-        # Recarrega dados ao trocar de aba
+        # Recarrega dados ao trocar de aba (Pedidos Gerados usa cache; «Atualizar» força reload)
         if hasattr(widget, '_carregar'):
-            widget._carregar()
+            try:
+                widget._carregar(force=False)
+            except TypeError:
+                widget._carregar()
         elif hasattr(widget, 'carregar_dados'):
             widget.carregar_dados()
         elif hasattr(widget, '_carregar_tudo'):

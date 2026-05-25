@@ -206,11 +206,11 @@ def _cabecalho(data_ref: date, total: int, comprador: str = "") -> list:
         col_dir.append(Paragraph(f"Comprador: {comprador}", comp_style))
 
     logo = _logo_path()
-    col_logo = 30 * mm
+    col_logo = 34 * mm
 
     if logo:
         from reportlab.platypus import Image as RLImage
-        logo_img = RLImage(logo, width=25 * mm, height=16 * mm, kind="proportional")
+        logo_img = RLImage(logo, width=28 * mm, height=18 * mm, kind="proportional")
         hdr_data = [[logo_img, [titulo_p, sub_p], col_dir]]
         col_w = [col_logo, w_page - col_logo - 48 * mm, 48 * mm]
     else:
@@ -218,16 +218,17 @@ def _cabecalho(data_ref: date, total: int, comprador: str = "") -> list:
         col_w = [w_page - 48 * mm, 48 * mm]
 
     hdr_tbl = Table(hdr_data, colWidths=col_w)
+    pad_hdr = 3 if logo else 0
     hdr_tbl.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("LEFTPADDING",   (0, 0), (-1, -1), pad_hdr),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), pad_hdr),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), pad_hdr),
+        ("TOPPADDING",    (0, 0), (-1, -1), pad_hdr),
     ]))
 
     elems.append(hdr_tbl)
-    elems.append(Spacer(1, 2 * mm))
+    elems.append(Spacer(1, 3 * mm))
     elems.append(HRFlowable(
         width="100%",
         thickness=1.5,
@@ -394,7 +395,15 @@ def _montar_tabela(pedidos: list, cor_grupo):
         rows.append([
             Paragraph(f"#{p.get('numero', '—')}", s_num),
             Paragraph(str(p.get("fornecedor_nome") or p.get("fornecedor") or "—")[:50], s_txt),
-            Paragraph(str(p.get("obra_nome") or p.get("obra") or "—")[:60], s_txt),
+            Paragraph(
+                str(
+                    (p.get("escola") or "").strip()
+                    or p.get("obra_nome")
+                    or p.get("obra")
+                    or "—"
+                )[:60],
+                s_txt,
+            ),
             Paragraph(str(p.get("condicao_pagamento") or "—"), s_ctr),
             Paragraph(str(p.get("forma_pagamento") or "—"), s_ctr),
             Paragraph(emp, s_emp_row),

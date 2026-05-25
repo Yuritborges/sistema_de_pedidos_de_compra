@@ -1,6 +1,7 @@
 import os
 import shutil
 import sqlite3
+import sys
 from datetime import datetime
 from zipfile import ZipFile, ZIP_DEFLATED
 
@@ -92,6 +93,17 @@ def main():
     _backup_cadastros(ts, diaria_dir)
     _zip_current(ts, diaria_dir)
     _limpar_antigos(diaria_dir, manter_dias=30)
+    try:
+        if _ROOT not in sys.path:
+            sys.path.insert(0, _ROOT)
+        from app.data.cotacao_rede_sync import tentar_consolidacao_completa
+
+        if tentar_consolidacao_completa(silencioso=False):
+            print("[OK] cotacao_rede.db consolidado após backup diário.")
+        else:
+            print("[AVISO] Consolidação não executada (outro PC em uso ou já atualizado).")
+    except Exception as exc:
+        print(f"[AVISO] Consolidação pós-backup: {exc}")
     print(f"[FIM] Backup concluído em: {diaria_dir}")
 
 

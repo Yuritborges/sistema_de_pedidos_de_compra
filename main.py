@@ -80,11 +80,27 @@ def main():
 
         os.environ["BRASUL_USUARIO"] = usuario
 
-        from app.data.database import init_db
+        import sqlite3
+        from app.data.database import init_db, DATABASE_PATH
         from app.ui.main_window import MainWindow, criar_splash
+        from PySide6.QtWidgets import QMessageBox
         marcar("imports-app")
 
-        init_db()
+        try:
+            init_db()
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e).lower():
+                QMessageBox.critical(
+                    None,
+                    "Banco em uso",
+                    "O banco de pedidos está bloqueado (outra cópia do programa ou backup na rede).\n\n"
+                    "1. Feche o Sistema de Pedidos em todos os PCs (incluindo este).\n"
+                    "2. Aguarde ~30 segundos e abra de novo.\n"
+                    "3. Se continuar: reinicie o PC ou peça para fechar o programa na rede.\n\n"
+                    f"Arquivo:\n{DATABASE_PATH}",
+                )
+                return
+            raise
         marcar("init-db")
 
         # Mostra splash enquanto a janela carrega

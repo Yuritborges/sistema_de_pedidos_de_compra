@@ -6,7 +6,7 @@ from datetime import datetime
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QDoubleSpinBox, QGroupBox, QScrollArea, QSpinBox, QCompleter,
+    QDoubleSpinBox, QAbstractSpinBox, QGroupBox, QScrollArea, QSpinBox, QCompleter,
     QDialog, QFormLayout, QDialogButtonBox, QTextEdit, QAbstractItemView,
     QFileDialog, QCheckBox,
 )
@@ -242,6 +242,22 @@ class _ComboSemRoda(QComboBox):
 
 
 class _SpinSemRoda(QDoubleSpinBox):
+    """
+    Spin do desconto: sem roda do rato; foco seleciona tudo (substituir por 0 fica fácil).
+    CorrectToNearestValue evita o Qt repor o valor antigo ao apagar o texto (modo anterior
+    de correção deixava o campo «preso» no desconto depois de aplicado).
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCorrectionMode(QAbstractSpinBox.CorrectToNearestValue)
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        from PySide6.QtCore import QTimer
+
+        QTimer.singleShot(0, self.selectAll)
+
     def wheelEvent(self, event):
         # Evita alterar desconto ao rolar a página do formulário.
         event.ignore()
@@ -1104,7 +1120,8 @@ class PedidoWidget(QWidget):
         self.spin_desconto.setStyleSheet(CSS_INPUT)
         self.spin_desconto.setToolTip(
             "Modo %: digite 10 para 10% de desconto\n"
-            "Modo R$: digite 150 para R$ 150,00 de desconto")
+            "Modo R$: digite 150 para R$ 150,00 de desconto\n"
+            "Para remover o desconto: deixe 0 ou apague e digite 0.")
         self.spin_desconto.valueChanged.connect(self._recalc)
         hl.addWidget(self.spin_desconto)
 

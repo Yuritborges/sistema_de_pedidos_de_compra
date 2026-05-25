@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import time
 from datetime import datetime
 
 from config import BASE_REDE_DIR
@@ -14,6 +15,11 @@ DB_IURY = os.path.join(BASE_REDE, "Iury", "cotacao_iury.db")
 DB_THAMYRES = os.path.join(BASE_REDE, "Thamyres", "cotacao_thamyres.db")
 DB_REDE = os.path.join(BASE_REDE, "cotacao_rede.db")
 BACKUP_DIR = os.path.join(BASE_REDE, "backup_consolidado")
+LOCK_PATH = os.path.join(BASE_REDE, ".consolidar_rede.lock")
+LOCK_MAX_AGE_SEC = 1200
+# Evita vários PCs dispararem consolidação pesada a cada minuto
+_MIN_CONSOLIDAR_INTERVAL_SEC = 300
+_ultima_tentativa_consolidar = 0.0
 
 
 def _ts() -> str:
@@ -191,6 +197,78 @@ def backup_cotacao_rede() -> None:
     with sqlite3.connect(DB_REDE) as src, sqlite3.connect(dst) as out:
         src.backup(out)
     print(f"[OK] Backup do consolidado: {dst}")
+
+
+def _file_mtime(path: str) -> float:
+    try:
+        return os.path.getmtime(path) if os.path.isfile(path) else 0.0
+    except OSError:
+        return 0.0
+
+
+def consolidado_precisa_atualizar() -> bool:
+    """True se algum banco de comprador na rede está mais novo que cotacao_rede.db."""
+    if not os.path.isfile(DB_IURY) or not os.path.isfile(DB_THAMYRES):
+        return False
+    t_rede = _file_mtime(DB_REDE)
+    t_compradores = max(_file_mtime(DB_IURY), _file_mtime(DB_THAMYRES))
+    if t_compradores <= 0:
+        return False
+    if not os.path.isfile(DB_REDE):
+        return True
+    return t_compradores > t_rede + 1.0
+
+
+def _release_consolidar_lock() -> None:
+    try:
+        if os.path.isfile(LOCK_PATH):
+            os.remove(LOCK_PATH)
+    except OSError:
+        pass
+
+
+def _acquire_consolidar_lock() -> bool:
+    try:
+        if os.path.isfile(LOCK_PATH):
+            idade = time.time() - _file_mtime(LOCK_PATH)
+            if idade < LOCK_MAX_AGE_SEC:
+                return False
+            _release_consolidar_lock()
+        fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(f"{os.getpid()} {datetime.now().isoformat()}\n")
+        return True
+    except FileExistsError:
+        return False
+    except OSError:
+        return False
+
+
+def tentar_consolidacao_completa(silencioso: bool = True) -> bool:
+    """
+    Atualiza cotacao_rede.db a partir de Iury + Thamyres quando defasado.
+    Usa lock na pasta da rede para evitar duas consolidações ao mesmo tempo.
+    """
+    global _ultima_tentativa_consolidar
+    if _rede_sync_disabled():
+        return False
+    agora = time.time()
+    if agora - _ultima_tentativa_consolidar < _MIN_CONSOLIDAR_INTERVAL_SEC:
+        return True
+    _ultima_tentativa_consolidar = agora
+    if not consolidado_precisa_atualizar():
+        return True
+    if not _acquire_consolidar_lock():
+        return False
+    try:
+        run_full_consolidation()
+        return True
+    except Exception as e:
+        if not silencioso:
+            print(f"[REDE] consolidacao completa: {e}")
+        return False
+    finally:
+        _release_consolidar_lock()
 
 
 def run_full_consolidation() -> None:

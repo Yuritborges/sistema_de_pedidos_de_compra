@@ -65,11 +65,52 @@ REDE_LOCACOES_DB_PATH = os.path.join(REDE_BASE_DIR, "_shared", "locacoes.db")
 # ============================================================
 # CONEXÃO
 # ============================================================
+def _db_path_na_rede(path: str) -> bool:
+    """SQLite em pasta de rede (Z:, UNC): WAL deixa o app lento/travado com vários PCs."""
+    p = os.path.abspath(path or "").upper().replace("/", "\\")
+    if p.startswith("\\\\"):
+        return True
+    if len(p) >= 2 and p[1] == ":" and p[0] in "ZYXWVUTSRQPONMLKJIHGFEDCBA":
+        return True
+    return False
+
+
+def _configure_sqlite_connection(conn: sqlite3.Connection, db_path: str = "") -> None:
+    """
+    Banco em Z:\\ ou \\\\servidor: journal DELETE (nunca WAL) + espera curta.
+    WAL em SMB trava todos os computadores; busy_timeout alto congela a interface.
+    """
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    path = db_path or DATABASE_PATH
+    if _db_path_na_rede(path):
+        conn.execute("PRAGMA journal_mode = DELETE")
+        conn.execute("PRAGMA synchronous = FULL")
+    else:
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA synchronous = NORMAL")
+        except sqlite3.OperationalError:
+            conn.execute("PRAGMA journal_mode = DELETE")
+
+
+def _garantir_journal_delete_no_arquivo(db_path: str) -> None:
+    """Integra -wal no .db e volta ao modo DELETE (seguro com todos os apps fechados)."""
+    if not db_path or not os.path.isfile(db_path):
+        return
+    try:
+        with sqlite3.connect(db_path, timeout=15) as conn:
+            conn.execute("PRAGMA busy_timeout = 5000")
+            conn.execute("PRAGMA journal_mode = DELETE")
+    except sqlite3.OperationalError:
+        pass
+
+
 def get_connection():
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(DATABASE_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
+    _configure_sqlite_connection(conn, DATABASE_PATH)
     return conn
 
 
@@ -94,12 +135,9 @@ def get_locacoes_connection():
     Usa WAL + busy_timeout para reduzir conflito de escrita concorrente.
     """
     os.makedirs(os.path.dirname(REDE_LOCACOES_DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(REDE_LOCACOES_DB_PATH, timeout=20)
+    conn = sqlite3.connect(REDE_LOCACOES_DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA synchronous = NORMAL")
-    conn.execute("PRAGMA busy_timeout = 20000")
+    _configure_sqlite_connection(conn, REDE_LOCACOES_DB_PATH)
     return conn
 
 
@@ -271,6 +309,65 @@ def init_db():
     os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
     marcar("garantir-pasta-db")
 
+    _garantir_journal_delete_no_arquivo(DATABASE_PATH)
+    _garantir_journal_delete_no_arquivo(REDE_LOCACOES_DB_PATH)
+
+    ultimo_erro = None
+    for tentativa in range(1, 8):
+        try:
+            _init_db_schema_e_migracoes()
+            break
+        except sqlite3.OperationalError as e:
+            ultimo_erro = e
+            if "locked" not in str(e).lower():
+                raise
+            espera = min(1.0 * tentativa, 3.0)
+            print(
+                f"[DB] Banco ocupado (tentativa {tentativa}/7). "
+                f"Aguardando {espera:.0f}s…",
+                flush=True,
+            )
+            time.sleep(espera)
+    else:
+        raise ultimo_erro
+
+    marcar("schema-e-migracoes")
+
+    print(f"[DB] Banco inicializado: {DATABASE_PATH}")
+    print(f"[REDE] Espelho configurado para: {REDE_DB_PATH}")
+
+    _fazer_backup_se_necessario()
+    marcar("backup-semanal")
+    sincronizar_com_rede(silencioso=True)
+    marcar("sincronizar-rede")
+    init_locacoes_shared_db()
+    marcar("locacoes-shared-init")
+
+    try:
+        from app.data.locacoes_import import tentar_sincronizar_planilha_locacoes_no_startup
+
+        tentar_sincronizar_planilha_locacoes_no_startup()
+        marcar("locacoes-sync-planilha")
+    except Exception as e:
+        print(f"[Locações] Aviso: sincronização automática da planilha ignorada: {e}")
+
+    try:
+        base = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+        log_path = os.path.join(base, "startup_v2.log")
+        agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        linhas = [f"[Database.init_db] {agora}"]
+        anterior = 0.0
+        for etapa, acumulado in tempos:
+            delta = acumulado - anterior
+            linhas.append(f"{etapa:24s} +{delta:7.3f}s  total={acumulado:7.3f}s")
+            anterior = acumulado
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write("\n".join(linhas) + "\n")
+    except Exception:
+        pass
+
+
+def _init_db_schema_e_migracoes():
     with get_connection() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS obras (
@@ -434,40 +531,6 @@ def init_db():
         _garantir_coluna_material_ok_na_obra(conn)
         migracao_uma_vez_zera_flags_ok_obra_sqlite(conn)
         migracao_uma_vez_ok_legado_todos_pedidos_sqlite(conn)
-    marcar("schema-e-migracoes")
-
-    print(f"[DB] Banco inicializado: {DATABASE_PATH}")
-    print(f"[REDE] Espelho configurado para: {REDE_DB_PATH}")
-
-    _fazer_backup_se_necessario()
-    marcar("backup-semanal")
-    sincronizar_com_rede(silencioso=True)
-    marcar("sincronizar-rede")
-    init_locacoes_shared_db()
-    marcar("locacoes-shared-init")
-
-    try:
-        from app.data.locacoes_import import tentar_sincronizar_planilha_locacoes_no_startup
-
-        tentar_sincronizar_planilha_locacoes_no_startup()
-        marcar("locacoes-sync-planilha")
-    except Exception as e:
-        print(f"[Locações] Aviso: sincronização automática da planilha ignorada: {e}")
-
-    try:
-        base = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-        log_path = os.path.join(base, "startup_v2.log")
-        agora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        linhas = [f"[Database.init_db] {agora}"]
-        anterior = 0.0
-        for etapa, acumulado in tempos:
-            delta = acumulado - anterior
-            linhas.append(f"{etapa:24s} +{delta:7.3f}s  total={acumulado:7.3f}s")
-            anterior = acumulado
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write("\n".join(linhas) + "\n")
-    except Exception:
-        pass
 
 
 def _garantir_colunas_pagamento_etapas(conn):
@@ -676,23 +739,36 @@ def sincronizar_com_rede(silencioso=True):
 def rede_periodic_sync_tick():
     """
     Espelha o SQLite do comprador na pasta da rede (obras, pedidos, etc.).
-    Opcionalmente reaplica pedidos no cotacao_rede.db em thread de fundo
-    (ver REDE_SYNC_MESCLAR_CONSOLIDADO em config).
-    """
+    Em thread de fundo: backup periódico dos .db (BACKUP_REDE_INTERVALO_SEGUNDOS)
+    e consolidação Iury+Thamyres → cotacao_rede.db quando defasado.
+  """
     sincronizar_com_rede(silencioso=True)
     try:
         import config as _cfg
 
-        if not bool(getattr(_cfg, "REDE_SYNC_MESCLAR_CONSOLIDADO", False)):
-            return
+        backup_seg = int(getattr(_cfg, "BACKUP_REDE_INTERVALO_SEGUNDOS", 0) or 0)
+        consolidar_completo = bool(getattr(_cfg, "REDE_SYNC_CONSOLIDAR_COMPLETO", True))
+        merge_local = bool(getattr(_cfg, "REDE_SYNC_MESCLAR_CONSOLIDADO", False))
     except Exception:
+        backup_seg = 0
+        consolidar_completo = True
+        merge_local = False
+
+    if backup_seg <= 0 and not consolidar_completo and not merge_local:
         return
 
     def _worker():
         try:
-            from app.data import cotacao_rede_sync
+            from app.data import cotacao_rede_sync, rede_backup_periodico
 
-            cotacao_rede_sync.merge_local_database_para_rede_consolidado(silencioso=True)
+            if backup_seg > 0:
+                rede_backup_periodico.backup_bancos_rede_se_intervalo(
+                    backup_seg, silencioso=True
+                )
+            if consolidar_completo:
+                cotacao_rede_sync.tentar_consolidacao_completa(silencioso=True)
+            elif merge_local:
+                cotacao_rede_sync.merge_local_database_para_rede_consolidado(silencioso=True)
         except Exception:
             pass
 

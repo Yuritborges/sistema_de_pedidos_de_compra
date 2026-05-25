@@ -33,6 +33,50 @@ from config import PEDIDOS_DIR, COMPRADOR_PADRAO
 from app.infrastructure.prazo_entrega_imagem import prazo_entrega_dias_efetivo
 
 
+def _indexar_pdfs_pasta(pasta: str) -> dict:
+    """
+    Uma única leitura da pasta de PDFs (evita listdir por pedido na rede).
+    Retorna mapa numero_do_pedido -> (caminho_abs, nome_arquivo).
+    """
+    indice = {}
+    if not pasta or not os.path.isdir(pasta):
+        return indice
+    try:
+        with os.scandir(pasta) as it:
+            for entry in it:
+                if not entry.is_file():
+                    continue
+                nome = entry.name
+                if not nome.lower().endswith(".pdf"):
+                    continue
+                nu = nome.upper()
+                if not nu.startswith("PC-"):
+                    continue
+                partes = nome.split("-", 2)
+                if len(partes) < 2:
+                    continue
+                numero = partes[1].strip()
+                if not numero:
+                    continue
+                caminho = entry.path
+                ant = indice.get(numero)
+                if not ant or entry.stat().st_mtime > os.path.getmtime(ant[0]):
+                    indice[numero] = (caminho, nome)
+    except Exception:
+        pass
+    return indice
+
+
+def _resolver_caminho_pdf(numero: str, caminho_db: str, indice_pdfs: dict) -> tuple:
+    caminho = str(caminho_db or "").strip()
+    if caminho and os.path.exists(caminho):
+        return caminho, os.path.basename(caminho)
+    hit = indice_pdfs.get(str(numero or "").strip())
+    if hit:
+        return hit
+    return "", f"PC-{numero}.pdf"
+
+
 def _pixmap_logo_sem_fundo_branco(pix: QPixmap, limiar: int = 248) -> QPixmap:
     """Torna pixels quase brancos transparentes (logo retangular com fundo branco)."""
     if pix.isNull():
@@ -48,7 +92,7 @@ def _pixmap_logo_sem_fundo_branco(pix: QPixmap, limiar: int = 248) -> QPixmap:
 
 class PedidosWidget(QWidget):
 
-    _PAGE_SIZE = 50  # quantos pedidos renderizar por vez
+    _PAGE_SIZE = 25  # menos widgets por página = abertura mais leve
 
     def __init__(self):
         super().__init__()
@@ -59,13 +103,17 @@ class PedidosWidget(QWidget):
         self._filtro_entrega    = None  # None | "entregar" | "entregue"
         self._data_inicio       = None
         self._data_fim          = None
+        self._dados_em_cache    = False
         self._badge_debounce = QTimer(self)
         self._badge_debounce.setSingleShot(True)
         self._badge_debounce.setInterval(280)
         self._badge_debounce.timeout.connect(self._sincronizar_nav_pedidos_gerados_alerta)
+        self._filtro_debounce = QTimer(self)
+        self._filtro_debounce.setSingleShot(True)
+        self._filtro_debounce.setInterval(350)
+        self._filtro_debounce.timeout.connect(self._aplicar_filtros)
         self._build()
         self._set_filtro_data("todos")
-        self._carregar()
 
     # ══════════════════════════════════════════════════════════════════════════
     # CONSTRUÇÃO DA INTERFACE
@@ -89,14 +137,15 @@ class PedidosWidget(QWidget):
             os.path.join(_assets, "logo_brasul.ico"),
         ]
         lbl_logo = QLabel()
-        lbl_logo.setFixedHeight(48)
+        lbl_logo.setFixedSize(128, 52)
+        lbl_logo.setAlignment(Qt.AlignCenter)
         lbl_logo.setStyleSheet("background:transparent;")
         _pix = None
         for _path in _logo_candidatos:
             if os.path.isfile(_path):
                 _pix = QPixmap(_path)
                 if not _pix.isNull():
-                    _pix = _pix.scaled(120, 46, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    _pix = _pix.scaled(118, 44, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     if _path.lower().endswith(".png"):
                         _pix = _pixmap_logo_sem_fundo_branco(_pix)
                     break
@@ -109,9 +158,9 @@ class PedidosWidget(QWidget):
 
         sep_logo = QFrame()
         sep_logo.setFrameShape(QFrame.VLine)
-        sep_logo.setStyleSheet(f"background:{BDR}; margin:6px 0;")
-        sep_logo.setFixedWidth(1)
-        hl_topo.addWidget(sep_logo)
+        sep_logo.setFixedSize(1, 52)
+        sep_logo.setStyleSheet(f"background:{BDR}; border:none; margin:0; padding:0;")
+        hl_topo.addWidget(sep_logo, 0, Qt.AlignVCenter)
 
         tv = QVBoxLayout(); tv.setSpacing(2)
         titulo = QLabel("Pedidos Gerados")
@@ -146,7 +195,7 @@ class PedidosWidget(QWidget):
         hl_topo.addWidget(btn_pasta)
 
         btn_att = btn_solid("↻  Atualizar", "#95A5A6")
-        btn_att.clicked.connect(self._carregar)
+        btn_att.clicked.connect(lambda: self._carregar(force=True))
         hl_topo.addWidget(btn_att)
         vl.addLayout(hl_topo)
 
@@ -173,7 +222,7 @@ class PedidosWidget(QWidget):
         self.e_busca = QLineEdit()
         self.e_busca.setPlaceholderText("Buscar por nº, obra, fornecedor ou item...")
         self.e_busca.setStyleSheet(CSS_BUSCA)
-        self.e_busca.textChanged.connect(self._aplicar_filtros)
+        self.e_busca.textChanged.connect(lambda: self._filtro_debounce.start())
         self.e_busca.returnPressed.connect(self._aplicar_filtros)
         bwl.addWidget(self.e_busca)
         ico = QLabel("🔍")
@@ -272,70 +321,46 @@ class PedidosWidget(QWidget):
     # DADOS
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _carregar(self):
+    def _carregar(self, force: bool = False):
         """
-        Carrega pedidos SOMENTE do banco de dados.
+        Carrega pedidos do banco (não varre PDFs por linha — índice único da pasta).
 
-        Correção importante:
-        - Antes esta tela varria a pasta de PDFs e montava a lista por arquivo.
-        - Isso criava "pedido fantasma": PDF existia, mas o pedido não existia no banco.
-        - Agora a tela lista apenas pedidos gravados na tabela pedidos.
-
-        Resultado:
-        - Botão Editar nunca aparece para pedido inexistente.
-        - Relação de pedidos usa a mesma origem confiável: banco.
-        - PDFs soltos na pasta não entram mais no financeiro.
-        - Carrega somente o comprador atual (IURY ou THAMYRES).
-        - Limita aos últimos 300 pedidos para evitar travamento.
+        force=False: reutiliza cache ao voltar na aba (use «Atualizar» para buscar de novo).
         """
+        if self._dados_em_cache and not force:
+            self._aplicar_filtros()
+            self._atualizar_cards()
+            self._badge_debounce.start()
+            return
+
         self._todos = []
         os.makedirs(PEDIDOS_DIR, exist_ok=True)
-
-        def _parse_data(data_txt):
-            txt = str(data_txt or "").strip()
-            for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
-                try:
-                    return datetime.strptime(txt, fmt)
-                except Exception:
-                    pass
-            return datetime.now()
-
-        def _achar_pdf(numero, caminho_db):
-            # Primeiro usa o caminho registrado no banco, se existir.
-            caminho = str(caminho_db or "").strip()
-            if caminho and os.path.exists(caminho):
-                return caminho, os.path.basename(caminho)
-
-            # Fallback: procura PDF com o número do pedido na pasta.
-            # Isso NÃO cria pedido fantasma, porque só roda para pedido que já existe no banco.
-            try:
-                prefixo = f"PC-{numero}-".upper()
-                for nome in os.listdir(PEDIDOS_DIR):
-                    if nome.lower().endswith(".pdf") and nome.upper().startswith(prefixo):
-                        caminho2 = os.path.join(PEDIDOS_DIR, nome)
-                        if os.path.exists(caminho2):
-                            return caminho2, nome
-            except Exception:
-                pass
-
-            return "", f"PC-{numero}.pdf"
-
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            from app.data.database import get_connection
+            indice_pdfs = _indexar_pdfs_pasta(PEDIDOS_DIR)
 
-            with get_connection() as conn:
-                # MODO ADMIN:
-                # Se COMPRADOR_PADRAO = "ADMIN", carrega TODOS os pedidos do banco.
-                # Para qualquer outro comprador, mantém o filtro normal por comprador.
-                comprador_atual = str(COMPRADOR_PADRAO or "").strip().upper()
+            def _parse_data(data_txt):
+                txt = str(data_txt or "").strip()
+                for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
+                    try:
+                        return datetime.strptime(txt, fmt)
+                    except Exception:
+                        pass
+                return datetime.now()
 
-                if comprador_atual == "ADMIN":
-                    rows = conn.execute("""
+            try:
+                from app.data.database import get_connection
+
+                with get_connection() as conn:
+                    comprador_atual = str(COMPRADOR_PADRAO or "").strip().upper()
+                    sql_base = """
                         SELECT
                             p.id,
                             p.numero,
                             p.data_pedido,
+                            p.emitido_em,
                             p.obra_nome,
+                            p.escola,
                             p.fornecedor_nome,
                             p.fornecedor_razao,
                             p.empresa_faturadora,
@@ -356,89 +381,86 @@ class PedidosWidget(QWidget):
                             FROM itens_pedido
                             GROUP BY pedido_id
                         ) it ON it.pedido_id = p.id
-                        ORDER BY CAST(numero AS INTEGER) DESC, id DESC
-                    """).fetchall()
-                else:
-                    rows = conn.execute("""
-                        SELECT
-                            p.id,
-                            p.numero,
-                            p.data_pedido,
-                            p.obra_nome,
-                            p.fornecedor_nome,
-                            p.fornecedor_razao,
-                            p.empresa_faturadora,
-                            p.condicao_pagamento,
-                            p.forma_pagamento,
-                            p.valor_total,
-                            p.caminho_pdf,
-                            p.comprador,
-                            p.material_entregue_em,
-                            COALESCE(p.material_ok_na_obra, 0) AS material_ok_na_obra,
-                            p.prazo_entrega,
-                            COALESCE(it.itens_texto, '') AS itens_texto
-                        FROM pedidos p
-                        LEFT JOIN (
-                            SELECT
-                                pedido_id,
-                                GROUP_CONCAT(COALESCE(descricao, ''), ' | ') AS itens_texto
-                            FROM itens_pedido
-                            GROUP BY pedido_id
-                        ) it ON it.pedido_id = p.id
-                        WHERE UPPER(TRIM(COALESCE(p.comprador, ''))) = UPPER(TRIM(?))
-                        ORDER BY CAST(numero AS INTEGER) DESC, id DESC
-                        LIMIT 300
-                    """, (comprador_atual,)).fetchall()
+                    """
+                    if comprador_atual == "ADMIN":
+                        rows = conn.execute(
+                            sql_base
+                            + " ORDER BY p.id DESC LIMIT 500"
+                        ).fetchall()
+                    else:
+                        rows = conn.execute(
+                            sql_base
+                            + """
+                            WHERE UPPER(TRIM(COALESCE(p.comprador, ''))) = UPPER(TRIM(?))
+                            ORDER BY p.id DESC
+                            LIMIT 300
+                            """,
+                            (comprador_atual,),
+                        ).fetchall()
 
-            for row in rows:
-                numero = str(row["numero"] or "").strip()
-                if not numero:
-                    continue
+                    for row in rows:
+                        numero = str(row["numero"] or "").strip()
+                        if not numero:
+                            continue
 
-                caminho, nome_pdf = _achar_pdf(numero, row["caminho_pdf"])
-                data_dt = _parse_data(row["data_pedido"])
-                empresa = str(row["empresa_faturadora"] or "—").upper()
-                obra = str(row["obra_nome"] or "—")
-                fornecedor = str(row["fornecedor_nome"] or row["fornecedor_razao"] or "—")
+                        caminho, nome_pdf = _resolver_caminho_pdf(
+                            numero, row["caminho_pdf"], indice_pdfs
+                        )
+                        data_dt = _parse_data(row["data_pedido"])
+                        # Filtros «Hoje»/semana/mês: data de lançamento (emitido_em), não só data do formulário
+                        emitido_txt = str(row["emitido_em"] or "").strip()
+                        data_filtro_dt = (
+                            _parse_data(emitido_txt) if emitido_txt else data_dt
+                        )
+                        empresa = str(row["empresa_faturadora"] or "—").upper()
+                        obra = str(row["obra_nome"] or "—")
+                        fornecedor = str(
+                            row["fornecedor_nome"] or row["fornecedor_razao"] or "—"
+                        )
 
-                try:
-                    valor_total = float(row["valor_total"] or 0)
-                except Exception:
-                    valor_total = 0.0
+                        try:
+                            valor_total = float(row["valor_total"] or 0)
+                        except Exception:
+                            valor_total = 0.0
 
-                prazo_dias = prazo_entrega_dias_efetivo(row["prazo_entrega"])
-                # Mesma base da coluna Data + prazo (evita divergência se o parser de string falhar).
-                data_prevista_entrega = data_dt.date() + timedelta(days=prazo_dias)
+                        prazo_dias = prazo_entrega_dias_efetivo(row["prazo_entrega"])
+                        data_prevista_entrega = data_dt.date() + timedelta(days=prazo_dias)
 
-                self._todos.append({
-                    "id":                 row["id"],
-                    "nome":               nome_pdf,
-                    "caminho":            caminho,
-                    "numero":             numero,
-                    "obra":               obra,
-                    "fornecedor":         fornecedor,
-                    "empresa":            empresa,
-                    "data":               data_dt,
-                    "valor_total":        valor_total,
-                    "empresa_faturadora": empresa,
-                    "condicao_pagamento": row["condicao_pagamento"] or "—",
-                    "forma_pagamento":    row["forma_pagamento"] or "—",
-                    "obra_nome":          obra,
-                    "fornecedor_nome":    fornecedor,
-                    "itens_texto":        str(row["itens_texto"] or ""),
-                    "comprador":          row["comprador"] or "",
-                    "material_entregue_em": row["material_entregue_em"] or "",
-                    "material_ok_na_obra": int(row["material_ok_na_obra"] or 0),
-                    "material_ok_obra": int(row["material_ok_na_obra"] or 0) != 0,
-                    "data_prevista_entrega": data_prevista_entrega,
-                })
+                        self._todos.append({
+                            "id": row["id"],
+                            "nome": nome_pdf,
+                            "caminho": caminho,
+                            "numero": numero,
+                            "obra": obra,
+                            "fornecedor": fornecedor,
+                            "empresa": empresa,
+                            "data": data_dt,
+                            "data_filtro": data_filtro_dt,
+                            "valor_total": valor_total,
+                            "empresa_faturadora": empresa,
+                            "condicao_pagamento": row["condicao_pagamento"] or "—",
+                            "forma_pagamento": row["forma_pagamento"] or "—",
+                            "obra_nome": obra,
+                            "escola": str(row["escola"] or "").strip(),
+                            "fornecedor_nome": fornecedor,
+                            "itens_texto": str(row["itens_texto"] or ""),
+                            "comprador": row["comprador"] or "",
+                            "material_entregue_em": row["material_entregue_em"] or "",
+                            "material_ok_na_obra": int(row["material_ok_na_obra"] or 0),
+                            "material_ok_obra": int(row["material_ok_na_obra"] or 0) != 0,
+                            "data_prevista_entrega": data_prevista_entrega,
+                        })
 
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Erro ao carregar pedidos",
-                f"Não foi possível carregar os pedidos do banco.\n\n{e}"
-            )
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Erro ao carregar pedidos",
+                    f"Não foi possível carregar os pedidos do banco.\n\n{e}",
+                )
+            finally:
+                self._dados_em_cache = True
+        finally:
+            QApplication.restoreOverrideCursor()
 
         self._aplicar_filtros()
         self._atualizar_cards()
@@ -551,18 +573,21 @@ class PedidosWidget(QWidget):
                          termo in r.get("fornecedor", "").lower() or
                          termo in r.get("itens_texto", "").lower()]
 
+        def _dia_ref(r):
+            return (r.get("data_filtro") or r["data"]).date()
+
         if self._filtro_ativo == "hoje":
-            resultado = [r for r in resultado if r["data"].date() == hoje]
+            resultado = [r for r in resultado if _dia_ref(r) == hoje]
         elif self._filtro_ativo == "semana":
             inicio = hoje - timedelta(days=hoje.weekday())
             fim = inicio + timedelta(days=6)
-            resultado = [r for r in resultado if inicio <= r["data"].date() <= fim]
+            resultado = [r for r in resultado if inicio <= _dia_ref(r) <= fim]
         elif self._filtro_ativo == "mes":
             resultado = [r for r in resultado if
-                         r["data"].year == hoje.year and r["data"].month == hoje.month]
+                         _dia_ref(r).year == hoje.year and _dia_ref(r).month == hoje.month]
         elif self._filtro_ativo == "custom" and self._data_inicio and self._data_fim:
             resultado = [r for r in resultado if
-                         self._data_inicio <= r["data"].date() <= self._data_fim]
+                         self._data_inicio <= _dia_ref(r) <= self._data_fim]
 
         if self._filtro_entrega == "entregar":
             resultado = [r for r in resultado if not r.get("material_ok_obra")]
@@ -583,8 +608,10 @@ class PedidosWidget(QWidget):
         fatia  = self._filtrados[inicio:fim]
 
         self.tabela.setUpdatesEnabled(False)
-        for dados in fatia:
+        for i, dados in enumerate(fatia):
             self._inserir_linha(dados)
+            if (i + 1) % 8 == 0:
+                QApplication.processEvents()
         self.tabela.setUpdatesEnabled(True)
 
         self._pagina_atual += 1
@@ -620,7 +647,10 @@ class PedidosWidget(QWidget):
     def _atualizar_cards(self):
         total = len(self._todos)
         hoje  = datetime.now().date()
-        hoje_list  = [r for r in self._todos if r["data"].date() == hoje]
+        hoje_list  = [
+            r for r in self._todos
+            if (r.get("data_filtro") or r["data"]).date() == hoje
+        ]
         hoje_n     = len(hoje_list)
         hoje_valor = sum(float(r.get("valor_total") or 0) for r in hoje_list)
 
@@ -1104,7 +1134,7 @@ class PedidosWidget(QWidget):
                         "Pedido não encontrado",
                         f"O pedido #{numero} não existe mais no banco."
                     )
-                    self._carregar()
+                    self._carregar(force=True)
                     return
 
                 pedido_id = pedido["id"]
@@ -1138,7 +1168,7 @@ class PedidosWidget(QWidget):
                 "Ele não aparecerá mais na lista nem nas relações."
             )
 
-            self._carregar()
+            self._carregar(force=True)
 
         except Exception as e:
             QMessageBox.critical(
@@ -1379,11 +1409,11 @@ class PedidosWidget(QWidget):
                     self._abrir_pdf_windows(alvo)
                 else:
                     subprocess.run(["xdg-open", path])
-            self._carregar()
+            self._carregar(force=True)
 
         except Exception as e:
             QMessageBox.critical(self, "Erro ao reimprimir", str(e))
 
     def showEvent(self, event):
         super().showEvent(event)
-        QTimer.singleShot(0, self._carregar)
+        self._badge_debounce.start()

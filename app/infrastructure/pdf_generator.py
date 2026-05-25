@@ -8,10 +8,16 @@ from config import EMPRESAS_FATURADORAS, PEDIDOS_DIR
 from app.core.dto.pedido_dto import PedidoDTO
 
 
+# Nomes antigos/errados gravados no banco → chave em EMPRESAS_FATURADORAS
+_ALIASES_EMPRESA_FATURADORA = {
+    "INTERIORANA CONSTRUTORA LTDA": "INTERIORANA",
+}
+
+
 def _resolver_empresa_faturadora(empresa_faturadora: str) -> dict:
     """
     Retorna o bloco de EMPRESAS_FATURADORAS para o nome gravado no pedido.
-    Evita cair na Brasul quando o texto vem como nome longo (ex.: INTERIORANA CONSTRUTORA LTDA).
+    Evita cair na Brasul quando o texto vem como nome longo (ex.: CONSTRUTORA INTERIORANA LTDA).
     """
     raw = str(empresa_faturadora or "").strip()
     if not raw:
@@ -19,6 +25,9 @@ def _resolver_empresa_faturadora(empresa_faturadora: str) -> dict:
     if raw in EMPRESAS_FATURADORAS:
         return EMPRESAS_FATURADORAS[raw]
     up = raw.upper()
+    alias_key = _ALIASES_EMPRESA_FATURADORA.get(up)
+    if alias_key and alias_key in EMPRESAS_FATURADORAS:
+        return EMPRESAS_FATURADORAS[alias_key]
     if up in EMPRESAS_FATURADORAS:
         return EMPRESAS_FATURADORAS[up]
     if ("B&B" in raw or "B & B" in up) and "B&B" in EMPRESAS_FATURADORAS:
@@ -45,6 +54,18 @@ C_HDR    = colors.HexColor("#000000")   # cabeçalho tabela — preto sólido
 # Caixa "DATA PREVISTA DA ENTREGA" (alinhado à tela Pedidos Gerados)
 C_PREVISTA_SEM_OK = colors.HexColor("#FFEBEE")   # vermelho claro — falta OK na obra
 C_PREVISTA_COM_OK = colors.HexColor("#C8E6C9")  # verde claro — OK na obra confirmado
+# Rodapé — instruções para o fornecedor (vermelho negrito, fundo igual ao resto do PDF)
+C_RODAPE_TXT = colors.HexColor("#C0392B")
+_RODAPE_ALT_MM = 24
+_RODAPE_FONT_TITULO = 9.5
+_RODAPE_FONT_TEXTO = 8.5
+_HORARIO_RECEBIMENTO = (
+    "Segunda a Quinta-feira das 07:30h às 11:30h e das 13:00h às 15:30h",
+    "Sexta-feira das 07:30h às 11:30h e das 13:00h às 14:30h",
+)
+# Até este limite o pedido deve caber em UMA página (comprimindo linhas se preciso).
+_MAX_ITENS_FORCAR_UMA_PAGINA = 31
+_MARGEM_INFERIOR_TABELA = 2 * mm
 
 # ── Diretório das logos ───────────────────────────────────────────────────────
 _LOGOS_DIR = os.path.normpath(
@@ -137,6 +158,45 @@ class PedidoCompraGenerator:
     # Calcula quantos itens cabem por página e divide em fatias.
     # ══════════════════════════════════════════════════════════════════════════
 
+    def _forma_pagamento_tem_pix(self, dto) -> bool:
+        forma = str(getattr(dto, "forma_pagamento", "") or "").upper()
+        cond = str(getattr(dto, "condicao_pagamento", "") or "").upper()
+        return "PIX" in forma or "PIX" in cond
+
+    def _calc_blocos_layout(self, dto, obs_padrao: str, obs_txt: str, escala: float) -> dict:
+        e = escala
+        ht = 28 * mm * e
+        hdf = 7 * mm * e
+        hf = 28 * mm * e
+        hcob = 14 * mm * e
+        hrod = max(_RODAPE_ALT_MM * mm, 26 * mm * e)
+        tem_pix = self._forma_pagamento_tem_pix(dto)
+        tem_chave = bool(str(getattr(dto, "fornecedor_pix", "") or "").strip())
+        tem_fav = bool(str(getattr(dto, "fornecedor_favorecido", "") or "").strip())
+        hfat = (22 * mm * e if (tem_pix and (tem_chave or tem_fav)) else 14 * mm * e)
+        hent = 18 * mm * e
+        hdr_h = max(5 * mm, 7 * mm * e)
+        tot_h = max(14 * mm, 18 * mm * e)
+        hobs_emp = 0
+        if obs_padrao:
+            nl = max(1, (len(obs_padrao) // 100) + obs_padrao.count("\n") + 1)
+            hobs_emp = (8 * e + nl * 4.5 * e) * mm
+        hobs = 0
+        if obs_txt:
+            nl2 = max(1, (len(obs_txt) // 110) + obs_txt.count("\n") + 1)
+            hobs = (8 * e + nl2 * 4.5 * e) * mm
+        gap = 1 * mm
+        cab_p1 = ht + hdf + hf + hcob + hfat + hobs_emp + hent + hobs + gap * 6
+        cab_cont = ht + hdf + gap
+        reserva_inf = hrod + _MARGEM_INFERIOR_TABELA + hdr_h + tot_h
+        return dict(
+            H_TOPO=ht, H_DATAFAIXA=hdf, H_FORN=hf, H_COB=hcob,
+            H_ROD=hrod, H_FAT=hfat, H_ENT=hent, H_OBS_EMP=hobs_emp,
+            H_OBS=hobs, HDR_H=hdr_h, TOT_H=tot_h,
+            area_linhas_p1=max(20 * mm, H - M - cab_p1 - reserva_inf),
+            area_linhas_cont=max(20 * mm, H - M - cab_cont - reserva_inf),
+        )
+
     def _gerar_paginas(self, c, dto, emp):
         """
         Gera páginas com ajuste automático inteligente de escala.
@@ -163,8 +223,8 @@ class PedidoCompraGenerator:
             hdf     = 7*mm*e
             hf      = 28*mm*e
             hcob    = 14*mm*e
-            hrod    = max(18*mm, 22*mm*e)
-            forma_pix = "PIX" in str(getattr(dto, "forma_pagamento", "")).upper()
+            hrod    = max(_RODAPE_ALT_MM * mm, 26 * mm * e)
+            forma_pix = self._forma_pagamento_tem_pix(dto)
             tem_pix = bool(str(getattr(dto, "fornecedor_pix", "")).strip())
             tem_fav = bool(str(getattr(dto, "fornecedor_favorecido", "")).strip())
             hfat    = (22*mm*e if (forma_pix and (tem_pix or tem_fav)) else 14*mm*e)
@@ -233,46 +293,77 @@ class PedidoCompraGenerator:
             )
             return max(ROW_H, row_padding + (len(linhas) * line_h))
 
-        alturas = [_altura_item(getattr(it, "descricao", "")) for it in itens]
-        disp_p1 = max(ROW_H, b["espaco"])
-        blocos_pn = b["H_TOPO"] + b["H_DATAFAIXA"] + b["HDR_H"] + b["TOT_H"] + b["H_ROD"]
-        disp_pn = max(ROW_H, (H - 2*M - blocos_pn))
+        b_layout = self._calc_blocos_layout(dto, obs_padrao, obs_txt, escala)
 
-        fatias = []
-        idx = 0
-        while idx < len(itens):
-            cap = disp_p1 if not fatias else disp_pn
-            usados = 0.0
-            itens_pag = []
-            alturas_pag = []
-            while idx < len(itens):
-                h = alturas[idx]
-                if itens_pag and (usados + h > cap):
-                    break
-                itens_pag.append(itens[idx])
-                alturas_pag.append(h)
-                usados += h
-                idx += 1
-                if usados >= cap:
-                    break
-            if not itens_pag:
-                # item muito alto: força ao menos um item na página
-                itens_pag = [itens[idx]]
-                alturas_pag = [alturas[idx]]
-                idx += 1
-            fatias.append((itens_pag, alturas_pag))
+        def _recalc_alturas():
+            nonlocal b_layout
+            self._fonte_tabela = max(5.5, round(7.5 * (ROW_H / (6 * mm)), 1))
+            self._hdr_tabela = max(4.5 * mm, b_layout["HDR_H"])
+            lh = max(self._fonte_tabela + 1, 6)
 
-        for idx, (fatia_itens, alturas_linhas) in enumerate(fatias):
-            primeira = (idx == 0)
-            ultima   = (idx == len(fatias) - 1)
+            def _h(desc):
+                n = self._quebrar_texto(
+                    c, desc, largura_desc, "Helvetica", self._fonte_tabela
+                )
+                return max(ROW_H, row_padding + len(n) * lh)
+
+            return [_h(getattr(it, "descricao", "")) for it in itens]
+
+        alturas = _recalc_alturas()
+
+        if n_itens <= _MAX_ITENS_FORCAR_UMA_PAGINA:
+            for _ in range(40):
+                total = sum(alturas)
+                if total <= b_layout["area_linhas_p1"]:
+                    break
+                if ROW_H > ROW_H_MIN:
+                    ROW_H = max(ROW_H_MIN, ROW_H * min(0.95, b_layout["area_linhas_p1"] / max(total, 1)))
+                    alturas = _recalc_alturas()
+                    continue
+                if escala > 0.72:
+                    escala = round(escala - 0.04, 2)
+                    b_layout = self._calc_blocos_layout(dto, obs_padrao, obs_txt, escala)
+                    alturas = _recalc_alturas()
+                    continue
+                break
+            fatias = [(itens, alturas)]
+            b = b_layout
+        else:
+            fatias = []
+            idx = 0
+            while idx < n_itens:
+                cap = b_layout["area_linhas_p1"] if not fatias else b_layout["area_linhas_cont"]
+                usados = 0.0
+                itens_pag, alturas_pag = [], []
+                while idx < n_itens:
+                    h = alturas[idx]
+                    if itens_pag and (usados + h > cap):
+                        break
+                    itens_pag.append(itens[idx])
+                    alturas_pag.append(h)
+                    usados += h
+                    idx += 1
+                if not itens_pag:
+                    itens_pag = [itens[idx]]
+                    alturas_pag = [alturas[idx]]
+                    idx += 1
+                fatias.append((itens_pag, alturas_pag))
+            b = b_layout
+
+        offset = 0
+        for pag_i, (fatia_itens, alturas_linhas) in enumerate(fatias):
+            primeira = pag_i == 0
+            ultima = pag_i == len(fatias) - 1
             self._desenhar_pagina(
                 c, dto, emp, fatia_itens, alturas_linhas,
-                primeira, ultima, idx+1, len(fatias),
+                primeira, ultima, pag_i + 1, len(fatias),
                 b["H_TOPO"], b["H_DATAFAIXA"], b["H_FORN"], b["H_COB"],
                 b["H_FAT"], b["H_OBS_EMP"], b["H_ENT"], b["H_OBS"], b["H_ROD"],
                 self._hdr_tabela, ROW_H, b["TOT_H"],
-                obs_txt, obs_padrao
+                obs_txt, obs_padrao,
+                item_offset=offset,
             )
+            offset += len(fatia_itens)
             if not ultima:
                 c.showPage()
 
@@ -281,7 +372,8 @@ class PedidoCompraGenerator:
         primeira, ultima, num_pag, total_pag,
         H_TOPO, H_DATAFAIXA, H_FORN, H_COB,
         H_FAT, H_OBS_EMP, H_ENT, H_OBS, H_ROD,
-        HDR_H, ROW_H, TOT_H, obs_txt, obs_padrao
+        HDR_H, ROW_H, TOT_H, obs_txt, obs_padrao,
+        item_offset=0,
     ):
         """
         Desenha uma página completa do PDF.
@@ -294,6 +386,12 @@ class PedidoCompraGenerator:
 
         y = self._bloco_topo(c, dto, emp, y, H_TOPO, num_pag, total_pag)
         y = self._faixa_data(c, dto, y, H_DATAFAIXA)
+
+        if not primeira:
+            c.setFont("Helvetica-Bold", 9)
+            c.setFillColor(C_ESCURO)
+            c.drawString(M + 3 * mm, y - 4 * mm, f"CONTINUAÇÃO — Pedido #{dto.numero}")
+            y -= 6 * mm
 
         if primeira:
             y = self._bloco_forn(c, dto, y, H_FORN)
@@ -309,7 +407,8 @@ class PedidoCompraGenerator:
         self._tabela_itens(
             c, dto, itens_pagina, y, alturas_linhas,
             HDR_H, ROW_H, TOT_H,
-            mostrar_totais=ultima
+            mostrar_totais=ultima,
+            item_offset=item_offset,
         )
         self._rodape(c, dto.empresa_faturadora)
 
@@ -319,35 +418,41 @@ class PedidoCompraGenerator:
 
     def _bloco_topo(self, c, dto, emp, y, alt, num_pag=1, total_pag=1):
         """Logo + dados da empresa + número do pedido."""
-        c.setStrokeColor(C_LINHA); c.setLineWidth(0.8)
-        c.rect(M, y-alt, CW, alt, fill=0, stroke=1)
+        y0 = y - alt
+        LOGO_W = 40 * mm
+        LOGO_H = 20 * mm
+        LOGO_PAD = 4 * mm
+        sep_x = M + LOGO_W + 2 * LOGO_PAD
 
-        LOGO_W = 44*mm; LOGO_H = 22*mm
+        c.setStrokeColor(C_LINHA)
+        c.setLineWidth(0.8)
+        c.rect(M, y0, CW, alt, fill=0, stroke=1)
+        c.setLineWidth(0.5)
+        c.line(sep_x, y0, sep_x, y)
+
         logo_fn = (emp.get("logo") or "").strip()
         logo = os.path.join(_LOGOS_DIR, logo_fn) if logo_fn else ""
+        if not (logo and os.path.exists(logo)):
+            logo = _logo_path(dto.empresa_faturadora) or ""
+
         if logo and os.path.exists(logo):
             try:
-                c.drawImage(logo, M+3*mm, y-alt+3*mm,
-                            width=LOGO_W, height=LOGO_H,
-                            preserveAspectRatio=True, mask='auto')
+                logo_y = y0 + max(LOGO_PAD, (alt - LOGO_H) / 2)
+                c.drawImage(
+                    logo, M + LOGO_PAD, logo_y,
+                    width=LOGO_W, height=LOGO_H,
+                    preserveAspectRatio=True, mask="auto",
+                )
             except Exception:
-                c.setFont("Helvetica-Bold", 10); c.setFillColor(C_PRETO)
-                c.drawString(M+3*mm, y-alt/2, dto.empresa_faturadora)
+                c.setFont("Helvetica-Bold", 10)
+                c.setFillColor(C_PRETO)
+                c.drawString(M + LOGO_PAD, y0 + alt / 2 - 2, dto.empresa_faturadora)
         else:
-            leg = _logo_path(dto.empresa_faturadora)
-            if leg:
-                try:
-                    c.drawImage(leg, M+3*mm, y-alt+3*mm,
-                                width=LOGO_W, height=LOGO_H,
-                                preserveAspectRatio=True, mask='auto')
-                except Exception:
-                    c.setFont("Helvetica-Bold", 10); c.setFillColor(C_PRETO)
-                    c.drawString(M+3*mm, y-alt/2, dto.empresa_faturadora)
-            else:
-                c.setFont("Helvetica-Bold", 10); c.setFillColor(C_PRETO)
-                c.drawString(M+3*mm, y-alt/2, dto.empresa_faturadora)
+            c.setFont("Helvetica-Bold", 10)
+            c.setFillColor(C_PRETO)
+            c.drawString(M + LOGO_PAD, y0 + alt / 2 - 2, dto.empresa_faturadora)
 
-        cx = M + LOGO_W + 4*mm
+        cx = sep_x + 2 * mm
         c.setFont("Helvetica-Bold", 11); c.setFillColor(C_PRETO)
         c.drawString(cx, y-8*mm, emp["razao_social"])
         c.setFont("Helvetica", 7.5); c.setFillColor(C_ESCURO)
@@ -510,9 +615,8 @@ class PedidoCompraGenerator:
         cx_data = W - M - 28*mm + 12.5*mm
         c.drawCentredString(cx_data, y-11*mm, dto.data_prevista_entrega)
 
-        # Linha extra de pagamento quando a forma for PIX.
-        # Isso evita que o financeiro precise adivinhar a chave PIX do fornecedor.
-        if "PIX" in str(forma).upper():
+        # Linha PIX dentro do bloco de faturamento (forma ou condição com PIX).
+        if self._forma_pagamento_tem_pix(dto):
             pix = str(getattr(dto, "fornecedor_pix", "") or "").strip()
             favorecido = str(getattr(dto, "fornecedor_favorecido", "") or "").strip()
 
@@ -589,12 +693,12 @@ class PedidoCompraGenerator:
         c.setStrokeColor(C_LINHA); c.setLineWidth(0.8)
         c.rect(M, y-alt, CW, alt, fill=0, stroke=1)
 
-        def par(lbl, val, x, yy):
+        def par(lbl, val, x, yy, max_chars=44):
             c.setFont("Helvetica-Bold", 7.5); c.setFillColor(C_ESCURO)
             c.drawString(x, yy, lbl)
             c.setFont("Helvetica", 7.5); c.setFillColor(C_PRETO)
             off = c.stringWidth(lbl, "Helvetica-Bold", 7.5) + 2
-            c.drawString(x+off, yy, str(val or "—")[:44])
+            c.drawString(x+off, yy, str(val or "—")[:max_chars])
 
         # Distribui as 3 linhas proporcionalmente dentro do bloco
         l1 = y - alt * 0.22   # linha 1 — Endereço / Bairro
@@ -603,7 +707,7 @@ class PedidoCompraGenerator:
 
         par("Local de Entrega:", dto.endereco_entrega, M+3*mm,    l1)
         par("Bairro:",           dto.bairro_entrega,   M+CW*0.5,  l1)
-        par("OBRA:",             dto.obra.upper(),      M+3*mm,    l2)
+        par("OBRA:",             dto.obra_para_pdf.upper(), M+3*mm, l2, max_chars=58)
         par("Contrato Obra:",    dto.contrato_obra,     M+CW*0.5,  l2)
         par("CEP:",              dto.cep_entrega,       M+3*mm,    l3)
         par("Cidade:",           dto.cidade_entrega,    M+CW*0.3,  l3)
@@ -649,7 +753,7 @@ class PedidoCompraGenerator:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _tabela_itens(self, c, dto, itens_pagina, y, alturas_linhas,
-                      HDR_H, ROW_H, TOT_H, mostrar_totais=True):
+                      HDR_H, ROW_H, TOT_H, mostrar_totais=True, item_offset=0):
         """
         Tabela de itens para UMA página.
         mostrar_totais=True apenas na última página.
@@ -691,7 +795,7 @@ class PedidoCompraGenerator:
             yt = y - row_h_i/2 - 2
             x  = M
             dados = [
-                (str(i+1), "c", True),
+                (str(item_offset + i + 1), "c", True),
                 ("", "l", False),  # descrição tratada separadamente com quebra de linha
                 (self._fmt_num(item.quantidade), "c", False),
                 (item.unidade, "c", False),
@@ -756,36 +860,73 @@ class PedidoCompraGenerator:
     # BLOCO 9 — Rodapé fixo na base
     # ══════════════════════════════════════════════════════════════════════════
 
+    def _desenhar_linhas_rodape(self, c, linhas, x, y, alinhamento="left", fonte=None, tamanho=None):
+        """Desenha linhas do rodapé em vermelho negrito (quebra automática se for lista de str)."""
+        fonte = fonte or "Helvetica-Bold"
+        tamanho = tamanho or _RODAPE_FONT_TEXTO
+        esp = 4.8 * mm
+        c.setFont(fonte, tamanho)
+        c.setFillColor(C_RODAPE_TXT)
+        for txt in linhas:
+            if not str(txt or "").strip():
+                y -= esp * 0.6
+                continue
+            if alinhamento == "right":
+                c.drawRightString(x, y, str(txt))
+            else:
+                c.drawString(x, y, str(txt))
+            y -= esp
+        return y
+
     def _rodape(self, c, empresa_faturadora):
-        """Rodapé com instruções, e-mails e horários de recebimento."""
-        y = 20*mm
-        c.setStrokeColor(C_LINHA); c.setLineWidth(0.5)
-        c.line(M, y, W-M, y)
+        """Rodapé: fundo normal, texto em vermelho negrito (e-mails e horário de obra)."""
+        y = 22 * mm
+        c.setStrokeColor(C_LINHA)
+        c.setLineWidth(0.5)
+        c.line(M, y, W - M, y)
 
-        c.setFont("Helvetica-Oblique", 7); c.setFillColor(C_PRETO)
-        c.drawString(M, y-4*mm,
-            "Destacar o endereço e o Nome da obra com o Nº de meu pedido "
-            "no campo de Observações.")
-        c.setFont("Helvetica-Bold", 7); c.setFillColor(C_PRETO)
-        c.drawString(M, y-8.5*mm, "Notas e Boletos encaminha para:")
-        c.setFont("Helvetica", 7); c.setFillColor(colors.HexColor("#0055AA"))
         emp = _resolver_empresa_faturadora(empresa_faturadora)
-        e1 = str(emp.get("email_rodape_1") or "").strip()
-        e2 = str(emp.get("email_rodape_2") or "").strip()
-        if not e1:
-            e1 = "notafiscal@brasulconstrutora.com.br"
-        if not e2:
-            e2 = "viviane@brasulconstrutora.com.br"
-        c.drawString(M, y-12.5*mm, e1)
-        c.drawString(M, y-16.5*mm, e2)
+        meio = M + CW * 0.52
+        col_esq = M
+        col_dir = W - M
+        lh_instr = 4.6 * mm
 
-        c.setFont("Helvetica-Bold", 7); c.setFillColor(C_PRETO)
-        c.drawRightString(W-M, y-4*mm, "Horário de RECEBIMENTO NA OBRA")
-        c.setFont("Helvetica", 7)
-        c.drawRightString(W-M, y-8.5*mm,
-            "Segunda a Quinta-feira das 07:30h às 11:30h e das 13:00h às 15:30h")
-        c.drawRightString(W-M, y-12.5*mm,
-            "Sexta-feira das 07:30h às 11:30h e das 13:00h às 14:30h")
+        instr = (
+            "Destacar o endereço e o Nome da obra com o Nº de meu pedido "
+            "no campo de Observações."
+        )
+        yi = y - 4.5 * mm
+        c.setFont("Helvetica-Bold", _RODAPE_FONT_TEXTO)
+        c.setFillColor(C_RODAPE_TXT)
+        for linha in self._quebrar_texto(
+            c, instr, meio - col_esq - 2 * mm, "Helvetica-Bold", _RODAPE_FONT_TEXTO
+        ):
+            c.drawString(col_esq, yi, linha)
+            yi -= lh_instr
+
+        y_emails = yi - 1 * mm
+        c.setFont("Helvetica-Bold", _RODAPE_FONT_TITULO)
+        c.setFillColor(C_RODAPE_TXT)
+        c.drawString(col_esq, y_emails, "Notas e Boletos encaminha para:")
+
+        e1 = str(emp.get("email_rodape_1") or "").strip() or "notafiscal@brasulconstrutora.com.br"
+        e2 = str(emp.get("email_rodape_2") or "").strip() or "viviane@brasulconstrutora.com.br"
+        self._desenhar_linhas_rodape(
+            c, [e1, e2], col_esq, y_emails - 5 * mm, tamanho=_RODAPE_FONT_TEXTO
+        )
+
+        y_dir = y - 4.5 * mm
+        c.setFont("Helvetica-Bold", _RODAPE_FONT_TITULO)
+        c.setFillColor(C_RODAPE_TXT)
+        c.drawRightString(col_dir, y_dir, "Horário de RECEBIMENTO NA OBRA")
+        self._desenhar_linhas_rodape(
+            c,
+            list(_HORARIO_RECEBIMENTO),
+            col_dir,
+            y_dir - 5 * mm,
+            alinhamento="right",
+            tamanho=_RODAPE_FONT_TEXTO,
+        )
 
     # ══════════════════════════════════════════════════════════════════════════
     # HELPERS
@@ -845,6 +986,6 @@ class PedidoCompraGenerator:
     def _nome_arquivo(dto: PedidoDTO) -> str:
         """Gera nome do arquivo: PC-2582-BRASUL-NOME_DA_OBRA.pdf"""
         obra = "".join(
-            ch for ch in dto.obra if ch.isalnum() or ch in " _-"
+            ch for ch in dto.obra_para_pdf if ch.isalnum() or ch in " _-"
         )[:28].strip().replace(" ", "_")
         return f"PC-{dto.numero}-{dto.empresa_faturadora}-{obra}.pdf"

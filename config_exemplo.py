@@ -24,9 +24,12 @@ COTACOES_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\cotações_salvas"
 BACKUP_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\backup"
 RELACOES_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\relações"
 
-# 0 = desligado. Ex.: 30 = a cada 30 s copia o SQLite do comprador para a pasta na rede (cadastros/obras/pedidos no .db do comprador).
-REDE_SYNC_INTERVALO_SEGUNDOS = 0
-# Se True, no mesmo gatilho roda em thread a reaplicação de todos os pedidos locais em cotacao_rede.db (mais pesado; salvar pedido já faz sync incremental).
+# Timer com o app aberto (0 = desligado). 60 = backup + consolidado quase em tempo real.
+REDE_SYNC_INTERVALO_SEGUNDOS = 300
+BACKUP_REDE_INTERVALO_SEGUNDOS = 900
+# Iury + Thamyres → cotacao_rede.db (auditoria lê este arquivo).
+REDE_SYNC_CONSOLIDAR_COMPLETO = True
+# Legado: só o comprador logado no consolidado (use CONSOLIDAR_COMPLETO em vez disto).
 REDE_SYNC_MESCLAR_CONSOLIDADO = False
 
 
@@ -71,14 +74,14 @@ EMPRESAS_FATURADORAS = {
         "cor_header":   (0, 100, 0),
     },
     "INTERIORANA": {
-        "razao_social": "INTERIORANA CONSTRUTORA LTDA",
+        "razao_social": "CONSTRUTORA INTERIORANA LTDA",
         "endereco":     "Av. Independência, 546 sala 93 – Cidade Alta – Piracicaba, SP - CEP 13419-160",
         "telefone":     "(11) 3641-9169",
         "email":        "compra2@construtorainteriorana.com.br",
         "email_rodape_1": "notafiscal@construtorainteriorana.com.br",
         "email_rodape_2": "financeiro2@construtorainteriorana.com.br",
         "logo":         "logo_interiorana.png",
-        "obs_padrao":   "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\nINTERIORANA CONSTRUTORA LTDA",
+        "obs_padrao":   "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\nCONSTRUTORA INTERIORANA LTDA",
         "cor_header":   (100, 50, 0),
     },
     "INTERBRAS": {

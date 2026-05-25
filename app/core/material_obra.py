@@ -1,6 +1,14 @@
 # Migrações e regras de persistência para «OK na obra» (flag material_ok_na_obra + carimbo material_entregue_em).
 
 
+def migrar_coluna_material_entregue_em_sqlite(conn) -> None:
+    """Garante pedidos.material_entregue_em (carimbo texto / ISO). Bases antigas só tinham a flag."""
+    existentes = {r[1] for r in conn.execute("PRAGMA table_info(pedidos)").fetchall()}
+    if "material_entregue_em" in existentes:
+        return
+    conn.execute("ALTER TABLE pedidos ADD COLUMN material_entregue_em TEXT")
+
+
 def migrar_coluna_material_ok_na_obra_sqlite(conn) -> None:
     """
     Garante a coluna pedidos.material_ok_na_obra (0/1).
@@ -50,6 +58,7 @@ def migracao_uma_vez_ok_legado_todos_pedidos_sqlite(conn) -> None:
         "CREATE TABLE _brasul_ok_obra_legado_todos_v1 (x INTEGER PRIMARY KEY CHECK (x = 1))"
     )
     conn.execute("INSERT INTO _brasul_ok_obra_legado_todos_v1 VALUES (1)")
+    migrar_coluna_material_entregue_em_sqlite(conn)
     cols = {r[1] for r in conn.execute("PRAGMA table_info(pedidos)").fetchall()}
     if "material_ok_na_obra" not in cols:
         return
