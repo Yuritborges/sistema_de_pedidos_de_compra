@@ -543,7 +543,7 @@ class PedidoCompraGenerator:
         c.rect(M, y-alt, CW, alt, fill=0, stroke=1)
 
         # Endereço de cobrança = endereço da empresa faturadora (config.py)
-        end_cob = emp.get("endereco", "")
+        end_cob_bruto = emp.get("endereco", "")
         cep_cob = emp.get("cep", "") or _cep_empresa(emp)
 
         # Extrai cidade e UF do config.py diretamente se disponível,
@@ -554,6 +554,18 @@ class PedidoCompraGenerator:
             cidade_p, uf_p = _cidade_uf_empresa(emp)
             if not cidade: cidade = cidade_p
             if not uf:     uf     = uf_p
+
+        # Remove cidade repetida do fim do endereço de cobrança (ex.: «... – Piracicaba»),
+        # pois a cidade já aparece na linha própria logo abaixo.
+        end_cob = end_cob_bruto or ""
+        if cidade:
+            low_end = end_cob.lower()
+            low_cid = str(cidade).strip().lower()
+            idx = low_end.rfind(low_cid)
+            if idx > 0:
+                tail = low_end[idx + len(low_cid):].strip()
+                if not tail or tail in (",", "-", "–"):
+                    end_cob = end_cob[:idx].rstrip(" ,–-")
 
         def par(lbl, val, x, yy):
             c.setFont("Helvetica-Bold", 7.5); c.setFillColor(C_ESCURO)

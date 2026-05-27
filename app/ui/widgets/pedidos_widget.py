@@ -1234,7 +1234,9 @@ class PedidosWidget(QWidget):
         if not ok:
             QMessageBox.warning(self, "OK NA OBRA", msg)
             return
-        self._carregar()
+        # Recarrega SEM usar cache para refletir imediatamente a mudança de cor
+        # na linha e na badge «Pedidos Gerados (N)» da sidebar.
+        self._carregar(force=True)
 
     def _editar_pedido(self, numero):
         """

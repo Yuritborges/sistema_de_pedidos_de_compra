@@ -1048,7 +1048,6 @@ class LocacoesWidget(QWidget):
                         data_pedido, periodo_dias, data_vencimento, dias_a_vencer,
                         situacao, pedido_ok
                     FROM locacoes_registros
-                    ORDER BY id DESC
                     """
                 ).fetchall()
             for r in rows:
@@ -1070,6 +1069,40 @@ class LocacoesWidget(QWidget):
                 })
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Não foi possível carregar locações.\n\n{e}")
+        # Ordena: primeiro vencidos, depois os mais próximos de vencer, por fim os demais.
+        # Dentro de cada grupo, usa dias_a_vencer (quando houver) e, em seguida,
+        # a data do pedido (mais recentes primeiro).
+        from datetime import datetime
+
+        def _parse_int(val, default=99999):
+            try:
+                return int(str(val or "").strip())
+            except ValueError:
+                return default
+
+        def _parse_date_iso(val):
+            try:
+                return datetime.fromisoformat(str(val or "").strip()).date()
+            except Exception:
+                return None
+
+        def _grupo(r):
+            tag = destaque_visual_linha_locacao_db(r)
+            if tag == "vencido":
+                return 0
+            if tag == "dois_dias":
+                return 1
+            return 2
+
+        def _sort_key(r):
+            g = _grupo(r)
+            dias = _parse_int(r.get("dias_a_vencer"))
+            dp = _parse_date_iso(r.get("data_pedido"))
+            dp_ord = -int(dp.toordinal()) if dp else 0
+            return (g, dias, dp_ord)
+
+        self._todos.sort(key=_sort_key)
+
         self._atualizar_kpis()
         self._aplicar_filtro()
         if notificar_sidebar:

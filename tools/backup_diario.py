@@ -1,3 +1,4 @@
+import argparse
 import os
 import shutil
 import sqlite3
@@ -8,6 +9,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 BASE_REDE = r"Z:\0 OBRAS\brasul_pedidos"
 BASE_PROJETO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROOT = BASE_PROJETO
 
 DB_FILES = {
     "iury": os.path.join(BASE_REDE, "Iury", "cotacao_iury.db"),
@@ -83,11 +85,7 @@ def _limpar_antigos(base: str, manter_dias: int = 30):
             print(f"[AVISO] Falha ao limpar {caminho}: {exc}")
 
 
-def main():
-    ts = _agora()
-    diaria_dir = os.path.join(BACKUP_ROOT, "diario")
-    os.makedirs(diaria_dir, exist_ok=True)
-
+def _executar(ts: str, diaria_dir: str, consolidar_silencioso: bool):
     print(f"[INICIO] Backup diário {ts}")
     _backup_bancos(ts, diaria_dir)
     _backup_cadastros(ts, diaria_dir)
@@ -98,13 +96,42 @@ def main():
             sys.path.insert(0, _ROOT)
         from app.data.cotacao_rede_sync import tentar_consolidacao_completa
 
-        if tentar_consolidacao_completa(silencioso=False):
+        if tentar_consolidacao_completa(silencioso=consolidar_silencioso):
             print("[OK] cotacao_rede.db consolidado após backup diário.")
         else:
             print("[AVISO] Consolidação não executada (outro PC em uso ou já atualizado).")
     except Exception as exc:
         print(f"[AVISO] Consolidação pós-backup: {exc}")
     print(f"[FIM] Backup concluído em: {diaria_dir}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Backup diário (bancos, cadastros, release current).")
+    ap.add_argument(
+        "--silencioso",
+        action="store_true",
+        help="Grava saída em backups/diario/logs/ sem abrir janela (use com pythonw ou VBS).",
+    )
+    args = ap.parse_args()
+
+    ts = _agora()
+    diaria_dir = os.path.join(BACKUP_ROOT, "diario")
+    os.makedirs(diaria_dir, exist_ok=True)
+
+    if args.silencioso:
+        log_dir = os.path.join(diaria_dir, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, f"backup_{ts}.log")
+        with open(log_path, "w", encoding="utf-8") as log_f:
+            old_out, old_err = sys.stdout, sys.stderr
+            sys.stdout = log_f
+            sys.stderr = log_f
+            try:
+                _executar(ts, diaria_dir, consolidar_silencioso=True)
+            finally:
+                sys.stdout, sys.stderr = old_out, old_err
+    else:
+        _executar(ts, diaria_dir, consolidar_silencioso=False)
 
 
 if __name__ == "__main__":
