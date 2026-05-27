@@ -61,6 +61,7 @@ startup_v2.log
 # CONFIG LOCAL
 # =========================
 config.py
+.ci_data/
 
 # =========================
 # SISTEMA OPERACIONAL
