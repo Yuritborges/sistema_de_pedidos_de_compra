@@ -16,6 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Versao do codigo (confira o commit)
+        run: |
+          git rev-parse --short HEAD
+          git log -1 --oneline
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
