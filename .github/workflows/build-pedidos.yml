@@ -30,8 +30,7 @@ jobs:
         run: python tools/prepare_config_ci.py
 
       - name: Pastas exigidas pelo .spec
-        run: |
-          if (-not (Test-Path database)) { New-Item -ItemType Directory -Path database | Out-Null }
+        run: New-Item -ItemType Directory -Path database -Force | Out-Null
 
       - name: PyInstaller
         run: python -m PyInstaller SistemaPedidosV2.spec --clean --noconfirm

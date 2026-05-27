@@ -8,7 +8,8 @@
 *.csv
 
 *.db
-database/
+database/*
+!database/.gitkeep
 backup/
 *.backup
 

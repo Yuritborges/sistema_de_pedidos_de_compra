@@ -10,8 +10,10 @@ if not os.path.isfile(_icon):
 
 _bundle_datas = [
     ("assets", "assets"),
-    ("database", "database"),
 ]
+_db_dir = os.path.join(_root, "database")
+if os.path.isdir(_db_dir):
+    _bundle_datas.append((_db_dir, "database"))
 try:
     import PySide6
 

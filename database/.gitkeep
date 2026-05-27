@@ -1,0 +1,2 @@
+# Pasta reservada para bancos locais de fallback (ex.: cotacao_rede.db de demonstracao).
+# Os arquivos *.db nao sao versionados — apenas esta pasta vazia para o PyInstaller.
