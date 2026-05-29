@@ -79,7 +79,7 @@ def _upsert_pedido(dst_conn, pedido):
         "fornecedor_razao", "empresa_faturadora", "condicao_pagamento",
         "forma_pagamento", "pagamento_etapas_ativo", "percentual_entrada",
         "percentual_final", "marco_percentual_final",
-        "prazo_entrega", "comprador", "valor_total",
+        "prazo_entrega", "comprador", "material_solicitado_por", "valor_total",
         "caminho_pdf", "status", "emitido_em", "material_entregue_em",
         "material_ok_na_obra",
     ]

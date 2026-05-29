@@ -94,6 +94,7 @@ def upsert_pedido(dst_conn, pedido):
         "marco_percentual_final",
         "prazo_entrega",
         "comprador",
+        "material_solicitado_por",
         "valor_total",
         "desconto",
         "desconto_tipo",

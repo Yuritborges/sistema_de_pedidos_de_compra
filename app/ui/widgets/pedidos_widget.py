@@ -220,7 +220,9 @@ class PedidosWidget(QWidget):
         bwl.setContentsMargins(0, 0, 0, 0)
         bwl.setSpacing(0)
         self.e_busca = QLineEdit()
-        self.e_busca.setPlaceholderText("Buscar por nº, obra, fornecedor ou item...")
+        self.e_busca.setPlaceholderText(
+            "Buscar por nº, obra, fornecedor, item ou quem solicitou o material…"
+        )
         self.e_busca.setStyleSheet(CSS_BUSCA)
         self.e_busca.textChanged.connect(lambda: self._filtro_debounce.start())
         self.e_busca.returnPressed.connect(self._aplicar_filtros)
@@ -369,6 +371,7 @@ class PedidosWidget(QWidget):
                             p.valor_total,
                             p.caminho_pdf,
                             p.comprador,
+                            p.material_solicitado_por,
                             p.material_entregue_em,
                             COALESCE(p.material_ok_na_obra, 0) AS material_ok_na_obra,
                             p.prazo_entrega,
@@ -445,6 +448,9 @@ class PedidosWidget(QWidget):
                             "fornecedor_nome": fornecedor,
                             "itens_texto": str(row["itens_texto"] or ""),
                             "comprador": row["comprador"] or "",
+                            "material_solicitado_por": str(
+                                row["material_solicitado_por"] or ""
+                            ).strip(),
                             "material_entregue_em": row["material_entregue_em"] or "",
                             "material_ok_na_obra": int(row["material_ok_na_obra"] or 0),
                             "material_ok_obra": int(row["material_ok_na_obra"] or 0) != 0,
@@ -571,7 +577,8 @@ class PedidosWidget(QWidget):
                          termo in r["numero"].lower() or
                          termo in r["obra"].lower() or
                          termo in r.get("fornecedor", "").lower() or
-                         termo in r.get("itens_texto", "").lower()]
+                         termo in r.get("itens_texto", "").lower() or
+                         termo in r.get("material_solicitado_por", "").lower()]
 
         def _dia_ref(r):
             return (r.get("data_filtro") or r["data"]).date()
@@ -1367,6 +1374,7 @@ class PedidosWidget(QWidget):
                 data_pedido=str(ped["data_pedido"] or ""),
                 empresa_faturadora=str(ped["empresa_faturadora"] or "BRASUL"),
                 comprador=str(ped["comprador"] or ""),
+                material_solicitado_por=str(ped.get("material_solicitado_por") or ""),
                 obra=str(ped["obra_nome"] or ""),
                 escola=str(ped["escola"] or ""),
                 endereco_entrega="", bairro_entrega="",

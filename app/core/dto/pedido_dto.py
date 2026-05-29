@@ -60,6 +60,7 @@ class PedidoDTO:
     percentual_final: int = 0
     marco_percentual_final: str = "FINALIZAÇÃO"
     observacao_extra:   str   = ""
+    material_solicitado_por: str = ""
     desconto:           float = 0.0
     # Preenchido ao reemitir / editar do banco: cor da caixa "DATA PREVISTA" no PDF.
     material_entregue_em: str = ""

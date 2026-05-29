@@ -86,13 +86,19 @@ def _logo_path(empresa: str):
     return p if (nome and os.path.exists(p)) else None
 
 
-def _montar_observacao(emp: dict, obs_usuario: str) -> str:
+def _montar_observacao(emp: dict, obs_usuario: str, material_solicitado: str = "") -> str:
     """
     Monta o texto do bloco de Observação (campo extra, abaixo dos itens).
-    Agora contém APENAS o texto digitado pelo usuário.
     A obs_padrao da empresa vai para o bloco de faturamento (_bloco_fat).
     """
-    return (obs_usuario or "").strip()
+    partes = []
+    sol = (material_solicitado or "").strip()
+    if sol:
+        partes.append(f"MATERIAL SOLICITADO POR: {sol.upper()}")
+    obs = (obs_usuario or "").strip()
+    if obs:
+        partes.append(obs)
+    return "\n".join(partes)
 
 
 def _cep_empresa(emp: dict) -> str:
@@ -213,7 +219,9 @@ class PedidoCompraGenerator:
             Usa o modo compacto e pagina normalmente quando não cabe.
         """
         obs_padrao = (emp.get("obs_padrao") or "").strip()
-        obs_txt    = _montar_observacao(emp, dto.observacao_extra)
+        obs_txt    = _montar_observacao(
+            emp, dto.observacao_extra, getattr(dto, "material_solicitado_por", "") or ""
+        )
         n_itens    = len(dto.itens)
 
         def _calc_blocos(escala):

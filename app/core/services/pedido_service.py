@@ -195,6 +195,7 @@ class PedidoService:
                         marco_percentual_final = ?,
                         prazo_entrega      = ?,
                         comprador          = ?,
+                        material_solicitado_por = ?,
                         valor_total        = ?,
                         caminho_pdf        = ?,
                         emitido_em         = datetime('now'),
@@ -216,6 +217,7 @@ class PedidoService:
                     getattr(dto, "marco_percentual_final", "") or "",
                     int(getattr(dto, "prazo_entrega", 0) or 0),
                     comprador,
+                    (getattr(dto, "material_solicitado_por", "") or "").strip(),
                     total,
                     caminho_pdf,
                     pedido_id,
@@ -251,10 +253,11 @@ class PedidoService:
                         marco_percentual_final,
                         prazo_entrega,
                         comprador,
+                        material_solicitado_por,
                         valor_total,
                         caminho_pdf,
                         status
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'emitido')
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'emitido')
                 """, (
                     numero,
                     getattr(dto, "data_pedido", ""),
@@ -271,6 +274,7 @@ class PedidoService:
                     getattr(dto, "marco_percentual_final", "") or "",
                     getattr(dto, "prazo_entrega", 0),
                     comprador,
+                    (getattr(dto, "material_solicitado_por", "") or "").strip(),
                     total,
                     caminho_pdf,
                 ))

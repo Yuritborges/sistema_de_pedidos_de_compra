@@ -46,6 +46,7 @@ from app.data.database import (
 )
 from app.data.locacoes_import import (
     calcular_derivados_locacao as _calcular_derivados,
+    derivados_locacao_linha,
     clean_str as _clean,
     consume_last_sync_message,
     destaque_visual_linha_locacao_db,
@@ -1050,23 +1051,46 @@ class LocacoesWidget(QWidget):
                     FROM locacoes_registros
                     """
                 ).fetchall()
-            for r in rows:
-                self._todos.append({
-                    "id": r["id"],
-                    "obra": _clean(r["obra"]),
-                    "comprador": _clean(r["comprador"]),
-                    "numero_pedido": _clean(r["numero_pedido"]),
-                    "fornecedor": _clean(r["fornecedor"]),
-                    "item_locado": _clean(r["item_locado"]),
-                    "tipo": _clean(r["tipo"]),
-                    "pedido_compra_numero": _clean(r["pedido_compra_numero"]),
-                    "data_pedido": _clean(r["data_pedido"]),
-                    "periodo_dias": r["periodo_dias"],
-                    "data_vencimento": _clean(r["data_vencimento"]),
-                    "dias_a_vencer": _clean(r["dias_a_vencer"]),
-                    "situacao": _clean(r["situacao"]),
-                    "pedido_ok": _clean(r["pedido_ok"]),
-                })
+                atualizar_bd = []
+                for r in rows:
+                    base = {
+                        "id": r["id"],
+                        "obra": _clean(r["obra"]),
+                        "comprador": _clean(r["comprador"]),
+                        "numero_pedido": _clean(r["numero_pedido"]),
+                        "fornecedor": _clean(r["fornecedor"]),
+                        "item_locado": _clean(r["item_locado"]),
+                        "tipo": _clean(r["tipo"]),
+                        "pedido_compra_numero": _clean(r["pedido_compra_numero"]),
+                        "data_pedido": _clean(r["data_pedido"]),
+                        "periodo_dias": r["periodo_dias"],
+                        "data_vencimento": _clean(r["data_vencimento"]),
+                        "dias_a_vencer": _clean(r["dias_a_vencer"]),
+                        "situacao": _clean(r["situacao"]),
+                        "pedido_ok": _clean(r["pedido_ok"]),
+                    }
+                    venc, dias, sit = derivados_locacao_linha(base)
+                    if (
+                        venc != base["data_vencimento"]
+                        or dias != base["dias_a_vencer"]
+                        or sit != base["situacao"]
+                    ):
+                        atualizar_bd.append((venc, dias, sit, r["id"]))
+                    base["data_vencimento"] = venc
+                    base["dias_a_vencer"] = dias
+                    base["situacao"] = sit
+                    self._todos.append(base)
+                if atualizar_bd:
+                    for venc, dias, sit, oid in atualizar_bd:
+                        conn.execute(
+                            """
+                            UPDATE locacoes_registros SET
+                                data_vencimento=?, dias_a_vencer=?, situacao=?,
+                                atualizado_em=datetime('now')
+                            WHERE id=?
+                            """,
+                            (venc, dias, sit, oid),
+                        )
         except Exception as e:
             QMessageBox.critical(self, "Erro", f"Não foi possível carregar locações.\n\n{e}")
         # Ordena: primeiro vencidos, depois os mais próximos de vencer, por fim os demais.

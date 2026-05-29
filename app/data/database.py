@@ -529,6 +529,7 @@ def _init_db_schema_e_migracoes():
         _garantir_colunas_pagamento_etapas(conn)
         _garantir_coluna_material_entregue_obra(conn)
         _garantir_coluna_material_ok_na_obra(conn)
+        _garantir_coluna_material_solicitado_por(conn)
         migracao_uma_vez_zera_flags_ok_obra_sqlite(conn)
         migracao_uma_vez_ok_legado_todos_pedidos_sqlite(conn)
 
@@ -568,6 +569,15 @@ def _garantir_coluna_material_ok_na_obra(conn):
     O carimbo em material_entregue_em segue só como registro/data no PDF; o verde vem desta coluna.
     """
     migrar_coluna_material_ok_na_obra_sqlite(conn)
+
+
+def _garantir_coluna_material_solicitado_por(conn):
+    """Quem solicitou o material na obra (filtro em Pedidos gerados e auditoria)."""
+    existentes = {row["name"] for row in conn.execute("PRAGMA table_info(pedidos)").fetchall()}
+    if "material_solicitado_por" not in existentes:
+        conn.execute(
+            "ALTER TABLE pedidos ADD COLUMN material_solicitado_por TEXT DEFAULT ''"
+        )
 
 
 # ============================================================

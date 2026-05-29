@@ -110,19 +110,34 @@ def calcular_derivados_locacao(
     return v_out, dias_txt, sit
 
 
+def derivados_locacao_linha(row: dict) -> tuple[str, str, str]:
+    """Vencimento, dias_a_vencer e situação com base em hoje (não usa cache desatualizado do BD)."""
+    return calcular_derivados_locacao(
+        row.get("data_pedido") or "",
+        row.get("periodo_dias"),
+        row.get("data_vencimento") or "",
+        row.get("pedido_ok") or "",
+    )
+
+
 def destaque_visual_linha_locacao_db(row: dict) -> str | None:
     """
     Mesmo critério da tabela Locações (linha vermelha / faixa amarela «2 dias»).
     Retorna None, 'vencido' ou 'dois_dias'.
+    Sempre recalcula dias/situação a partir das datas (evita alerta zerado com BD antigo).
     """
     if clean_str(row.get("pedido_ok")).upper() == "OK":
         return None
-    sit = str(row.get("situacao") or "").strip().upper()
+    _venc, dias_txt, sit = derivados_locacao_linha(row)
+    sit = (sit or str(row.get("situacao") or "")).strip().upper()
     d = None
     try:
-        d = int(str(row.get("dias_a_vencer") or "").strip())
+        d = int(str(dias_txt or "").strip())
     except ValueError:
-        pass
+        try:
+            d = int(str(row.get("dias_a_vencer") or "").strip())
+        except ValueError:
+            pass
     if sit == "VENCIDO":
         return "vencido"
     if d is not None and d < 0:
@@ -237,7 +252,11 @@ def contar_locacoes_vencimento_e_alerta() -> tuple[int, int]:
     try:
         with get_locacoes_connection() as conn:
             rows = conn.execute(
-                "SELECT pedido_ok, situacao, dias_a_vencer FROM locacoes_registros"
+                """
+                SELECT pedido_ok, situacao, dias_a_vencer,
+                       data_pedido, periodo_dias, data_vencimento
+                FROM locacoes_registros
+                """
             ).fetchall()
     except Exception:
         return 0, 0

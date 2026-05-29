@@ -1167,6 +1167,20 @@ class PedidoWidget(QWidget):
             "Ex: DESCARREGAR MATERIAL NO PORTÃO ATRAS DA ESCOLA")
         self.e_obs.setStyleSheet(CSS_TEXTAREA)
         vl.addWidget(self.e_obs)
+
+        row_sol = QHBoxLayout()
+        row_sol.setSpacing(10)
+        lbl_sol = QLabel("Material solicitado por:")
+        lbl_sol.setStyleSheet(f"font-size:12px;font-weight:bold;color:{TXT};background:transparent;")
+        lbl_sol.setMinimumWidth(168)
+        self.e_material_solicitado = QLineEdit()
+        self.e_material_solicitado.setPlaceholderText("Ex.: André, engenheiro da obra…")
+        self.e_material_solicitado.setStyleSheet(CSS_INPUT)
+        self.e_material_solicitado.setMinimumHeight(34)
+        row_sol.addWidget(lbl_sol)
+        row_sol.addWidget(self.e_material_solicitado, 1)
+        vl.addLayout(row_sol)
+
         # lbl_obs_padrao existe como atributo mas NÃO aparece na tela.
         # O obs_padrao da empresa vai direto para o PDF — não na interface.
         self.lbl_obs_padrao = QLabel("")   # mantido para compatibilidade interna
@@ -1753,6 +1767,7 @@ class PedidoWidget(QWidget):
             "desconto_tipo": self._desconto_tipo,
             "desconto_valor": self.spin_desconto.value(),
             "observacao": self.e_obs.toPlainText(),
+            "material_solicitado_por": self.e_material_solicitado.text().strip(),
 
             "itens": itens,
         }
@@ -1930,6 +1945,7 @@ class PedidoWidget(QWidget):
             self.btn_val.setChecked(False)
 
         self.e_obs.setPlainText(str(dados.get("observacao", "")))
+        self.e_material_solicitado.setText(str(dados.get("material_solicitado_por", "")))
         self._recalc()
 
 
@@ -2034,6 +2050,9 @@ class PedidoWidget(QWidget):
             self._desconto_tipo = "%"
             self.spin_desconto.setValue(0.0)
             self._set_tipo_desconto("%")
+            self.e_material_solicitado.setText(
+                str(pedido.get("material_solicitado_por") or "")
+            )
 
             self._arquivo_pedido_atual = None
             self._recalc()
@@ -2178,6 +2197,7 @@ class PedidoWidget(QWidget):
             percentual_final=self.e_pg_saldo.value(),
             marco_percentual_final=self.e_pg_marco.currentText(),
             observacao_extra=self.e_obs.toPlainText().strip(),
+            material_solicitado_por=self.e_material_solicitado.text().strip(),
             desconto=desconto_reais,
             material_entregue_em=getattr(self, "_material_entregue_em_db", "") or "",
             material_ok_na_obra=int(getattr(self, "_material_ok_na_obra_db", 0) or 0),
@@ -2230,7 +2250,9 @@ class PedidoWidget(QWidget):
         self.spin_desconto.setValue(0.0)
         self._set_tipo_desconto("%")
 
-        self.e_obs.clear(); self.lbl_obs_padrao.setVisible(False)
+        self.e_obs.clear()
+        self.e_material_solicitado.clear()
+        self.lbl_obs_padrao.setVisible(False)
         self._pedido_editando_numero = None
         self._pedido_editando_id = None
         self._material_entregue_em_db = ""
