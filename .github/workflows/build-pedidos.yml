@@ -41,21 +41,27 @@ jobs:
         run: python -m PyInstaller SistemaPedidosV2.spec --clean --noconfirm
 
       - name: Empacotar artefato
+        shell: pwsh
         run: |
-          Compress-Archive -Path dist\SistemaPedidosV2\* -DestinationPath SistemaPedidosV2-build.zip -Force
+          $zip = "SistemaPedidosV2-build.zip"
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $zip = "SistemaPedidosV2-${{ github.ref_name }}.zip"
+          }
+          Compress-Archive -Path dist\SistemaPedidosV2\* -DestinationPath $zip -Force
+          "ZIP_NAME=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Upload artefato (30 dias)
         uses: actions/upload-artifact@v4
         with:
-          name: SistemaPedidosV2-${{ github.sha }}
-          path: SistemaPedidosV2-build.zip
+          name: SistemaPedidosV2-${{ github.ref_name }}
+          path: ${{ env.ZIP_NAME }}
           retention-days: 30
 
       - name: Release no GitHub (somente tags v*)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: SistemaPedidosV2-build.zip
+          files: ${{ env.ZIP_NAME }}
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

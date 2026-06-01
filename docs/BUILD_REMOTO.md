@@ -13,12 +13,23 @@ Assim você pode desenvolver e **compilar de casa**; só precisa de acesso à re
 
 ---
 
-## Opção A — Build na nuvem (GitHub Actions) — recomendado
+## Opção A — Tag de versão (recomendado para release oficial)
+
+Depois de **commit + push** em `main`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\tag_release.ps1 -Versao 2.1.1
+```
+
+Isso cria a tag `v2.1.1`, dispara o build no GitHub e publica em **Releases** com o zip anexado (nome `SistemaPedidosV2-v2.1.1.zip`). Checklist completo: `docs/CHECKLIST_BUILD_RELEASE.md`.
+
+---
+
+## Opção B — Build na nuvem sem tag (teste rápido)
 
 1. Faça **commit + push** do código para `main`.
-2. No GitHub: **Actions** → **Build Sistema Pedidos** → **Run workflow**  
-   Ou crie uma tag: `git tag v2.0.2 && git push origin v2.0.2` (gera Release com zip).
-3. Baixe o artefato **`SistemaPedidosV2-build.zip`**.
+2. No GitHub: **Actions** → **Build Sistema Pedidos** → **Run workflow**
+3. Baixe o artefato **`SistemaPedidosV2-build.zip`** (válido 30 dias).
 4. Extraia o zip (pasta com `SistemaPedidosV2.exe` e DLLs).
 5. De **qualquer PC** com `Z:` (VPN se estiver fora):
    ```powershell
@@ -30,7 +41,7 @@ A equipe reabre o atalho em `current\` e recebe a versão nova.
 
 ---
 
-## Opção B — Build local (qualquer máquina)
+## Opção C — Build local (qualquer máquina)
 
 Na pasta do projeto (clone do GitHub):
 
@@ -48,7 +59,7 @@ Não precisa ser o PC onde você desenvolve hoje.
 
 ---
 
-## Opção C — Publicação 100% automática na rede (avançado)
+## Opção D — Publicação 100% automática na rede (avançado)
 
 Instalar um **GitHub Actions self-hosted runner** em um PC/servidor **sempre ligado** na empresa, com `Z:` mapeado. O workflow pode buildar **e** rodar `publicar_build_na_rede.ps1` sozinho.
 
