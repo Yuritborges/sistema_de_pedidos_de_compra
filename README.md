@@ -6,10 +6,15 @@
   <img src="https://img.shields.io/badge/SQLite-Database-003B57?style=for-the-badge&logo=sqlite&logoColor=white"/>
   <img src="https://img.shields.io/badge/ReportLab-PDF%20Generator-CC0000?style=for-the-badge"/>
   <img src="https://img.shields.io/badge/PyInstaller-Executable-4B8BBE?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/GitHub%20Actions-CI-2088FF?style=for-the-badge&logo=githubactions&logoColor=white"/>
   <img src="https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white"/>
 </p>
 
 > Aplicação desktop para gestão de pedidos de compra em construção civil — substituindo planilhas e e-mails por um sistema único com PDF oficial, histórico em banco de dados, cotação comparativa entre fornecedores e operação em rede compartilhada.
+
+**Repositório:** [github.com/Yuritborges/sistema_de_pedidos_de_compra](https://github.com/Yuritborges/sistema_de_pedidos_de_compra)
+
+Complemento de gestão e auditoria: [Sistema de Auditoria Brasul](https://github.com/Yuritborges/sistema_auditoria_brasul) (lê o banco consolidado `cotacao_rede.db` gerado por este sistema).
 
 ---
 
@@ -24,8 +29,7 @@ A solução centraliza todo o ciclo em uma **única aplicação desktop** com:
 - **Cotação comparativa** lado a lado entre até 3 fornecedores
 - Banco de dados compartilhado em **rede interna** (múltiplos compradores)
 - Geração de **executável standalone** (sem necessidade de instalar Python nas máquinas)
-
-Complemento de gestão e auditoria: [Sistema de Auditoria Brasul](https://github.com/Yuritborges/sistema_auditoria_brasul) (lê o banco consolidado `cotacao_rede.db` gerado por este sistema).
+- **Build na nuvem** (GitHub Actions) e publicação na rede sem depender de um PC fixo de desenvolvimento
 
 ---
 
@@ -34,11 +38,18 @@ Complemento de gestão e auditoria: [Sistema de Auditoria Brasul](https://github
 | Módulo | Descrição |
 |---|---|
 | 📄 **Pedido de Compra** | Formulário validado → geração de PDF com layout por empresa faturadora |
-| 📦 **Pedidos Gerados** | Consulta, filtros por data, status "OK na Obra", reimpressão e exportação |
+| 📦 **Pedidos Gerados** | Consulta, filtros, status **OK na Obra** (atualização imediata na grade e no badge da sidebar), reimpressão |
 | 📊 **Cotação Comparativa** | Comparação de preços entre 3 fornecedores com destaque visual |
 | 🔧 **Ferramentas** | Utilitários auxiliares de importação e suporte operacional |
-| 🏗️ **Locações** | Controle de equipamentos locados com alertas de vencimento |
+| 🏗️ **Locações** | Controle de equipamentos locados; ordenação por proximidade do vencimento (vencido → alerta → demais) |
 | 👥 **Cadastros** | Fornecedores, obras e funcionários em JSON compartilhado |
+
+### Melhorias recentes (operacionais)
+
+- **PDF:** cabeçalho com logos alinhados; endereço de cobrança da Interiorana sem cortar cidade duplicada no fim do texto
+- **Pedidos Gerados:** marcar **OK NA OBRA** recarrega a lista na hora (badge lateral incluído)
+- **Locações:** lista ordenada por urgência de vencimento; alerta amarelo para itens a vencer em ≤ 7 dias
+- **Backup diário silencioso:** `tools/backup_diario.py --silencioso` + agendamento via `tools/agendar_backup_diario.ps1` (sem janela de CMD)
 
 ---
 
@@ -51,36 +62,38 @@ SQLite             → banco de dados local e consolidado em rede
 ReportLab          → geração de PDFs dos pedidos
 OpenPyXL / Pandas  → exportação e análise de dados
 PyInstaller        → build do executável .exe
-PowerShell         → scripts de release e deploy
+PowerShell         → scripts de release, deploy e backup
+GitHub Actions     → build Windows na nuvem (CI)
 ```
 
 ---
 
 ## 🗂️ Arquitetura do Projeto
 
-O projeto segue uma arquitetura em camadas dentro de `app/`:
-
 ```
 sistema_de_pedidos_de_compra/
+├── .github/workflows/
+│   └── build-pedidos.yml      # CI: PyInstaller + artefato + Release (tags v*)
 ├── app/
-│   ├── core/            # Regras de negócio, DTOs, serviços (PedidoService)
-│   ├── data/            # SQLite, migrações, sync com cotacao_rede.db
-│   ├── infrastructure/  # Geração de PDF, imagens, relatórios
-│   └── ui/              # MainWindow, widgets por módulo, estilos, diálogos
-├── assets/
-│   ├── logos/           # Logotipos por empresa faturadora para o PDF
-│   └── *.json           # Cadastros compartilhados (obras, fornecedores)
-├── tools/               # Scripts PowerShell e Python de build e release
-├── main.py              # Entrada principal (seleção de comprador, splash, init)
-├── main_patrao.py       # Variante com visão consolidada (perfil gestor)
-├── config_exemplo.py    # Template de configuração (copiar para config.py)
+│   ├── core/                  # Regras de negócio, DTOs, serviços
+│   ├── data/                  # SQLite, migrações, sync com cotacao_rede.db
+│   ├── infrastructure/        # PDF, imagens, relatórios
+│   └── ui/                    # MainWindow, widgets, estilos
+├── assets/                    # Logos, JSON de cadastros
+├── database/                  # Pasta versionada (.gitkeep); .db locais ignorados
+├── docs/
+│   ├── BUILD_REMOTO.md        # Build na nuvem + publicação na rede
+│   └── CHECKLIST_BUILD_RELEASE.md  # Checklist de 1 página
+├── tools/                     # Build, backup, consolidar rede, publicar
+├── main.py / main_patrao.py
+├── config_exemplo.py            # Template (copiar para config.py)
 ├── requirements.txt
-└── SistemaPedidosV2.spec  # Spec do PyInstaller
+└── SistemaPedidosV2.spec
 ```
 
 **Fluxo de um pedido:**
 ```
-Formulário → PedidoService (validação) → pdf_generator (ReportLab) → SQLite → Sync rede
+Formulário → PedidoService → pdf_generator (ReportLab) → SQLite → Sync rede
 ```
 
 ---
@@ -97,70 +110,96 @@ Copie `config_exemplo.py` para `config.py` e ajuste as variáveis:
 | `BASE_REDE_DIR` | Raiz da pasta de rede compartilhada |
 | `PEDIDOS_DIR` / `BACKUP_DIR` | Pastas de saída e backup |
 | `EMPRESAS_FATURADORAS` | Dados e logos de cada empresa para o PDF |
-| `REDE_SYNC_INTERVALO_SEGUNDOS` | Sincronização periódica (0 = desligado) |
 
-> ⚠️ `config.py` **não é versionado** (consta no `.gitignore`) — cada máquina mantém sua própria configuração.
+> ⚠️ `config.py` **não é versionado** — cada máquina mantém sua configuração na rede.  
+> ⚠️ **Não execute** `tools/prepare_config_ci.py` no PC de produção (só no GitHub Actions).
 
 ---
 
 ## 🖥️ Instalação e Execução (modo desenvolvimento)
 
-**Pré-requisitos:** Windows 10/11, Python 3.11+, acesso à pasta de rede.
+**Pré-requisitos:** Windows 10/11, Python 3.11+, acesso à pasta de rede (`Z:\`).
 
-```bash
-# 1. Clone o repositório
+```powershell
 git clone https://github.com/Yuritborges/sistema_de_pedidos_de_compra.git
 cd sistema_de_pedidos_de_compra
 
-# 2. Crie e ative o ambiente virtual
 python -m venv .venv
-.venv\Scripts\activate
-
-# 3. Instale as dependências
+.\.venv\Scripts\activate
 pip install -r requirements.txt
 
-# 4. Configure o sistema
 copy config_exemplo.py config.py
 # Edite config.py com os caminhos da sua máquina
 
-# 5. Execute
 python main.py
 ```
 
-Na primeira execução, selecione o usuário na caixa de diálogo (lista em `assets/usuarios.json`).
+Na primeira execução, selecione o usuário na caixa de diálogo (`assets/usuarios.json`).
 
 ---
 
-## 📦 Build do Executável
+## 📦 Build e release
 
-Para gerar o `.exe` com PyInstaller e distribuir para as máquinas da construtora:
+Há **três formas** de gerar e distribuir o `.exe`. A equipe usa o atalho em `current\SistemaPedidosV2.exe` na rede.
+
+### Opção 1 — Tag de versão (recomendado)
+
+Após `git commit` + `git push` em `main`:
 
 ```powershell
-# Build completo com backup pré-release
-powershell -ExecutionPolicy Bypass -File tools\release_full.ps1
-
-# Apenas build (sem atualizar current/)
-powershell -ExecutionPolicy Bypass -File tools\build_release.ps1 -SkipCurrent
+powershell -ExecutionPolicy Bypass -File tools\tag_release.ps1 -Versao 2.1.2
 ```
 
-O executável é gerado em `dist/` e copiado automaticamente para `releases/` e `current/`.
+- Dispara **GitHub Actions** automaticamente
+- Cria **Release** no GitHub com zip nomeado (ex.: `SistemaPedidosV2-v2.1.2.zip`)
+- Baixe em **Releases**, extraia em `C:\Temp`, teste o `.exe`
+- Publique na rede:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\publicar_build_na_rede.ps1 -Origem "C:\Temp\SistemaPedidosV2"
+```
+
+**Versões publicadas:** use `vMAJOR.MINOR.PATCH` (ex.: `v2.1.0`). Correção → +0.0.1; função nova → +0.1.0.
+
+### Opção 2 — Build na nuvem sem tag (teste)
+
+GitHub → **Actions** → **Build Sistema Pedidos** → **Run workflow** (branch `main`).  
+Baixe o artefato (válido 30 dias). Use **Run workflow**, não **Re-run** de execução antiga falha.
+
+### Opção 3 — Build local na rede
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\release_full.ps1
+```
 
 | Script | Descrição |
 |---|---|
-| `release_full.ps1` | Fecha app → backup → PyInstaller → copia para releases e current |
-| `build_release.ps1` | Gera dist/ e copia para releases/ |
-| `backup_pre_release.py` | Zip do código + cópia dos bancos SQLite |
-| `consolidar_rede.py` | Merge manual dos .db de todos os compradores no consolidado |
+| `tag_release.ps1` | Cria tag `vX.Y.Z` e dispara CI + Release |
+| `publicar_build_na_rede.ps1` | Copia build para `releases/` e `current/` |
+| `release_full.ps1` | Fecha app → backup → PyInstaller → `current/` |
+| `build_release.ps1` | Só build + cópia para `releases/` |
+| `backup_diario.py` | Backup silencioso (`--silencioso`) |
+| `consolidar_rede.py` | Merge dos `.db` dos compradores → `cotacao_rede.db` |
+
+📄 Detalhes: [`docs/BUILD_REMOTO.md`](docs/BUILD_REMOTO.md) · [`docs/CHECKLIST_BUILD_RELEASE.md`](docs/CHECKLIST_BUILD_RELEASE.md)
 
 ---
 
 ## 🗄️ Banco de Dados
 
-- **Banco local do comprador:** `cotacao_{comprador}.db` — pedidos e cotações do usuário logado
-- **Banco consolidado:** `cotacao_rede.db` — merge de todos os compradores, usado por relatórios
-- **Banco de locações:** `_shared/locacoes.db` — compartilhado entre todos os compradores em rede
+- **Banco local do comprador:** `cotacao_{comprador}.db`
+- **Banco consolidado:** `cotacao_rede.db` — usado pela auditoria e relatórios
+- **Locações:** `_shared/locacoes.db` — compartilhado em rede
+- **`material_ok_na_obra`:** flag de entrega na obra (migrações automáticas no `init_db()`)
 
-A flag **`material_ok_na_obra`** (0/1) controla o status de entrega na obra. Migrações são executadas automaticamente no `init_db()` na inicialização.
+Consolidar antes da auditoria:
+
+```powershell
+cd "Z:\0 OBRAS\sistema_de_pedidos_brasulv2"
+.\.venv\Scripts\python.exe tools\consolidar_rede.py
+```
+
+> Feche o sistema de pedidos nas máquinas antes de consolidar.
 
 ---
 
@@ -168,11 +207,20 @@ A flag **`material_ok_na_obra`** (0/1) controla o status de entrega na obra. Mig
 
 | Caminho | Versionar? |
 |---|---|
-| `app/`, `main.py`, `tools/*.py` | ✅ Sim |
-| `config.py` | ❌ Não (segredos e caminhos locais) |
+| `app/`, `main.py`, `tools/`, `.github/` | ✅ Sim |
+| `SistemaPedidosV2.spec`, `database/.gitkeep` | ✅ Sim |
+| `config.py`, `*.db`, `dist/`, `current/`, `releases/` | ❌ Não |
 | `assets/*.json`, `assets/logos/` | ✅ Sim |
-| `dist/`, `build/`, `releases/` | ❌ Não |
-| `backups/`, `*.db` | ❌ Não |
+
+---
+
+## 🔗 Trabalhar sem IDE / de casa
+
+| Você faz sozinho | Precisa de VPN / rede |
+|---|---|
+| Editar código, `git push` | Publicar em `current\` (`Z:`) |
+| Tag → build no GitHub | Fechar `.exe` nos PCs antes do robocopy |
+| Baixar zip em **Releases** | `publicar_build_na_rede.ps1` |
 
 ---
 
