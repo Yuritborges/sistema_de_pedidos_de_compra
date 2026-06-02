@@ -512,7 +512,9 @@ class LocacoesWidget(QWidget):
         self._filtrados = []
         self._filtro_preset = "todos"
         self._pending_sync_notice = None
+        self._ultima_data_recalculo = date.today()
         self._build()
+        self._start_auto_refresh_timer()
         self._pending_sync_notice = consume_last_sync_message()
         self._carregar()
 
@@ -735,6 +737,42 @@ class LocacoesWidget(QWidget):
         root.addWidget(rodape)
 
         self._set_preset("todos")
+
+    def _start_auto_refresh_timer(self):
+        """
+        Mantém «Dias» e «Situação» atualizados mesmo se o sistema ficar aberto
+        por longos períodos (virada de dia).
+        """
+        self._timer_auto_refresh = QTimer(self)
+        # 60s é leve para ~centenas de linhas e evita números "congelados".
+        self._timer_auto_refresh.setInterval(60 * 1000)
+        self._timer_auto_refresh.timeout.connect(self._refresh_derivados_se_necessario)
+        self._timer_auto_refresh.start()
+
+    def _refresh_derivados_se_necessario(self):
+        """
+        Recalcula em memória quando o dia muda, sem gravar no banco
+        (o banco já sincroniza em _carregar/_recalcular_tudo).
+        """
+        hoje = date.today()
+        if hoje == self._ultima_data_recalculo:
+            return
+        self._ultima_data_recalculo = hoje
+        alterou = False
+        for r in self._todos:
+            venc, dias, sit = derivados_locacao_linha(r)
+            if (
+                venc != str(r.get("data_vencimento", ""))
+                or str(dias) != str(r.get("dias_a_vencer", ""))
+                or sit != str(r.get("situacao", ""))
+            ):
+                r["data_vencimento"] = venc
+                r["dias_a_vencer"] = dias
+                r["situacao"] = sit
+                alterou = True
+        if alterou:
+            self._atualizar_kpis()
+            self._aplicar_filtro()
 
     def _atualizar_kpis(self):
         if not getattr(self, "_lv_kpi_total", None):

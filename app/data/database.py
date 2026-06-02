@@ -480,6 +480,18 @@ def _init_db_schema_e_migracoes():
                 atualizado_em         TEXT DEFAULT (datetime('now'))
             );
 
+            CREATE TABLE IF NOT EXISTS ferramentas_historico (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ferramenta_id INTEGER NOT NULL,
+                obra TEXT,
+                escola TEXT,
+                responsavel TEXT,
+                data_saida TEXT,
+                data_devolucao TEXT,
+                observacoes TEXT,
+                registrado_em TEXT DEFAULT (datetime('now'))
+            );
+
             CREATE TABLE IF NOT EXISTS locacoes_registros (
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
                 obra              TEXT,
@@ -507,6 +519,8 @@ def _init_db_schema_e_migracoes():
                 ON ferramentas_registros(obra);
             CREATE INDEX IF NOT EXISTS idx_ferramentas_responsavel
                 ON ferramentas_registros(responsavel);
+            CREATE INDEX IF NOT EXISTS idx_ferram_hist_ferramenta
+                ON ferramentas_historico(ferramenta_id);
             CREATE INDEX IF NOT EXISTS idx_locacoes_numero
                 ON locacoes_registros(numero_pedido);
             CREATE INDEX IF NOT EXISTS idx_locacoes_obra
@@ -530,6 +544,7 @@ def _init_db_schema_e_migracoes():
         _garantir_coluna_material_entregue_obra(conn)
         _garantir_coluna_material_ok_na_obra(conn)
         _garantir_coluna_material_solicitado_por(conn)
+        _garantir_ferramentas_escola_e_historico(conn)
         migracao_uma_vez_zera_flags_ok_obra_sqlite(conn)
         migracao_uma_vez_ok_legado_todos_pedidos_sqlite(conn)
 
@@ -578,6 +593,39 @@ def _garantir_coluna_material_solicitado_por(conn):
         conn.execute(
             "ALTER TABLE pedidos ADD COLUMN material_solicitado_por TEXT DEFAULT ''"
         )
+
+
+def _garantir_ferramentas_escola_e_historico(conn):
+    """Ferramentas: nome completo da escola + histórico de saídas/devoluções."""
+    existentes = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(ferramentas_registros)").fetchall()
+    }
+    if "escola" not in existentes:
+        conn.execute(
+            "ALTER TABLE ferramentas_registros ADD COLUMN escola TEXT DEFAULT ''"
+        )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ferramentas_historico (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ferramenta_id INTEGER NOT NULL,
+            obra TEXT,
+            escola TEXT,
+            responsavel TEXT,
+            data_saida TEXT,
+            data_devolucao TEXT,
+            observacoes TEXT,
+            registrado_em TEXT DEFAULT (datetime('now'))
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_ferram_hist_ferramenta
+            ON ferramentas_historico(ferramenta_id)
+        """
+    )
 
 
 # ============================================================

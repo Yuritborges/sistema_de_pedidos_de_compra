@@ -81,14 +81,56 @@ def _txt_limpo(valor) -> str:
     return txt
 
 
+def _carregar_obras_dict() -> dict:
+    try:
+        if os.path.exists(OBRAS_JSON):
+            with open(OBRAS_JSON, "r", encoding="utf-8") as f:
+                dados = json.load(f)
+            if isinstance(dados, dict):
+                return dados
+    except Exception:
+        pass
+    return {}
+
+
+def _label_obra_combo(nome: str, obras_dict: dict) -> str:
+    nome = str(nome or "").strip()
+    if not nome:
+        return ""
+    info = obras_dict.get(nome, {})
+    escola = ""
+    if isinstance(info, dict):
+        escola = str(info.get("escola") or "").strip()
+    if escola:
+        return f"{nome} — {escola}"
+    return nome
+
+
+def _resolver_obra_do_texto(txt: str, obras_dict: dict) -> tuple[str, str]:
+    """Retorna (nome_obra, escola) a partir do texto do combo ou digitação."""
+    txt = str(txt or "").strip()
+    if not txt:
+        return "", ""
+    if txt in obras_dict:
+        info = obras_dict[txt]
+        escola = str(info.get("escola") or "").strip() if isinstance(info, dict) else ""
+        return txt, escola
+    for nome in obras_dict:
+        if txt == nome or txt.startswith(f"{nome} —"):
+            info = obras_dict[nome]
+            escola = str(info.get("escola") or "").strip() if isinstance(info, dict) else ""
+            return nome, escola
+    return txt, ""
+
+
 class RegistroFerramentaDialog(QDialog):
-    def __init__(self, dados=None, parent=None, categorias=None, obras=None):
+    def __init__(self, dados=None, parent=None, categorias=None, obras_dict=None):
         super().__init__(parent)
         self.setWindowTitle("Registro de Ferramenta")
         self.setMinimumWidth(520)
         dados = dados or {}
         categorias = categorias or []
-        obras = obras or []
+        self._obras_dict = obras_dict if obras_dict is not None else _carregar_obras_dict()
 
         self.setStyleSheet("""
             QCalendarWidget QWidget { alternate-background-color: #FFFFFF; }
@@ -137,10 +179,23 @@ class RegistroFerramentaDialog(QDialog):
         self.e_responsavel = QLineEdit(str(dados.get("responsavel", "") or ""))
         self.e_obra = QComboBox()
         self.e_obra.setEditable(True)
-        self.e_obra.addItem("")
-        for obra in obras:
-            self.e_obra.addItem(obra)
-        self.e_obra.setCurrentText(str(dados.get("obra", "") or ""))
+        self.e_obra.addItem("", "")
+        for nome in sorted(self._obras_dict.keys(), key=lambda x: str(x).upper()):
+            self.e_obra.addItem(_label_obra_combo(nome, self._obras_dict), nome)
+        obra_atual = str(dados.get("obra", "") or "").strip()
+        if obra_atual:
+            idx = -1
+            for i in range(self.e_obra.count()):
+                if str(self.e_obra.itemData(i) or "") == obra_atual:
+                    idx = i
+                    break
+            if idx >= 0:
+                self.e_obra.setCurrentIndex(idx)
+            else:
+                escola = str(dados.get("escola", "") or "").strip()
+                self.e_obra.setCurrentText(
+                    f"{obra_atual} — {escola}" if escola else obra_atual
+                )
         self.e_obs = QLineEdit(str(dados.get("observacoes", "") or ""))
         self.e_serie_escritorio = QLineEdit(str(dados.get("numero_serie_escritorio", "") or ""))
         self.e_foto_ref = QLineEdit(str(dados.get("foto_ref", "") or ""))
@@ -215,6 +270,7 @@ class RegistroFerramentaDialog(QDialog):
         data_devolucao = "" if sem_devolucao else dev.strftime("%Y-%m-%d")
         data_saida = saida.strftime("%Y-%m-%d") if self.e_saida.date().isValid() else ""
         status = "DEVOLVIDO" if data_devolucao else "EM USO"
+        obra_nome, escola = self._obra_selecionada()
         return {
             "categoria": self.e_categoria.currentText().strip(),
             "numero_serie": self.e_serie.text().strip(),
@@ -222,12 +278,22 @@ class RegistroFerramentaDialog(QDialog):
             "responsavel": self.e_responsavel.text().strip(),
             "data_saida": data_saida,
             "data_devolucao": data_devolucao,
-            "obra": self.e_obra.currentText().strip(),
+            "obra": obra_nome,
+            "escola": escola,
             "numero_serie_escritorio": self.e_serie_escritorio.text().strip(),
             "foto_ref": self.e_foto_ref.text().strip(),
             "observacoes": self.e_obs.text().strip(),
             "status": status,
         }
+
+    def _obra_selecionada(self) -> tuple[str, str]:
+        idx = self.e_obra.currentIndex()
+        nome = self.e_obra.itemData(idx)
+        if nome:
+            info = self._obras_dict.get(nome, {})
+            escola = str(info.get("escola") or "").strip() if isinstance(info, dict) else ""
+            return str(nome).strip(), escola
+        return _resolver_obra_do_texto(self.e_obra.currentText(), self._obras_dict)
 
     def _selecionar_foto(self):
         caminho, _ = QFileDialog.getOpenFileName(
@@ -240,25 +306,166 @@ class RegistroFerramentaDialog(QDialog):
             self.e_foto_ref.setText(caminho)
 
 
+class NovaSaidaFerramentaDialog(QDialog):
+    """Nova saída para obra em equipamento já devolvido (sem recadastrar)."""
+
+    def __init__(self, registro: dict, obras_dict=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Nova saída para obra")
+        self.setMinimumWidth(480)
+        registro = registro or {}
+        self._obras_dict = obras_dict if obras_dict is not None else _carregar_obras_dict()
+
+        form = QFormLayout(self)
+        form.setSpacing(10)
+
+        nome_ferramenta = _txt_limpo(registro.get("ferramenta")) or "Ferramenta"
+        lbl = QLabel(f"<b>{nome_ferramenta}</b><br><span style='color:#6B7280;'>"
+                     f"Série escritório: {_txt_limpo(registro.get('numero_serie_escritorio')) or '—'}</span>")
+        lbl.setWordWrap(True)
+        form.addRow(lbl)
+
+        self.e_responsavel = QLineEdit()
+        self.e_obra = QComboBox()
+        self.e_obra.setEditable(True)
+        self.e_obra.addItem("", "")
+        for nome in sorted(self._obras_dict.keys(), key=lambda x: str(x).upper()):
+            self.e_obra.addItem(_label_obra_combo(nome, self._obras_dict), nome)
+        self.e_saida = QDateEdit()
+        self.e_saida.setCalendarPopup(True)
+        self.e_saida.setDisplayFormat("dd/MM/yyyy")
+        self.e_saida.setDate(QDate.currentDate())
+        self.e_obs = QLineEdit(str(registro.get("observacoes") or ""))
+
+        for campo in (self.e_responsavel, self.e_obs):
+            campo.setStyleSheet(CSS_INPUT)
+        self.e_obra.setStyleSheet(CSS_COMBO)
+
+        form.addRow("Responsável *", self.e_responsavel)
+        form.addRow("Obra *", self.e_obra)
+        form.addRow("Data de saída", self.e_saida)
+        form.addRow("Observações", self.e_obs)
+
+        hl = QHBoxLayout()
+        hl.addStretch()
+        btn_cancelar = btn_outline("Cancelar")
+        btn_ok = btn_solid("Confirmar saída", RED)
+        btn_cancelar.clicked.connect(self.reject)
+        btn_ok.clicked.connect(self.accept)
+        hl.addWidget(btn_cancelar)
+        hl.addWidget(btn_ok)
+        form.addRow(hl)
+
+    def dados(self):
+        idx = self.e_obra.currentIndex()
+        nome = self.e_obra.itemData(idx)
+        if nome:
+            info = self._obras_dict.get(nome, {})
+            escola = str(info.get("escola") or "").strip() if isinstance(info, dict) else ""
+            obra_nome = str(nome).strip()
+        else:
+            obra_nome, escola = _resolver_obra_do_texto(
+                self.e_obra.currentText(), self._obras_dict
+            )
+        saida = self.e_saida.date().toPython().strftime("%Y-%m-%d")
+        return {
+            "obra": obra_nome,
+            "escola": escola,
+            "responsavel": self.e_responsavel.text().strip(),
+            "data_saida": saida,
+            "observacoes": self.e_obs.text().strip(),
+        }
+
+
 class FerramentasWidget(QWidget):
     def __init__(self):
         super().__init__()
         self._todos = []
         self._dados_visiveis = []
+        self._obras_dict = _carregar_obras_dict()
         self._build()
         self._carregar()
 
-    def _obras_disponiveis(self):
-        try:
-            if not os.path.exists(OBRAS_JSON):
-                return []
-            with open(OBRAS_JSON, "r", encoding="utf-8") as f:
-                dados = json.load(f)
-            if isinstance(dados, dict):
-                return sorted([str(k).strip() for k in dados.keys() if str(k).strip()])
-        except Exception:
-            pass
-        return []
+    def _recarregar_obras(self):
+        self._obras_dict = _carregar_obras_dict()
+
+    def _texto_obra(self, item: dict) -> str:
+        obra = _txt_limpo(item.get("obra"))
+        escola = _txt_limpo(item.get("escola"))
+        if not escola and obra:
+            info = self._obras_dict.get(obra, {})
+            if isinstance(info, dict):
+                escola = str(info.get("escola") or "").strip()
+        if obra and escola:
+            return f"{obra} — {escola}"
+        return obra or escola or "—"
+
+    def _salvar_historico_movimento(self, conn, row: dict, data_devolucao: str):
+        """Grava no histórico a movimentação que está sendo encerrada."""
+        if not row:
+            return
+        saida = str(row.get("data_saida") or "").strip()
+        obra = str(row.get("obra") or "").strip()
+        if not saida and not obra:
+            return
+        dev = str(data_devolucao or row.get("data_devolucao") or "").strip()
+        if not dev:
+            dev = datetime.now().strftime("%Y-%m-%d")
+        escola = str(row.get("escola") or "").strip()
+        if not escola and obra:
+            info = self._obras_dict.get(obra, {})
+            if isinstance(info, dict):
+                escola = str(info.get("escola") or "").strip()
+        conn.execute(
+            """
+            INSERT INTO ferramentas_historico (
+                ferramenta_id, obra, escola, responsavel,
+                data_saida, data_devolucao, observacoes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                int(row.get("id") or 0),
+                obra,
+                escola,
+                str(row.get("responsavel") or "").strip(),
+                saida,
+                dev,
+                str(row.get("observacoes") or "").strip(),
+            ),
+        )
+
+    def _html_historico(self, ferramenta_id: int) -> str:
+        if not ferramenta_id:
+            return "<span style='color:#9CA3AF;'>Sem histórico anterior.</span>"
+        with get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT obra, escola, responsavel, data_saida, data_devolucao
+                  FROM ferramentas_historico
+                 WHERE ferramenta_id = ?
+                 ORDER BY id DESC
+                 LIMIT 15
+                """,
+                (ferramenta_id,),
+            ).fetchall()
+        if not rows:
+            return "<span style='color:#9CA3AF;'>Sem histórico anterior.</span>"
+        linhas = []
+        for h in rows:
+            h = dict(h)
+            obra_txt = _txt_limpo(h.get("obra"))
+            escola = _txt_limpo(h.get("escola"))
+            if escola and obra_txt:
+                obra_txt = f"{obra_txt} — {escola}"
+            elif escola:
+                obra_txt = escola
+            saida = _iso_to_br(h.get("data_saida")) or "—"
+            dev = _iso_to_br(h.get("data_devolucao")) or "—"
+            resp = _txt_limpo(h.get("responsavel")) or "—"
+            linhas.append(
+                f"• {saida} → {dev} | {obra_txt or '—'} | {resp}"
+            )
+        return "<br>".join(linhas)
 
     def _categorias_disponiveis(self):
         cats = {str(i.get("categoria") or "").strip() for i in self._todos}
@@ -286,6 +493,8 @@ class FerramentasWidget(QWidget):
         btn_novo.clicked.connect(self._novo_registro)
         btn_editar = btn_outline("Editar selecionado")
         btn_editar.clicked.connect(self._editar_selecionado)
+        btn_nova_saida = btn_solid("Nova saída para obra", BLUE)
+        btn_nova_saida.clicked.connect(self._nova_saida_selecionado)
         btn_excluir = btn_outline("Excluir selecionado")
         btn_excluir.clicked.connect(self._excluir_selecionado)
         btn_atualizar = btn_solid("Atualizar", "#95A5A6")
@@ -293,6 +502,7 @@ class FerramentasWidget(QWidget):
         top.addWidget(self.btn_importar)
         top.addWidget(btn_novo)
         top.addWidget(btn_editar)
+        top.addWidget(btn_nova_saida)
         top.addWidget(btn_excluir)
         top.addWidget(btn_atualizar)
         root.addLayout(top)
@@ -523,11 +733,12 @@ class FerramentasWidget(QWidget):
             f"<b>Série:</b> {item.get('numero_serie','—')}<br>"
             f"<b>Série Escritório:</b> {item.get('numero_serie_escritorio','—')}<br>"
             f"<b>Responsável:</b> {item.get('responsavel','—')}<br>"
-            f"<b>Obra/Local:</b> {item.get('obra','—')}<br>"
+            f"<b>Obra/Local:</b> {self._texto_obra(item)}<br>"
             f"<b>Data de saída:</b> {_iso_to_br(item.get('data_saida','')) or '—'}<br>"
             f"<b>Data de devolução:</b> {_iso_to_br(item.get('data_devolucao','')) or '—'}<br>"
             f"<b>Dias em uso:</b> {self._dias_em_uso(item)}<br>"
-            f"<b>Observações:</b> {item.get('observacoes','—') or '—'}"
+            f"<b>Observações:</b> {item.get('observacoes','—') or '—'}<br><br>"
+            f"<b>Histórico de movimentações:</b><br>{self._html_historico(int(item.get('id') or 0))}"
         )
         self.lbl_detalhes.setText(texto)
 
@@ -545,6 +756,8 @@ class FerramentasWidget(QWidget):
                 str(item.get("ferramenta") or ""),
                 str(item.get("numero_serie") or ""),
                 str(item.get("obra") or ""),
+                str(item.get("escola") or ""),
+                self._texto_obra(item),
                 str(item.get("responsavel") or ""),
             ]).upper()
             if termo and termo not in blob:
@@ -573,7 +786,7 @@ class FerramentasWidget(QWidget):
                 _iso_to_br(item.get("data_saida", "")),
                 _iso_to_br(item.get("data_devolucao", "")),
                 self._dias_em_uso(item),
-                _txt_limpo(item.get("obra", "")),
+                self._texto_obra(item),
                 _txt_limpo(item.get("numero_serie_escritorio", "")),
                 _txt_limpo(item.get("foto_ref", "")),
                 _txt_limpo(item.get("status", "")),
@@ -599,10 +812,11 @@ class FerramentasWidget(QWidget):
         return next((d for d in self._dados_visiveis if int(d.get("id") or 0) == int(reg_id)), None)
 
     def _novo_registro(self):
+        self._recarregar_obras()
         dlg = RegistroFerramentaDialog(
             parent=self,
             categorias=self._categorias_disponiveis(),
-            obras=self._obras_disponiveis(),
+            obras_dict=self._obras_dict,
         )
         if dlg.exec() != QDialog.Accepted:
             return
@@ -615,15 +829,15 @@ class FerramentasWidget(QWidget):
                 """
                 INSERT INTO ferramentas_registros (
                     categoria, numero_serie, ferramenta, responsavel,
-                    data_saida, data_devolucao, obra, observacoes, numero_serie_escritorio,
-                    foto_ref, status, atualizado_em
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    data_saida, data_devolucao, obra, escola, observacoes,
+                    numero_serie_escritorio, foto_ref, status, atualizado_em
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                 """,
                 (
                     dados["categoria"], dados["numero_serie"], dados["ferramenta"],
                     dados["responsavel"], dados["data_saida"], dados["data_devolucao"],
-                    dados["obra"], dados["observacoes"], dados["numero_serie_escritorio"],
-                    dados["foto_ref"], dados["status"],
+                    dados["obra"], dados.get("escola", ""), dados["observacoes"],
+                    dados["numero_serie_escritorio"], dados["foto_ref"], dados["status"],
                 ),
             )
         sincronizar_com_rede(silencioso=True)
@@ -637,33 +851,44 @@ class FerramentasWidget(QWidget):
         self._editar_registro(reg_id)
 
     def _editar_registro(self, reg_id: int):
+        self._recarregar_obras()
         with get_connection() as conn:
             row = conn.execute("SELECT * FROM ferramentas_registros WHERE id = ?", (reg_id,)).fetchone()
         if not row:
             return
+        row_antes = dict(row)
         dlg = RegistroFerramentaDialog(
-            dict(row),
+            row_antes,
             self,
             categorias=self._categorias_disponiveis(),
-            obras=self._obras_disponiveis(),
+            obras_dict=self._obras_dict,
         )
         if dlg.exec() != QDialog.Accepted:
             return
         dados = dlg.dados()
         with get_connection() as conn:
+            if (
+                (row_antes.get("status") or "") != "DEVOLVIDO"
+                and dados["status"] == "DEVOLVIDO"
+            ):
+                self._salvar_historico_movimento(
+                    conn, row_antes, dados["data_devolucao"]
+                )
             conn.execute(
                 """
                 UPDATE ferramentas_registros
                    SET categoria = ?, numero_serie = ?, ferramenta = ?, responsavel = ?,
-                       data_saida = ?, data_devolucao = ?, obra = ?, observacoes = ?,
-                       numero_serie_escritorio = ?, foto_ref = ?, status = ?, atualizado_em = datetime('now')
+                       data_saida = ?, data_devolucao = ?, obra = ?, escola = ?,
+                       observacoes = ?, numero_serie_escritorio = ?, foto_ref = ?,
+                       status = ?, atualizado_em = datetime('now')
                  WHERE id = ?
                 """,
                 (
                     dados["categoria"], dados["numero_serie"], dados["ferramenta"],
                     dados["responsavel"], dados["data_saida"], dados["data_devolucao"],
-                    dados["obra"], dados["observacoes"], dados["numero_serie_escritorio"],
-                    dados["foto_ref"], dados["status"], reg_id,
+                    dados["obra"], dados.get("escola", ""), dados["observacoes"],
+                    dados["numero_serie_escritorio"], dados["foto_ref"],
+                    dados["status"], reg_id,
                 ),
             )
         sincronizar_com_rede(silencioso=True)
@@ -690,6 +915,7 @@ class FerramentasWidget(QWidget):
         if resp != QMessageBox.Yes:
             return
         with get_connection() as conn:
+            conn.execute("DELETE FROM ferramentas_historico WHERE ferramenta_id = ?", (reg_id,))
             conn.execute("DELETE FROM ferramentas_registros WHERE id = ?", (reg_id,))
         sincronizar_com_rede(silencioso=True)
         self._carregar()
@@ -697,6 +923,15 @@ class FerramentasWidget(QWidget):
     def _devolver_registro_hoje(self, reg_id: int):
         data_hoje = datetime.now().strftime("%Y-%m-%d")
         with get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM ferramentas_registros WHERE id = ?", (reg_id,)
+            ).fetchone()
+            if not row:
+                return
+            row = dict(row)
+            if (row.get("status") or "") == "DEVOLVIDO":
+                return
+            self._salvar_historico_movimento(conn, row, data_hoje)
             conn.execute(
                 """
                 UPDATE ferramentas_registros
@@ -707,6 +942,70 @@ class FerramentasWidget(QWidget):
             )
         sincronizar_com_rede(silencioso=True)
         self._carregar()
+
+    def _nova_saida_selecionado(self):
+        reg_id = self._registro_selecionado_id()
+        if not reg_id:
+            QMessageBox.information(
+                self, "Ferramentas", "Selecione um equipamento devolvido."
+            )
+            return
+        self._enviar_para_obra(reg_id)
+
+    def _enviar_para_obra(self, reg_id: int):
+        reg = self._registro_por_id(reg_id)
+        if not reg:
+            with get_connection() as conn:
+                row = conn.execute(
+                    "SELECT * FROM ferramentas_registros WHERE id = ?", (reg_id,)
+                ).fetchone()
+            reg = dict(row) if row else None
+        if not reg:
+            return
+        if (reg.get("status") or "") != "DEVOLVIDO":
+            QMessageBox.information(
+                self,
+                "Nova saída",
+                "Só é possível enviar novamente para a obra equipamentos com status DEVOLVIDO.\n"
+                "Para trocar obra de um item em uso, use Editar.",
+            )
+            return
+        self._recarregar_obras()
+        dlg = NovaSaidaFerramentaDialog(reg, self._obras_dict, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        dados = dlg.dados()
+        if not dados["obra"]:
+            QMessageBox.warning(self, "Atenção", "Selecione a obra.")
+            return
+        if not dados["responsavel"]:
+            QMessageBox.warning(self, "Atenção", "Informe o responsável.")
+            return
+        with get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE ferramentas_registros
+                   SET obra = ?, escola = ?, responsavel = ?, data_saida = ?,
+                       data_devolucao = '', observacoes = ?, status = 'EM USO',
+                       atualizado_em = datetime('now')
+                 WHERE id = ?
+                """,
+                (
+                    dados["obra"],
+                    dados.get("escola", ""),
+                    dados["responsavel"],
+                    dados["data_saida"],
+                    dados["observacoes"],
+                    reg_id,
+                ),
+            )
+        sincronizar_com_rede(silencioso=True)
+        self._carregar()
+        QMessageBox.information(
+            self,
+            "Nova saída",
+            "Equipamento registrado como EM USO na obra selecionada.",
+        )
 
     def _abrir_acoes_linha(self, _item):
         reg_id = self._registro_selecionado_id()
@@ -807,12 +1106,13 @@ class FerramentasWidget(QWidget):
 
         info = QLabel(
             f"👤 <b>Responsável:</b> {_txt_limpo(reg.get('responsavel','')) or '—'}<br>"
-            f"📍 <b>Obra/Local:</b> {_txt_limpo(reg.get('obra','')) or '—'}<br>"
+            f"📍 <b>Obra/Local:</b> {self._texto_obra(reg)}<br>"
             f"📅 <b>Saída:</b> {_iso_to_br(reg.get('data_saida','')) or '—'}<br>"
             f"✅ <b>Devolução:</b> {_iso_to_br(reg.get('data_devolucao','')) or '—'}<br>"
             f"⏱ <b>Dias em uso:</b> {self._dias_em_uso(reg)}<br>"
             f"🏷 <b>Série Escritório:</b> {_txt_limpo(reg.get('numero_serie_escritorio','')) or '—'}<br>"
-            f"📝 <b>Observações:</b> {_txt_limpo(reg.get('observacoes','')) or '—'}"
+            f"📝 <b>Observações:</b> {_txt_limpo(reg.get('observacoes','')) or '—'}<br><br>"
+            f"📋 <b>Histórico:</b><br>{self._html_historico(int(reg.get('id') or 0))}"
         )
         info.setWordWrap(True)
         info.setStyleSheet("font-size:12px; color:#374151; line-height:1.7;")
@@ -826,12 +1126,17 @@ class FerramentasWidget(QWidget):
         btn_editar = btn_outline("✏ Editar completo")
         btn_excluir = btn_outline("🗑 Excluir item")
         btn_devolver = btn_solid("✅ Devolver agora", RED)
+        btn_nova_saida = btn_solid("🚚 Nova saída para obra", BLUE)
         if status == "DEVOLVIDO":
             btn_devolver.setEnabled(False)
             btn_devolver.setToolTip("Este item já está devolvido.")
+        else:
+            btn_nova_saida.setEnabled(False)
+            btn_nova_saida.setToolTip("Disponível apenas para itens devolvidos.")
         hl.addWidget(btn_cancelar)
         hl.addWidget(btn_editar)
         hl.addWidget(btn_excluir)
+        hl.addWidget(btn_nova_saida)
         hl.addWidget(btn_devolver)
         vl.addLayout(hl)
 
@@ -849,6 +1154,12 @@ class FerramentasWidget(QWidget):
             )
 
         btn_devolver.clicked.connect(devolver)
+
+        def nova_saida():
+            dlg.accept()
+            self._enviar_para_obra(reg_id)
+
+        btn_nova_saida.clicked.connect(nova_saida)
         dlg.exec()
 
     def _importar_planilha_padrao(self):
