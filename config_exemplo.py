@@ -1,132 +1,77 @@
 # config_exemplo.py — modelo para gerar config.py (não use este nome em produção).
-# Copie para config.py, edite COMPRADOR_PADRAO / PASTA_COMPRADOR e caminhos; o guard no final só roda neste arquivo modelo.
+# Copie para config.py e ajuste COMPRADOR_PADRAO / BASE_REDE_DIR se necessário.
+# Constantes compartilhadas (empresas, categorias, unidades) vêm de app.config.settings.
 
 import os
 
-COMPRADOR_PADRAO = "SEU_NOME"
-PASTA_COMPRADOR = "SuaPasta"
+from app.config.settings import (
+    CATEGORIAS_ITEM,
+    CONDICOES_PAGAMENTO,
+    DEFAULT_BACKUP_REDE_INTERVALO_SEGUNDOS,
+    DEFAULT_BASE_REDE_DIR,
+    DEFAULT_REDE_SYNC_CONSOLIDAR_COMPLETO,
+    DEFAULT_REDE_SYNC_INTERVALO_SEGUNDOS,
+    DEFAULT_REDE_SYNC_MESCLAR_CONSOLIDADO,
+    EMPRESAS_FATURADORAS,
+    FORMAS_PAGAMENTO,
+    UNIDADES,
+    caminhos_comprador,
+    configurar_locacoes,
+    env_bool,
+    normalizar_usuario,
+)
 
-COMPRADOR_PADRAO = COMPRADOR_PADRAO.strip().upper()
-PASTA_COMPRADOR = PASTA_COMPRADOR.strip()
+# ---------------------------------------------------------------------------
+# Ajuste por máquina / comprador (edite ao copiar para config.py)
+# ---------------------------------------------------------------------------
+COMPRADOR_PADRAO = "SEU_NOME"
+BASE_REDE_DIR = DEFAULT_BASE_REDE_DIR
+
+COMPRADOR_PADRAO = normalizar_usuario(COMPRADOR_PADRAO)
 
 if not COMPRADOR_PADRAO or COMPRADOR_PADRAO == "SEU_NOME":
-    raise ValueError("Defina COMPRADOR_PADRAO com seu nome (ex: IURY, THAMYRES, JOAO)")
+    raise ValueError(
+        "Defina COMPRADOR_PADRAO com seu nome (ex: IURY, THAMYRES, JOAO)"
+    )
 
-if not PASTA_COMPRADOR or PASTA_COMPRADOR == "SuaPasta":
-    raise ValueError("Defina PASTA_COMPRADOR com o nome da pasta (ex: Iury, Thamyres, Joao)")
+# Caminhos do comprador na rede
+_caminhos = caminhos_comprador(BASE_REDE_DIR, COMPRADOR_PADRAO)
+DATABASE_PATH = _caminhos["DATABASE_PATH"]
+PEDIDOS_DIR = _caminhos["PEDIDOS_DIR"]
+COTACOES_DIR = _caminhos["COTACOES_DIR"]
+BACKUP_DIR = _caminhos["BACKUP_DIR"]
+RELACOES_DIR = _caminhos["RELACOES_DIR"]
 
-# Banco de trabalho do comprador (não use cotacao_rede.db aqui; esse arquivo é o consolidado na rede).
-DATABASE_PATH = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\cotacao_{''.join(ch.lower() for ch in COMPRADOR_PADRAO if ch.isalnum())}.db"
-# Pasta raiz da rede (Iury/Thamyres/cotacao_rede.db, cadastros compartilhados, etc.).
-BASE_REDE_DIR = r"Z:\0 OBRAS\brasul_pedidos"
-PEDIDOS_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\pdfs de pedidos"
-COTACOES_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\cotações_salvas"
-BACKUP_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\backup"
-RELACOES_DIR = fr"Z:\0 OBRAS\brasul_pedidos\{PASTA_COMPRADOR}\relações"
+# Timer com o app aberto (0 = desligado)
+REDE_SYNC_INTERVALO_SEGUNDOS = int(
+    os.environ.get("BRASUL_REDE_SYNC_SEG", str(DEFAULT_REDE_SYNC_INTERVALO_SEGUNDOS))
+    or str(DEFAULT_REDE_SYNC_INTERVALO_SEGUNDOS)
+)
+BACKUP_REDE_INTERVALO_SEGUNDOS = int(
+    os.environ.get("BRASUL_BACKUP_REDE_SEG", str(DEFAULT_BACKUP_REDE_INTERVALO_SEGUNDOS))
+    or str(DEFAULT_BACKUP_REDE_INTERVALO_SEGUNDOS)
+)
+REDE_SYNC_CONSOLIDAR_COMPLETO = env_bool(
+    "BRASUL_REDE_CONSOLIDAR",
+    DEFAULT_REDE_SYNC_CONSOLIDAR_COMPLETO,
+)
+REDE_SYNC_MESCLAR_CONSOLIDADO = DEFAULT_REDE_SYNC_MESCLAR_CONSOLIDADO
 
-# Timer com o app aberto (0 = desligado). 60 = backup + consolidado quase em tempo real.
-REDE_SYNC_INTERVALO_SEGUNDOS = 300
-BACKUP_REDE_INTERVALO_SEGUNDOS = 900
-# Iury + Thamyres → cotacao_rede.db (auditoria lê este arquivo).
-REDE_SYNC_CONSOLIDAR_COMPLETO = True
-# Legado: só o comprador logado no consolidado (use CONSOLIDAR_COMPLETO em vez disto).
-REDE_SYNC_MESCLAR_CONSOLIDADO = False
-
+_PKG_ROOT = os.path.dirname(os.path.abspath(__file__))
+_loc = configurar_locacoes(_PKG_ROOT)
+LOCACOES_PLANILHA_ENV = _loc["LOCACOES_PLANILHA_ENV"]
+LOCACOES_PLANILHA_MANUAL = _loc["LOCACOES_PLANILHA_MANUAL"]
+LOCACOES_PLANILHA_CANDIDATES = _loc["LOCACOES_PLANILHA_CANDIDATES"]
+LOCACOES_AUTO_IMPORT_SE_VAZIO = _loc["LOCACOES_AUTO_IMPORT_SE_VAZIO"]
+LOCACOES_AUTO_SYNC_PLANILHA_NOVA = _loc["LOCACOES_AUTO_SYNC_PLANILHA_NOVA"]
 
 # Cria as pastas necessárias automaticamente
-for _pasta in [PEDIDOS_DIR, COTACOES_DIR, RELACOES_DIR, BACKUP_DIR]:
+for _pasta in (PEDIDOS_DIR, COTACOES_DIR, RELACOES_DIR, BACKUP_DIR):
     os.makedirs(_pasta, exist_ok=True)
 
-# Dados de cada empresa faturadora
-# email_rodape_1 / email_rodape_2: rodapé do PDF "Notas e Boletos encaminha para:"
-EMPRESAS_FATURADORAS = {
-    "BRASUL": {
-        "razao_social": "BRASUL CONSTRUTORA LTDA",
-        "endereco":     "Rua Coronel Jordão, 440, Vila Paiva - São Paulo, SP - CEP 02075-030",
-        "telefone":     "(11) 3313-8220",
-        "email":        "compras2@brasulconstrutora.com.br",
-        "email_rodape_1": "notafiscal@brasulconstrutora.com.br",
-        "email_rodape_2": "viviane@brasulconstrutora.com.br",
-        "logo":         "logo_brasul.png",
-        "obs_padrao":   "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\nBRASUL CONSTRUTORA LTDA",
-        "cor_header":   (0, 51, 102),
-    },
-    "JB": {
-        "razao_social": "JB CONSTRUÇÕES E EMPREENDIMENTOS LTDA",
-        "endereco":     "Av Luis Dummount Vilares 2078, São Paulo, SP - CEP 02239-000",
-        "telefone":     "(11) 3313-8220",
-        "email":        "compras2@brasulconstrutora.com.br",
-        "email_rodape_1": "notafiscal@brasulconstrutora.com.br",
-        "email_rodape_2": "viviane@brasulconstrutora.com.br",
-        "logo":         "logo_jb.png",
-        "obs_padrao":   "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\nJB CONSTRUÇÕES E EMPREENDIMENTOS LTDA",
-        "cor_header":   (180, 0, 0),
-    },
-    "B&B": {
-        "razao_social": "B & B Engenharia e Construções LTDA",
-        "endereco":     "Rua Itamonte 33, Vila Medeiros - São Paulo, SP - CEP 02220-000",
-        "telefone":     "(11) 3313-8220",
-        "email":        "compras2@brasulconstrutora.com.br",
-        "email_rodape_1": "notafiscal@brasulconstrutora.com.br",
-        "email_rodape_2": "viviane@brasulconstrutora.com.br",
-        "logo":         "logo_bb.png",
-        "obs_padrao":   "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\nB&B Engenharia e Construções LTDA",
-        "cor_header":   (0, 100, 0),
-    },
-    "INTERIORANA": {
-        "razao_social": "CONSTRUTORA INTERIORANA LTDA",
-        "endereco":     "Av. Independência, 546 sala 93 – Cidade Alta – Piracicaba, SP - CEP 13419-160",
-        "telefone":     "(11) 3641-9169",
-        "email":        "compra2@construtorainteriorana.com.br",
-        "email_rodape_1": "notafiscal@construtorainteriorana.com.br",
-        "email_rodape_2": "financeiro2@construtorainteriorana.com.br",
-        "logo":         "logo_interiorana.png",
-        "obs_padrao":   "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\nCONSTRUTORA INTERIORANA LTDA",
-        "cor_header":   (100, 50, 0),
-    },
-    "INTERBRAS": {
-        "razao_social": "CONSÓRCIO INTERBRAS",
-        "endereco":     "Rua Coronel Jordão, 440, Vila Paiva - São Paulo, SP - CEP 02075-030",
-        "telefone":     "(11) 3313-8220",
-        "email":        "compras2@brasulconstrutora.com.br",
-        "email_rodape_1": "notafiscal@brasulconstrutora.com.br",
-        "email_rodape_2": "viviane@brasulconstrutora.com.br",
-        "logo":         "logo_interbras.png",
-        "obs_padrao":   "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\nINTERBRAS CONSTRUTORA LTDA",
-        "cor_header":   (50, 50, 130),
-    },
-}
-
-CATEGORIAS_ITEM = [
-    "FUNDAÇÃO / ESTRUTURA",
-    "COBERTURA / FORRO",
-    "HIDRAULICA",
-    "ELETRICA",
-    "REVESTMENTO / PISO",
-    "VIDRO / CAIXILHARIA",
-    "PINTURA",
-    "INCENDIO",
-    "LOCAÇÃO",
-    "OUTROS",
-]
-
-UNIDADES = [
-    "UNID.", "M", "M2", "M3", "KG", "SACO", "ROLO",
-    "PACOTE", "BARRICA", "BALDE", "LATA", "GALÃO",
-    "BARRA", "PEÇA", "JOGO", "CONJ.", "VERBA",
-]
-
-CONDICOES_PAGAMENTO = [
-    "7", "14", "21", "28", "30",
-    "28/35/42", "30/45/60", "30/60/90",
-    "28/42", "30/60", "À VISTA",
-]
-
-FORMAS_PAGAMENTO = ["BOLETO", "PIX", "CARTÃO"]
-
-# Impede uso acidental deste arquivo como config em produção (só quando o nome do arquivo continua config_exemplo.py).
+# Impede uso acidental deste arquivo como config em produção.
 if os.path.basename(os.path.abspath(__file__)).lower() == "config_exemplo.py":
     raise ValueError(
-        "Este é o arquivo de exemplo. Copie para config.py, ajuste COMPRADOR_PADRAO, "
-        "PASTA_COMPRADOR e os caminhos abaixo; na cópia o nome do arquivo deixa de ser config_exemplo.py."
+        "Este é o arquivo de exemplo. Copie para config.py, ajuste COMPRADOR_PADRAO "
+        "e os caminhos; na cópia o nome do arquivo deixa de ser config_exemplo.py."
     )

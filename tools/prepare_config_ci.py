@@ -11,29 +11,34 @@ if not SRC.is_file():
 
 text = SRC.read_text(encoding="utf-8")
 text = text.replace('COMPRADOR_PADRAO = "SEU_NOME"', 'COMPRADOR_PADRAO = "CI_BUILD"')
-text = text.replace('PASTA_COMPRADOR = "SuaPasta"', 'PASTA_COMPRADOR = "CI"')
 
-# Caminhos locais — no GitHub Actions nao existe Z:\0 OBRAS\...
+# Caminhos locais — no GitHub Actions não existe Z:\0 OBRAS\...
 path_block = """
 _CI_DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".ci_data")
 os.makedirs(_CI_DATA, exist_ok=True)
-DATABASE_PATH = os.path.join(_CI_DATA, "cotacao_ci.db")
 BASE_REDE_DIR = _CI_DATA
-PEDIDOS_DIR = os.path.join(_CI_DATA, "pedidos")
-COTACOES_DIR = os.path.join(_CI_DATA, "cotacoes")
-BACKUP_DIR = os.path.join(_CI_DATA, "backup")
-RELACOES_DIR = os.path.join(_CI_DATA, "relacoes")
+_caminhos = caminhos_comprador(BASE_REDE_DIR, COMPRADOR_PADRAO)
+DATABASE_PATH = _caminhos["DATABASE_PATH"]
+PEDIDOS_DIR = _caminhos["PEDIDOS_DIR"]
+COTACOES_DIR = _caminhos["COTACOES_DIR"]
+BACKUP_DIR = _caminhos["BACKUP_DIR"]
+RELACOES_DIR = _caminhos["RELACOES_DIR"]
 """
 text = re.sub(
-    r"# Banco de trabalho do comprador.*?RELACOES_DIR = fr\".*?\"\n",
-    path_block,
+    r"BASE_REDE_DIR = DEFAULT_BASE_REDE_DIR\n\nCOMPRADOR_PADRAO = normalizar_usuario\(COMPRADOR_PADRAO\).*?"
+    r'RELACOES_DIR = _caminhos\["RELACOES_DIR"\]\n',
+    f'COMPRADOR_PADRAO = normalizar_usuario(COMPRADOR_PADRAO)\n\n{path_block}',
     text,
     flags=re.DOTALL,
+    count=1,
 )
 
-# Remove makedirs em Z: (bloco original)
+# Remove validação de SEU_NOME (CI usa CI_BUILD)
+text = text.replace('COMPRADOR_PADRAO == "SEU_NOME"', 'False')
+
+# Remove makedirs em pastas de rede (bloco original)
 text = re.sub(
-    r"\n# Cria as pastas necessárias automaticamente\nfor _pasta in \[.*?\]:\n    os\.makedirs\(_pasta, exist_ok=True\)\n",
+    r"\n# Cria as pastas necessárias automaticamente\nfor _pasta in .*?\n    os\.makedirs\(_pasta, exist_ok=True\)\n",
     "\n",
     text,
     flags=re.DOTALL,

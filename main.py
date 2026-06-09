@@ -156,11 +156,6 @@ def main():
         sys.exit(1)
 
 
-def _users_file_path():
-    base = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base, "assets", "usuarios.json")
-
-
 def _icone_app_path():
     base = os.path.dirname(os.path.abspath(__file__))
     candidatos = [
@@ -173,36 +168,6 @@ def _icone_app_path():
     return next((p for p in candidatos if os.path.exists(p)), "")
 
 
-def _carregar_usuarios():
-    usuarios = ["IURY", "THAMYRES"]
-    caminho = _users_file_path()
-    try:
-        if os.path.exists(caminho):
-            with open(caminho, "r", encoding="utf-8") as f:
-                dados = json.load(f)
-            extras = dados.get("usuarios", [])
-            for nome in extras:
-                n = str(nome or "").strip().upper()
-                if n and n not in usuarios:
-                    usuarios.append(n)
-    except Exception:
-        pass
-    return usuarios
-
-
-def _salvar_novo_usuario(nome_usuario: str):
-    caminho = _users_file_path()
-    os.makedirs(os.path.dirname(caminho), exist_ok=True)
-
-    atuais = _carregar_usuarios()
-    if nome_usuario not in atuais:
-        atuais.append(nome_usuario)
-
-    apenas_extras = [u for u in atuais if u not in ("IURY", "THAMYRES")]
-    with open(caminho, "w", encoding="utf-8") as f:
-        json.dump({"usuarios": apenas_extras}, f, ensure_ascii=False, indent=2)
-
-
 def _selecionar_usuario(app) -> str:
     from PySide6.QtWidgets import (
         QDialog, QVBoxLayout, QLabel, QPushButton, QWidget,
@@ -210,6 +175,13 @@ def _selecionar_usuario(app) -> str:
     )
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QPixmap, QIcon, QGuiApplication
+    from app.data.usuarios_store import (
+        garantir_emails_padrao_no_arquivo,
+        listar_usuarios,
+        registrar_usuario_extra,
+    )
+
+    garantir_emails_padrao_no_arquivo()
 
     dlg = QDialog()
     dlg.setWindowTitle("Acesso ao Sistema")
@@ -325,7 +297,7 @@ def _selecionar_usuario(app) -> str:
         escolhido["nome"] = nome
         dlg.accept()
 
-    for nome in _carregar_usuarios():
+    for nome in listar_usuarios():
         b = QPushButton(nome.title())
         b.setObjectName("userBtn")
         b.clicked.connect(lambda _=False, n=nome: escolher(n))
@@ -348,7 +320,20 @@ def _selecionar_usuario(app) -> str:
         if not nome:
             QMessageBox.warning(dlg, "Nome inválido", "Informe um nome de usuário.")
             return
-        _salvar_novo_usuario(nome)
+        email, ok_email = QInputDialog.getText(
+            dlg,
+            "E-mail do usuário",
+            f"E-mail de {nome.title()} nos PDFs de pedido:\n"
+            "(ex: compra1@construtorainteriorana.com)",
+        )
+        if not ok_email:
+            return
+        email = str(email or "").strip()
+        try:
+            registrar_usuario_extra(nome, email)
+        except ValueError as exc:
+            QMessageBox.warning(dlg, "Cadastro incompleto", str(exc))
+            return
         escolhido["nome"] = nome
         dlg.accept()
 

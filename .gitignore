@@ -18,6 +18,7 @@ pedidos_gerados/
 assets/cotacoes_salvas/
 assets/pedidos_salvos/
 assets/**/*.bak_*
+backup_agendado.log
 
 Z:/
 
@@ -63,6 +64,12 @@ startup_v2.log
 # =========================
 config.py
 .ci_data/
+
+# =========================
+# CREDENCIAIS (NUNCA VERSIONAR)
+# =========================
+app/config/*.json
+*.json
 
 # =========================
 # SISTEMA OPERACIONAL

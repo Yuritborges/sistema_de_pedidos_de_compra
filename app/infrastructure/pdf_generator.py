@@ -4,6 +4,7 @@ from reportlab.lib.units import mm
 from reportlab.lib import colors
 from reportlab.pdfgen import canvas as rl_canvas
 from app.data.database import copiar_arquivo_para_rede
+from app.data.usuarios_store import obter_email_comprador
 from config import EMPRESAS_FATURADORAS, PEDIDOS_DIR
 from app.core.dto.pedido_dto import PedidoDTO
 
@@ -36,6 +37,25 @@ def _resolver_empresa_faturadora(empresa_faturadora: str) -> dict:
         if key in EMPRESAS_FATURADORAS and key in up:
             return EMPRESAS_FATURADORAS[key]
     return EMPRESAS_FATURADORAS["BRASUL"]
+
+
+def _empresa_sem_email_cabecalho(empresa_faturadora: str) -> bool:
+    """Empresas que exibem só telefone/CNPJ no topo (sem e-mail do comprador)."""
+    return "INTERBRAS" in str(empresa_faturadora or "").upper()
+
+
+def _email_cabecalho_pdf(dto: PedidoDTO, emp: dict) -> str:
+    """
+    E-mail no topo do PDF: do comprador logado/cadastrado.
+    Interbras: sem e-mail por enquanto. Demais: fallback no config da empresa.
+    """
+    if _empresa_sem_email_cabecalho(dto.empresa_faturadora):
+        return ""
+    email = obter_email_comprador(dto.comprador)
+    if email:
+        return email
+    return str(emp.get("email") or "").strip()
+
 
 # ── Dimensões da página A4 ────────────────────────────────────────────────────
 W, H = A4          # largura ≈ 595pt | altura ≈ 842pt
@@ -465,7 +485,12 @@ class PedidoCompraGenerator:
         c.drawString(cx, y-8*mm, emp["razao_social"])
         c.setFont("Helvetica", 7.5); c.setFillColor(C_ESCURO)
         c.drawString(cx, y-13*mm, emp["endereco"][:80])
-        c.drawString(cx, y-17.5*mm, f"Tel: {emp['telefone']}   |   {emp['email']}")
+        tel = str(emp.get("telefone") or "").strip()
+        email_cab = _email_cabecalho_pdf(dto, emp)
+        if email_cab:
+            c.drawString(cx, y-17.5*mm, f"Tel: {tel}   |   {email_cab}")
+        else:
+            c.drawString(cx, y-17.5*mm, f"Tel: {tel}")
         cnpj = str(emp.get("cnpj", "") or "").strip()
         if cnpj:
             c.drawString(cx, y-22*mm, f"CNPJ: {cnpj}")
