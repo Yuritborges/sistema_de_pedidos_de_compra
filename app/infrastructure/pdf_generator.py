@@ -244,11 +244,12 @@ class PedidoCompraGenerator:
         nome = self._quebrar_texto(c, dto.fornecedor_nome, col_w, "Helvetica", fs)
         linha1 = max(len(razao), len(nome), 1)
 
-        cabecalho = 6 * mm * escala
+        cabecalho = 7 * mm * escala
+        gap_apos_cab = 4.5 * mm * escala
         row1 = label_h + linha1 * lh
         row2 = label_h + lh
         padding = 3 * mm * escala
-        return max(24 * mm * escala, cabecalho + row1 + row2 + padding)
+        return max(26 * mm * escala, cabecalho + gap_apos_cab + row1 + row2 + padding)
 
     def _calc_blocos_layout(self, c, dto, obs_empresa_txt: str, obs_txt: str, escala: float) -> dict:
         e = escala
@@ -602,17 +603,19 @@ class PedidoCompraGenerator:
         c.setLineWidth(0.8)
         c.rect(M, y - alt, CW, alt, fill=0, stroke=1)
 
+        cab_h = 7 * mm
+        gap_labels = 4.5 * mm
         c.setFillColor(C_FUNDO)
-        c.rect(M, y - 6 * mm, CW, 6 * mm, fill=1, stroke=0)
+        c.rect(M, y - cab_h, CW, cab_h, fill=1, stroke=0)
         c.setFont("Helvetica-Bold", 7.5)
         c.setFillColor(C_ESCURO)
-        c.drawString(M + 3 * mm, y - 4.5 * mm, "FORNECEDOR")
+        c.drawString(M + 3 * mm, y - cab_h + 2 * mm, "FORNECEDOR")
 
         col2 = M + CW * 0.5
         col_w = CW * 0.5 - 6 * mm
         c.setStrokeColor(C_LINHA)
         c.setLineWidth(0.3)
-        c.line(col2, y - 6 * mm, col2, y - alt)
+        c.line(col2, y - cab_h, col2, y - alt)
 
         fs = 8
         lh = 3.6 * mm
@@ -630,7 +633,7 @@ class PedidoCompraGenerator:
                 yi -= lh
             return yi
 
-        y_cursor = y - 8 * mm
+        y_cursor = y - cab_h - gap_labels
         y_apos_razao = desenhar_campo(
             "Razão Social", dto.fornecedor_razao, M + 3 * mm, y_cursor, col_w
         )

@@ -288,6 +288,95 @@ def _br_to_iso(txt: str) -> str:
     return ""
 
 
+def _compact_pedido_numero(txt: str) -> str:
+    return "".join((txt or "").split())
+
+
+def _formatar_item_pedido_locacao(descricao: str, quantidade, unidade: str) -> str:
+    desc = _clean(descricao)
+    if not desc:
+        return ""
+    try:
+        qtd = float(quantidade or 0)
+    except (TypeError, ValueError):
+        qtd = 0.0
+    un = _clean(unidade)
+    if qtd > 0 and un:
+        qtd_txt = f"{qtd:g}".replace(".", ",")
+        return f"{qtd_txt} {un} — {desc}"
+    return desc
+
+
+def _buscar_pedido_locacao(numero_digitado: str) -> dict | None:
+    """
+    Localiza pedido na base do comprador atual e retorna cabeçalho + itens
+    para preencher o cadastro de locação.
+    """
+    num = _clean(numero_digitado)
+    if not num:
+        return None
+    cn = _compact_pedido_numero(num).upper()
+    try:
+        with get_connection() as conn:
+            pedido = conn.execute(
+                """
+                SELECT id, numero, data_pedido, obra_nome, fornecedor_nome, comprador
+                FROM pedidos
+                WHERE TRIM(numero) = TRIM(?) COLLATE NOCASE
+                LIMIT 1
+                """,
+                (num,),
+            ).fetchone()
+            if not pedido:
+                for row in conn.execute(
+                    """
+                    SELECT id, numero, data_pedido, obra_nome, fornecedor_nome, comprador
+                    FROM pedidos
+                    """
+                ):
+                    if _compact_pedido_numero(_clean(row["numero"])).upper() == cn:
+                        pedido = row
+                        break
+            if not pedido:
+                return None
+
+            itens_rows = conn.execute(
+                """
+                SELECT descricao, quantidade, unidade
+                FROM itens_pedido
+                WHERE pedido_id = ?
+                ORDER BY id
+                """,
+                (pedido["id"],),
+            ).fetchall()
+
+        data_iso = _br_to_iso(_clean(pedido["data_pedido"]))
+        itens = []
+        for ir in itens_rows or ():
+            desc = _clean(ir["descricao"])
+            if not desc:
+                continue
+            itens.append({
+                "descricao": desc,
+                "quantidade": ir["quantidade"],
+                "unidade": _clean(ir["unidade"]),
+                "rotulo": _formatar_item_pedido_locacao(
+                    desc, ir["quantidade"], ir["unidade"]
+                ),
+            })
+
+        return {
+            "numero": _clean(pedido["numero"]) or num,
+            "obra": _clean(pedido["obra_nome"]),
+            "fornecedor": _clean(pedido["fornecedor_nome"]),
+            "comprador": _clean(pedido["comprador"]),
+            "data_pedido_iso": data_iso,
+            "itens": itens,
+        }
+    except Exception:
+        return None
+
+
 def _destaque_visual_linha_locacao(r):
     """Delega para o mesmo critério centralizado em locacoes_import."""
     return destaque_visual_linha_locacao_db(r)
@@ -361,7 +450,18 @@ class LocacaoDialog(QDialog):
         self.e_pedido_compra.setPlaceholderText(
             "Espelho do «Nº pedido» — mesmo número usado para localizar o PDF"
         )
-        self.e_pedido.textChanged.connect(self._espelhar_numero_pedido_pdf)
+        self._timer_pedido_busca = QTimer(self)
+        self._timer_pedido_busca.setSingleShot(True)
+        self._timer_pedido_busca.setInterval(350)
+        self._timer_pedido_busca.timeout.connect(self._preencher_do_pedido)
+        self.e_pedido.textChanged.connect(self._on_pedido_text_changed)
+        self.e_pedido.returnPressed.connect(self._pedido_tecla_enter)
+
+        self.lbl_pedido_status = QLabel("")
+        self.lbl_pedido_status.setStyleSheet(
+            f"font-size:10px; color:{TXT_S}; background:transparent;"
+        )
+        self.lbl_pedido_status.setWordWrap(True)
 
         self.e_forn = QComboBox()
         self.e_forn.setEditable(True)
@@ -389,6 +489,12 @@ class LocacaoDialog(QDialog):
         apply_completer_popup_style(comp_forn)
 
         self.e_item = QLineEdit(_clean(dados.get("item_locado")))
+
+        self.e_item_pedido = QComboBox()
+        self.e_item_pedido.setMinimumHeight(32)
+        self.e_item_pedido.setStyleSheet(CSS_COMBO)
+        self.e_item_pedido.setVisible(False)
+        self.e_item_pedido.currentIndexChanged.connect(self._aplicar_item_pedido_escolhido)
 
         self.e_tipo = QComboBox()
         self.e_tipo.addItem("Obra / equipamento (período livre)", "")
@@ -439,12 +545,15 @@ class LocacaoDialog(QDialog):
         self.e_tipo.setStyleSheet(CSS_COMBO)
         self.e_tipo.currentIndexChanged.connect(self._ajustar_periodo_por_tipo)
 
+        self._lbl_item_pedido = QLabel("Item do pedido")
+        form.addRow("Nº pedido", self.e_pedido)
+        form.addRow("", self.lbl_pedido_status)
+        form.addRow(self._lbl_item_pedido, self.e_item_pedido)
+        form.addRow("Item locado", self.e_item)
         form.addRow("Obra", self.e_obra)
         form.addRow("Comprador", self.e_comprador)
-        form.addRow("Nº pedido", self.e_pedido)
-        form.addRow("Pedido de compra (PDF)", self.e_pedido_compra)
         form.addRow("Fornecedor", self.e_forn)
-        form.addRow("Item locado", self.e_item)
+        form.addRow("Pedido de compra (PDF)", self.e_pedido_compra)
         form.addRow("Tipo", self.e_tipo)
         form.addRow("Data pedido", self.e_data_ped)
         form.addRow("Período (dias na obra)", self.e_periodo)
@@ -453,12 +562,175 @@ class LocacaoDialog(QDialog):
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
+        for role in (
+            QDialogButtonBox.StandardButton.Ok,
+            QDialogButtonBox.StandardButton.Cancel,
+        ):
+            btn = bb.button(role)
+            if btn is not None:
+                btn.setAutoDefault(False)
+                btn.setDefault(False)
         form.addRow(bb)
 
         self._ajustar_periodo_por_tipo()
+        self._ultimo_pedido_carregado = ""
+        if ped_unificado:
+            QTimer.singleShot(0, self._preencher_do_pedido)
+        else:
+            self.e_pedido.setFocus()
 
-    def _espelhar_numero_pedido_pdf(self):
-        self.e_pedido_compra.setText(self.e_pedido.text())
+    def _reset_campos_vinculados_pedido(self):
+        """Zera campos preenchidos automaticamente pelo nº do pedido."""
+        self.e_item.clear()
+        self._limpar_seletor_itens_pedido()
+        self.e_obra.setEditText("")
+        self.e_forn.setEditText("")
+        comp = _clean(COMPRADOR_PADRAO) or "IURY"
+        idx = self.e_comprador.findText(comp)
+        if idx >= 0:
+            self.e_comprador.setCurrentIndex(idx)
+        else:
+            self.e_comprador.setCurrentText(comp)
+        self.e_data_ped.setDate(QDate.currentDate())
+        self.e_tipo.setCurrentIndex(0)
+        self.e_periodo.setValue(0)
+        self._ajustar_periodo_por_tipo()
+
+    def _on_pedido_text_changed(self, texto: str):
+        self.e_pedido_compra.setText(texto)
+        num = texto.strip()
+        if not num:
+            self._timer_pedido_busca.stop()
+            self.lbl_pedido_status.setText("")
+            self._ultimo_pedido_carregado = ""
+            self._reset_campos_vinculados_pedido()
+            return
+        if self._ultimo_pedido_carregado and num != self._ultimo_pedido_carregado:
+            self._reset_campos_vinculados_pedido()
+            self._ultimo_pedido_carregado = ""
+        if num != self._ultimo_pedido_carregado:
+            self._timer_pedido_busca.start()
+
+    def _pedido_tecla_enter(self):
+        """Enter no nº pedido: busca agora e avança o foco — não salva o diálogo."""
+        self._timer_pedido_busca.stop()
+        self._ultimo_pedido_carregado = ""
+        self._preencher_do_pedido(forcar=True)
+        if self.e_item_pedido.isVisible():
+            self.e_item_pedido.setFocus()
+        else:
+            self.e_periodo.setFocus()
+
+    def _set_combo_text_insensitive(self, combo: QComboBox, texto: str):
+        txt = _clean(texto)
+        if not txt:
+            return
+        for i in range(combo.count()):
+            if combo.itemText(i).strip().upper() == txt.upper():
+                combo.setCurrentIndex(i)
+                return
+        combo.setCurrentText(txt)
+
+    def _sugerir_tipo_por_item(self, descricao: str):
+        low = (descricao or "").lower()
+        if "caçamba" in low or "cacamba" in low:
+            ti = self.e_tipo.findData("CACAMBA")
+            if ti >= 0:
+                self.e_tipo.setCurrentIndex(ti)
+
+    def _limpar_seletor_itens_pedido(self):
+        self.e_item_pedido.blockSignals(True)
+        self.e_item_pedido.clear()
+        self.e_item_pedido.setVisible(False)
+        self.e_item_pedido.blockSignals(False)
+        if getattr(self, "_lbl_item_pedido", None) is not None:
+            self._lbl_item_pedido.setVisible(False)
+
+    def _popular_itens_do_pedido(self, itens: list, item_atual: str = ""):
+        self._limpar_seletor_itens_pedido()
+        if not itens:
+            return
+
+        item_atual_n = _clean(item_atual).upper()
+        if len(itens) == 1:
+            desc = itens[0]["descricao"]
+            self.e_item.setText(desc)
+            self._sugerir_tipo_por_item(desc)
+            return
+
+        self.e_item_pedido.blockSignals(True)
+        self.e_item_pedido.setVisible(True)
+        if getattr(self, "_lbl_item_pedido", None) is not None:
+            self._lbl_item_pedido.setVisible(True)
+        idx_sel = 0
+        for i, it in enumerate(itens):
+            self.e_item_pedido.addItem(it["rotulo"], it["descricao"])
+            if item_atual_n and it["descricao"].upper() == item_atual_n:
+                idx_sel = i
+        self.e_item_pedido.setCurrentIndex(idx_sel)
+        self.e_item_pedido.blockSignals(False)
+        self._aplicar_item_pedido_escolhido(idx_sel)
+
+    def _aplicar_item_pedido_escolhido(self, index: int):
+        if index < 0 or not self.e_item_pedido.isVisible():
+            return
+        desc = self.e_item_pedido.itemData(index)
+        if desc:
+            self.e_item.setText(str(desc))
+            self._sugerir_tipo_por_item(str(desc))
+
+    def _preencher_do_pedido(self, forcar: bool = False):
+        num = self.e_pedido.text().strip()
+        if not num:
+            self.lbl_pedido_status.setText("")
+            self._ultimo_pedido_carregado = ""
+            self._reset_campos_vinculados_pedido()
+            return
+        if not forcar and len(num) < 3:
+            self.lbl_pedido_status.setText("")
+            return
+        if num == getattr(self, "_ultimo_pedido_carregado", ""):
+            return
+
+        dados = _buscar_pedido_locacao(num)
+        if not dados:
+            self.lbl_pedido_status.setText(
+                "Pedido não encontrado na base — preencha os campos manualmente."
+            )
+            self._reset_campos_vinculados_pedido()
+            return
+
+        self._ultimo_pedido_carregado = num
+        if dados["numero"] and dados["numero"] != num:
+            self.e_pedido.blockSignals(True)
+            self.e_pedido.setText(dados["numero"])
+            self.e_pedido.blockSignals(False)
+            self.e_pedido_compra.setText(dados["numero"])
+
+        if dados.get("obra"):
+            self._set_combo_text_insensitive(self.e_obra, dados["obra"])
+        if dados.get("fornecedor"):
+            self._set_combo_text_insensitive(self.e_forn, dados["fornecedor"])
+        if dados.get("comprador"):
+            self._set_combo_text_insensitive(self.e_comprador, dados["comprador"])
+
+        iso = dados.get("data_pedido_iso") or ""
+        if iso:
+            qd = QDate.fromString(iso[:10], "yyyy-MM-dd")
+            if qd.isValid():
+                self.e_data_ped.setDate(qd)
+
+        n_itens = len(dados.get("itens") or [])
+        if n_itens:
+            self.lbl_pedido_status.setText(
+                f"Pedido {dados['numero']} encontrado — {n_itens} item(ns) no pedido."
+            )
+            self._popular_itens_do_pedido(dados["itens"], self.e_item.text().strip())
+        else:
+            self.lbl_pedido_status.setText(
+                f"Pedido {dados['numero']} encontrado — sem itens cadastrados."
+            )
+            self._limpar_seletor_itens_pedido()
 
     def _ajustar_periodo_por_tipo(self):
         # Mesmo intervalo para todos os tipos: caçambas podem ficar 7, 10+ dias na obra.
@@ -1270,7 +1542,7 @@ class LocacoesWidget(QWidget):
 
     @staticmethod
     def _compact_pedido_numero(txt: str) -> str:
-        return "".join((txt or "").split())
+        return _compact_pedido_numero(txt)
 
     def _buscar_caminho_pdf_pedido(self, numero_digitado: str) -> tuple[str, str]:
         """

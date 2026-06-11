@@ -271,8 +271,8 @@ DRIVE_BACKUP_LOG_PATH: str = str(_PROJECT_ROOT / "backup_agendado.log")
 # PDF — observação padrão (bloco NOTA FISCAL em todos os pedidos)
 # ---------------------------------------------------------------------------
 OBS_FATURAMENTO_DATA_ENTREGA: str = (
-    "A Nota Fiscal e o boleto bancário deverão ser emitidos exclusivamente na "
-    "data da entrega efetiva do material na obra, sendo expressamente vedada a "
-    "emissão antecipada na data do pedido ou antes da entrega. O prazo de "
-    "pagamento será contado a partir da data real da entrega do material."
+    "A NOTA FISCAL E O BOLETO BANCÁRIO DEVERÃO SER EMITIDOS EXCLUSIVAMENTE NA "
+    "DATA DA ENTREGA EFETIVA DO MATERIAL NA OBRA, SENDO EXPRESSAMENTE VEDADA A "
+    "EMISSÃO ANTECIPADA NA DATA DO PEDIDO OU ANTES DA ENTREGA. O PRAZO DE "
+    "PAGAMENTO SERÁ CONTADO A PARTIR DA DATA REAL DA ENTREGA DO MATERIAL."
 )
