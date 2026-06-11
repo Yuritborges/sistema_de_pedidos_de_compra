@@ -6,6 +6,7 @@ from reportlab.pdfgen import canvas as rl_canvas
 from app.data.database import copiar_arquivo_para_rede
 from app.data.usuarios_store import obter_email_comprador
 from config import EMPRESAS_FATURADORAS, PEDIDOS_DIR
+from app.config.settings import OBS_FATURAMENTO_DATA_ENTREGA
 from app.core.dto.pedido_dto import PedidoDTO
 
 
@@ -83,8 +84,10 @@ _HORARIO_RECEBIMENTO = (
     "Segunda a Quinta-feira das 07:30h às 11:30h e das 13:00h às 15:30h",
     "Sexta-feira das 07:30h às 11:30h e das 13:00h às 14:30h",
 )
-# Até este limite o pedido deve caber em UMA página (comprimindo linhas se preciso).
-_MAX_ITENS_FORCAR_UMA_PAGINA = 31
+# Até 20 itens: tenta uma página com layout padrão (compressão leve se preciso).
+# Acima de 20: pagina com ROW_H normal (~20 itens por folha de continuação).
+_MAX_ITENS_FORCAR_UMA_PAGINA = 20
+_ITENS_ALVO_POR_PAGINA = 20
 _MARGEM_INFERIOR_TABELA = 2 * mm
 
 # ── Diretório das logos ───────────────────────────────────────────────────────
@@ -104,6 +107,23 @@ def _logo_path(empresa: str):
     nome = _LOGO_NOMES.get(empresa, "")
     p    = os.path.join(_LOGOS_DIR, nome)
     return p if (nome and os.path.exists(p)) else None
+
+
+def _montar_obs_empresa_pdf(obs_padrao: str) -> str:
+    """
+    Texto do bloco NOTA FISCAL: obs da empresa + regra de emissão na data da entrega.
+    """
+    linhas = [p.strip() for p in (obs_padrao or "").split("\n") if p.strip()]
+    linhas.append(OBS_FATURAMENTO_DATA_ENTREGA)
+    return "\n".join(linhas)
+
+
+def _altura_obs_empresa(texto: str, escala: float) -> float:
+    """Estima altura do bloco de observação da empresa (para layout)."""
+    if not texto:
+        return 0.0
+    nl = max(1, (len(texto) // 90) + texto.count("\n") + 1)
+    return (8 * escala + nl * 4.5 * escala) * mm
 
 
 def _montar_observacao(emp: dict, obs_usuario: str, material_solicitado: str = "") -> str:
@@ -189,11 +209,28 @@ class PedidoCompraGenerator:
         cond = str(getattr(dto, "condicao_pagamento", "") or "").upper()
         return "PIX" in forma or "PIX" in cond
 
-    def _calc_blocos_layout(self, dto, obs_padrao: str, obs_txt: str, escala: float) -> dict:
+    def _medir_bloco_fornecedor(self, c, dto, escala: float) -> float:
+        """Altura dinâmica do bloco fornecedor conforme tamanho da razão social."""
+        col_w = CW * 0.5 - 6 * mm
+        fs = max(7.0, 8.0 * escala)
+        lh = 3.6 * mm
+        label_h = 4.5 * mm
+
+        razao = self._quebrar_texto(c, dto.fornecedor_razao, col_w, "Helvetica", fs)
+        nome = self._quebrar_texto(c, dto.fornecedor_nome, col_w, "Helvetica", fs)
+        linha1 = max(len(razao), len(nome), 1)
+
+        cabecalho = 6 * mm * escala
+        row1 = label_h + linha1 * lh
+        row2 = label_h + lh
+        padding = 3 * mm * escala
+        return max(24 * mm * escala, cabecalho + row1 + row2 + padding)
+
+    def _calc_blocos_layout(self, c, dto, obs_empresa_txt: str, obs_txt: str, escala: float) -> dict:
         e = escala
         ht = 28 * mm * e
         hdf = 7 * mm * e
-        hf = 28 * mm * e
+        hf = self._medir_bloco_fornecedor(c, dto, e)
         hcob = 14 * mm * e
         hrod = max(_RODAPE_ALT_MM * mm, 26 * mm * e)
         tem_pix = self._forma_pagamento_tem_pix(dto)
@@ -203,10 +240,7 @@ class PedidoCompraGenerator:
         hent = 18 * mm * e
         hdr_h = max(5 * mm, 7 * mm * e)
         tot_h = max(14 * mm, 18 * mm * e)
-        hobs_emp = 0
-        if obs_padrao:
-            nl = max(1, (len(obs_padrao) // 100) + obs_padrao.count("\n") + 1)
-            hobs_emp = (8 * e + nl * 4.5 * e) * mm
+        hobs_emp = _altura_obs_empresa(obs_empresa_txt, e)
         hobs = 0
         if obs_txt:
             nl2 = max(1, (len(obs_txt) // 110) + obs_txt.count("\n") + 1)
@@ -227,18 +261,15 @@ class PedidoCompraGenerator:
         """
         Gera páginas com ajuste automático inteligente de escala.
 
-        MODO PADRÃO (≤ 15 itens):
-            Blocos normais, ROW_H = 6mm, fonte 7.5pt — layout idêntico ao atual.
+        MODO PADRÃO (≤ 20 itens):
+            Blocos normais, ROW_H = 6mm, fonte 7.5pt.
+            Compressão leve só se a área útil não couber.
 
-        MODO COMPACTO (16–31 itens):
-            Blocos fixos levemente comprimidos + ROW_H reduzido automaticamente
-            para encaixar TODOS os itens em uma única página.
-            ROW_H mínimo: 3.5mm (ainda legível para impressão).
-
-        MODO MULTI-PÁGINA (> 31 itens):
-            Usa o modo compacto e pagina normalmente quando não cabe.
+        MODO MULTI-PÁGINA (> 20 itens):
+            Layout padrão; divide em páginas com até ~20 itens cada.
         """
         obs_padrao = (emp.get("obs_padrao") or "").strip()
+        obs_empresa_txt = _montar_obs_empresa_pdf(obs_padrao)
         obs_txt    = _montar_observacao(
             emp, dto.observacao_extra, getattr(dto, "material_solicitado_por", "") or ""
         )
@@ -249,7 +280,7 @@ class PedidoCompraGenerator:
             e = escala
             ht      = 28*mm*e
             hdf     = 7*mm*e
-            hf      = 28*mm*e
+            hf      = self._medir_bloco_fornecedor(c, dto, e)
             hcob    = 14*mm*e
             hrod    = max(_RODAPE_ALT_MM * mm, 26 * mm * e)
             forma_pix = self._forma_pagamento_tem_pix(dto)
@@ -260,10 +291,7 @@ class PedidoCompraGenerator:
             hdr_h   = max(5*mm, 7*mm*e)
             tot_h   = max(14*mm, 18*mm*e)
 
-            hobs_emp = 0
-            if obs_padrao:
-                nl = max(1, (len(obs_padrao)//100) + obs_padrao.count('\n') + 1)
-                hobs_emp = (8*e + nl * 4.5*e) * mm
+            hobs_emp = _altura_obs_empresa(obs_empresa_txt, e)
 
             hobs = 0
             if obs_txt:
@@ -279,30 +307,34 @@ class PedidoCompraGenerator:
                 espaco=espaco
             )
 
-        ROW_H_MIN = 3.5 * mm   # mínimo absolutamente legível para impressão
+        ROW_H_MIN = 4.0 * mm   # mínimo em página única (16–20 itens); legível na impressão
+        paginar = n_itens > _MAX_ITENS_FORCAR_UMA_PAGINA
 
-        # 1. Tenta encaixar tudo em 1 página com escala normal (1.0)
-        b = _calc_blocos(1.0)
-        linhas_normal = int(b["espaco"] / (6*mm))
-
-        if n_itens <= linhas_normal:
-            # Modo padrão — cabe sem comprimir nada
-            escala  = 1.0
-            ROW_H   = 6 * mm
+        if paginar:
+            # Várias páginas: mantém layout padrão (não comprime para caber tudo numa folha).
+            escala = 1.0
+            ROW_H = 6 * mm
+            b = _calc_blocos(escala)
         else:
-            # 2. Tenta comprimir os blocos (escala 0.85) para ganhar espaço
-            b85 = _calc_blocos(0.85)
-            row_h_85 = b85["espaco"] / n_itens
-            if row_h_85 >= ROW_H_MIN:
-                escala = 0.85
-                ROW_H  = max(ROW_H_MIN, row_h_85)
-            else:
-                # 3. Comprime ao máximo (escala 0.78) e usa ROW_H mínimo
-                escala = 0.78
-                b = _calc_blocos(0.78)
-                ROW_H = ROW_H_MIN
+            # Uma página (até 20 itens): tenta escala normal, depois compressão leve.
+            b = _calc_blocos(1.0)
+            linhas_normal = int(b["espaco"] / (6 * mm))
 
-        b = _calc_blocos(escala)
+            if n_itens <= linhas_normal:
+                escala = 1.0
+                ROW_H = 6 * mm
+            else:
+                b85 = _calc_blocos(0.85)
+                row_h_85 = b85["espaco"] / max(n_itens, 1)
+                if row_h_85 >= ROW_H_MIN:
+                    escala = 0.85
+                    ROW_H = max(ROW_H_MIN, row_h_85)
+                else:
+                    escala = 0.80
+                    b = _calc_blocos(0.80)
+                    ROW_H = max(ROW_H_MIN, b["espaco"] / max(n_itens, 1))
+
+            b = _calc_blocos(escala)
 
         # Fonte e cabeçalho da tabela escalam com ROW_H
         self._fonte_tabela = max(5.5, round(7.5 * (ROW_H / (6*mm)), 1))
@@ -321,7 +353,7 @@ class PedidoCompraGenerator:
             )
             return max(ROW_H, row_padding + (len(linhas) * line_h))
 
-        b_layout = self._calc_blocos_layout(dto, obs_padrao, obs_txt, escala)
+        b_layout = self._calc_blocos_layout(c, dto, obs_empresa_txt, obs_txt, escala)
 
         def _recalc_alturas():
             nonlocal b_layout
@@ -350,7 +382,7 @@ class PedidoCompraGenerator:
                     continue
                 if escala > 0.72:
                     escala = round(escala - 0.04, 2)
-                    b_layout = self._calc_blocos_layout(dto, obs_padrao, obs_txt, escala)
+                    b_layout = self._calc_blocos_layout(c, dto, obs_empresa_txt, obs_txt, escala)
                     alturas = _recalc_alturas()
                     continue
                 break
@@ -360,12 +392,20 @@ class PedidoCompraGenerator:
             fatias = []
             idx = 0
             while idx < n_itens:
-                cap = b_layout["area_linhas_p1"] if not fatias else b_layout["area_linhas_cont"]
+                primeira_pag = not fatias
+                cap = (
+                    b_layout["area_linhas_p1"]
+                    if primeira_pag
+                    else b_layout["area_linhas_cont"]
+                )
+                limite_itens = _ITENS_ALVO_POR_PAGINA
                 usados = 0.0
                 itens_pag, alturas_pag = [], []
                 while idx < n_itens:
                     h = alturas[idx]
-                    if itens_pag and (usados + h > cap):
+                    if itens_pag and (
+                        usados + h > cap or len(itens_pag) >= limite_itens
+                    ):
                         break
                     itens_pag.append(itens[idx])
                     alturas_pag.append(h)
@@ -388,7 +428,7 @@ class PedidoCompraGenerator:
                 b["H_TOPO"], b["H_DATAFAIXA"], b["H_FORN"], b["H_COB"],
                 b["H_FAT"], b["H_OBS_EMP"], b["H_ENT"], b["H_OBS"], b["H_ROD"],
                 self._hdr_tabela, ROW_H, b["TOT_H"],
-                obs_txt, obs_padrao,
+                obs_txt, obs_empresa_txt,
                 item_offset=offset,
             )
             offset += len(fatia_itens)
@@ -400,7 +440,7 @@ class PedidoCompraGenerator:
         primeira, ultima, num_pag, total_pag,
         H_TOPO, H_DATAFAIXA, H_FORN, H_COB,
         H_FAT, H_OBS_EMP, H_ENT, H_OBS, H_ROD,
-        HDR_H, ROW_H, TOT_H, obs_txt, obs_padrao,
+        HDR_H, ROW_H, TOT_H, obs_txt, obs_empresa_txt,
         item_offset=0,
     ):
         """
@@ -426,8 +466,8 @@ class PedidoCompraGenerator:
             y = self._bloco_cob(c, dto, emp, y, H_COB)
             y = self._bloco_fat(c, dto, emp, y, H_FAT)
             # Bloco separado para obs_padrao da empresa (quadrado próprio)
-            if obs_padrao:
-                y = self._bloco_obs_empresa(c, obs_padrao, y, H_OBS_EMP)
+            if obs_empresa_txt:
+                y = self._bloco_obs_empresa(c, obs_empresa_txt, y, H_OBS_EMP)
             y = self._bloco_ent(c, dto, y, H_ENT)
             if obs_txt:
                 y = self._bloco_obs(c, obs_txt, y, H_OBS)
@@ -532,39 +572,56 @@ class PedidoCompraGenerator:
 
     def _bloco_forn(self, c, dto, y, alt):
         """
-        Dados do fornecedor — cada campo com label acima e valor abaixo.
-        Resolve a sobreposição do layout anterior.
+        Dados do fornecedor com quebra de linha automática (razão social longa).
         """
-        c.setStrokeColor(C_LINHA); c.setLineWidth(0.8)
-        c.rect(M, y-alt, CW, alt, fill=0, stroke=1)
+        c.setStrokeColor(C_LINHA)
+        c.setLineWidth(0.8)
+        c.rect(M, y - alt, CW, alt, fill=0, stroke=1)
 
         c.setFillColor(C_FUNDO)
-        c.rect(M, y-6*mm, CW, 6*mm, fill=1, stroke=0)
-        c.setFont("Helvetica-Bold", 7.5); c.setFillColor(C_ESCURO)
-        c.drawString(M+3*mm, y-4.5*mm, "FORNECEDOR")
+        c.rect(M, y - 6 * mm, CW, 6 * mm, fill=1, stroke=0)
+        c.setFont("Helvetica-Bold", 7.5)
+        c.setFillColor(C_ESCURO)
+        c.drawString(M + 3 * mm, y - 4.5 * mm, "FORNECEDOR")
 
-        col2 = M + CW*0.5
-        c.setStrokeColor(C_LINHA); c.setLineWidth(0.3)
-        c.line(col2, y-6*mm, col2, y-alt)
+        col2 = M + CW * 0.5
+        col_w = CW * 0.5 - 6 * mm
+        c.setStrokeColor(C_LINHA)
+        c.setLineWidth(0.3)
+        c.line(col2, y - 6 * mm, col2, y - alt)
 
-        def campo(label, valor, x, y_base):
-            # Label menor em cinza (acima)
-            c.setFont("Helvetica-Bold", 6.5); c.setFillColor(C_MEDIO)
-            c.drawString(x, y_base+4.5*mm, label.upper())
-            # Valor em preto (abaixo)
-            c.setFont("Helvetica", 8); c.setFillColor(C_PRETO)
-            c.drawString(x, y_base, str(valor or "—")[:45])
+        fs = 8
+        lh = 3.6 * mm
 
-        y1 = y - 14*mm
-        campo("Razão Social", dto.fornecedor_razao, M+3*mm,     y1)
-        campo("Fornecedor",   dto.fornecedor_nome,  col2+3*mm,  y1)
+        def desenhar_campo(label: str, valor, x: float, y_topo: float, largura: float):
+            c.setFont("Helvetica-Bold", 6.5)
+            c.setFillColor(C_MEDIO)
+            c.drawString(x, y_topo, label.upper())
+            linhas = self._quebrar_texto(c, valor, largura, "Helvetica", fs)
+            c.setFont("Helvetica", fs)
+            c.setFillColor(C_PRETO)
+            yi = y_topo - 3.8 * mm
+            for linha in linhas:
+                c.drawString(x, yi, linha)
+                yi -= lh
+            return yi
 
-        y2 = y - 24*mm
-        campo("E-mail",   dto.fornecedor_email,    M+3*mm,      y2)
-        campo("Vendedor", dto.fornecedor_vendedor, col2+3*mm,   y2)
-        campo("Telefone", dto.fornecedor_telefone, col2+60*mm,  y2)
+        y_cursor = y - 8 * mm
+        y_apos_razao = desenhar_campo(
+            "Razão Social", dto.fornecedor_razao, M + 3 * mm, y_cursor, col_w
+        )
+        y_apos_nome = desenhar_campo(
+            "Fornecedor", dto.fornecedor_nome, col2 + 3 * mm, y_cursor, col_w
+        )
+        y_linha2 = min(y_apos_razao, y_apos_nome) - 2 * mm
 
-        return y - alt - 1*mm
+        desenhar_campo("E-mail", dto.fornecedor_email, M + 3 * mm, y_linha2, col_w)
+        desenhar_campo("Vendedor", dto.fornecedor_vendedor, col2 + 3 * mm, y_linha2, 42 * mm)
+        desenhar_campo(
+            "Telefone", dto.fornecedor_telefone, col2 + 48 * mm, y_linha2, col_w - 48 * mm
+        )
+
+        return y - alt - 1 * mm
 
     # ══════════════════════════════════════════════════════════════════════════
     # BLOCO 4 — Endereço de cobrança (CORRIGIDO)

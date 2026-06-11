@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QPixmap, QIcon, QFont, QShortcut, QKeySequence, QColor, QPainter
 
 from app.ui.widgets.formulario_pedido import PedidoWidget
+from app.data.locacoes_import import LOCACOES_DIAS_ALERTA_ANTECEDENCIA
 
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -604,7 +605,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{self._title_base}  —  Locações: {', '.join(partes)}")
         idx = ORDEM_ABAS.index("locacoes") + 1
         tip_extra = (
-            f"Vencidos: {n_v}. A vencer (≤7 dias): {n_a}.\n"
+            f"Vencidos: {n_v}. A vencer (≤{LOCACOES_DIAS_ALERTA_ANTECEDENCIA} dias): {n_a}.\n"
             if (n_v or n_a)
             else ""
         )

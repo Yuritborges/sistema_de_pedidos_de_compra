@@ -19,6 +19,9 @@ from config import (
 
 _LAST_SYNC_USER_MESSAGE: str | None = None
 
+# Antecedência do alerta amarelo / situação «ATUALIZAR» na aba Locações (dias).
+LOCACOES_DIAS_ALERTA_ANTECEDENCIA = 3
+
 
 def consume_last_sync_message() -> str | None:
     global _LAST_SYNC_USER_MESSAGE
@@ -103,7 +106,7 @@ def calcular_derivados_locacao(
     v_out = venc_date.strftime("%Y-%m-%d")
     if delta < 0:
         sit = "VENCIDO"
-    elif delta <= 7:
+    elif delta <= LOCACOES_DIAS_ALERTA_ANTECEDENCIA:
         sit = "ATUALIZAR"
     else:
         sit = "NA OBRA"
@@ -142,7 +145,7 @@ def destaque_visual_linha_locacao_db(row: dict) -> str | None:
         return "vencido"
     if d is not None and d < 0:
         return "vencido"
-    if d is not None and 0 <= d <= 7:
+    if d is not None and 0 <= d <= LOCACOES_DIAS_ALERTA_ANTECEDENCIA:
         return "dois_dias"
     if sit == "ATUALIZAR":
         return "dois_dias"

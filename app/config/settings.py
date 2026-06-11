@@ -248,16 +248,29 @@ def configurar_locacoes(pkg_root: str) -> dict[str, Any]:
     }
 
 
-# ---------------------------------------------------------------------------  ← NOVO
-# Google Drive — Backup em Nuvem
-# O arquivo JSON de credenciais NÃO deve ser commitado no Git.
-# Adicione ao .gitignore: app/config/*.json
 # ---------------------------------------------------------------------------
-# Raiz do pacote (pasta app/config/ → sobe um nível → app/)
+# Google Drive — Backup em Nuvem (backup_agendado.py)
+# token.json e credenciais OAuth NÃO devem ir para o Git.
+# ---------------------------------------------------------------------------
 _CONFIG_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _CONFIG_DIR.parent.parent
 
-# Caminho esperado: app/config/brasul-drive-credentials.json
 CREDENTIALS_DRIVE_PATH: str = str(_CONFIG_DIR / "brasul-drive-credentials.json")
-
-# Nome da pasta raiz criada no Google Drive
+TOKEN_DRIVE_PATH: str = str(_CONFIG_DIR / "token.json")
 DRIVE_BACKUP_FOLDER_NAME: str = "Brasul_Backups"
+# ID da pasta no Drive (trecho final da URL da pasta Brasul_Backups)
+DRIVE_FOLDER_ID: str = "15o-YjEScb-IxtsgBNd6_ODAqi1NPvm0T"
+
+# Banco consolidado enviado ao Drive (auditoria / backup principal)
+DRIVE_BANCO_ORIGEM: str = r"Z:\0 OBRAS\brasul_pedidos\cotacao_rede.db"
+# Cópia local antes do upload (mesma árvore do banco na rede)
+DRIVE_PASTA_BACKUP_LOCAL: str = r"Z:\0 OBRAS\brasul_pedidos\BACKUPS"
+DRIVE_BACKUP_LOG_PATH: str = str(_PROJECT_ROOT / "backup_agendado.log")
+
+# ---------------------------------------------------------------------------
+# PDF — observação padrão (bloco NOTA FISCAL em todos os pedidos)
+# ---------------------------------------------------------------------------
+OBS_FATURAMENTO_DATA_ENTREGA: str = (
+    "NOTAS E BOLETOS DEVEM SER EMITIDOS NA DATA DA ENTREGA DO MATERIAL, "
+    "E NÃO NA DATA DESTE PEDIDO."
+)

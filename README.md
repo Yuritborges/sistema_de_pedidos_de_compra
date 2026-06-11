@@ -48,8 +48,8 @@ A solução centraliza todo o ciclo em uma **única aplicação desktop** com:
 
 - **PDF:** cabeçalho com logos alinhados; endereço de cobrança da Interiorana sem cortar cidade duplicada no fim do texto
 - **Pedidos Gerados:** marcar **OK NA OBRA** recarrega a lista na hora (badge lateral incluído)
-- **Locações:** lista ordenada por urgência de vencimento; alerta amarelo para itens a vencer em ≤ 7 dias
-- **Backup diário silencioso:** `tools/backup_diario.py --silencioso` + agendamento via `tools/agendar_backup_diario.ps1` (sem janela de CMD)
+- **Locações:** lista ordenada por urgência de vencimento; alerta amarelo para itens a vencer em ≤ 3 dias
+- **Backup diário Google Drive:** `backup_agendado.py` + `tools/agendar_backup_drive.ps1` (sem janela de CMD; log em `backup_agendado.log`)
 
 ---
 
@@ -178,7 +178,8 @@ powershell -ExecutionPolicy Bypass -File tools\release_full.ps1
 | `publicar_build_na_rede.ps1` | Copia build para `releases/` e `current/` |
 | `release_full.ps1` | Fecha app → backup → PyInstaller → `current/` |
 | `build_release.ps1` | Só build + cópia para `releases/` |
-| `backup_diario.py` | Backup silencioso (`--silencioso`) |
+| `backup_agendado.py` | Backup `cotacao_rede.db` → Google Drive (agendar com `agendar_backup_drive.ps1`) |
+| `desagendar_backup_diario.ps1` | Remove tarefa antiga que abria CMD ao ligar o PC |
 | `consolidar_rede.py` | Merge dos `.db` dos compradores → `cotacao_rede.db` |
 
 📄 Detalhes: [`docs/BUILD_REMOTO.md`](docs/BUILD_REMOTO.md) · [`docs/CHECKLIST_BUILD_RELEASE.md`](docs/CHECKLIST_BUILD_RELEASE.md)

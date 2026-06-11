@@ -1,13 +1,18 @@
-# Registra backup diário OCULTO no Agendador de Tarefas do Windows.
-# Rode como Administrador (botão direito PowerShell -> Executar como administrador):
-#   powershell -ExecutionPolicy Bypass -File tools\agendar_backup_diario.ps1
+# [DESCONTINUADO] Backup local antigo — substituído por Google Drive.
+# Use:  tools\agendar_backup_drive.ps1
+# Remova tarefa antiga:  tools\desagendar_backup_diario.ps1
 #
-# Para remover: Unregister-ScheduledTask -TaskName "BrasulPedidos_BackupDiario" -Confirm:$false
+# Este script permanece só para referência. Não agende mais backup_diario.py.
 
 param(
     [string]$Hora = "08:08",
     [string]$TaskName = "BrasulPedidos_BackupDiario"
 )
+
+Write-Host "AVISO: backup_diario local foi substituido por backup_agendado.py (Google Drive)."
+Write-Host "Execute: powershell -ExecutionPolicy Bypass -File tools\desagendar_backup_diario.ps1"
+Write-Host "Depois:  powershell -ExecutionPolicy Bypass -File tools\agendar_backup_drive.ps1 -RemoverBackupAntigo"
+exit 1
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent

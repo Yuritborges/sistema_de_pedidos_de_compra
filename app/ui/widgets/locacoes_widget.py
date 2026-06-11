@@ -45,6 +45,7 @@ from app.data.database import (
     REDE_LOCACOES_DB_PATH,
 )
 from app.data.locacoes_import import (
+    LOCACOES_DIAS_ALERTA_ANTECEDENCIA,
     calcular_derivados_locacao as _calcular_derivados,
     derivados_locacao_linha,
     clean_str as _clean,
@@ -1642,7 +1643,7 @@ class LocacoesWidget(QWidget):
                             bf = it.font()
                             bf.setBold(True)
                             it.setFont(bf)
-                        elif 0 <= d <= 7:
+                        elif 0 <= d <= LOCACOES_DIAS_ALERTA_ANTECEDENCIA:
                             it.setForeground(QColor("#CA6F1E"))
                     except ValueError:
                         pass

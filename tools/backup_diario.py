@@ -1,3 +1,6 @@
+# [LEGADO] Backup local completo (vários .db + JSON). Mantido só para uso manual de emergência.
+# Backup diário automático: backup_agendado.py → Google Drive (tools/agendar_backup_drive.ps1).
+
 import argparse
 import os
 import shutil
