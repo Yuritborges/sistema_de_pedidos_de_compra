@@ -109,21 +109,45 @@ def _logo_path(empresa: str):
     return p if (nome and os.path.exists(p)) else None
 
 
+_OBS_EMP_FONTE = "Helvetica-Bold"
+_OBS_EMP_TAMANHO_PT = 7.5
+
+
 def _montar_obs_empresa_pdf(obs_padrao: str) -> str:
     """
-    Texto do bloco NOTA FISCAL: obs da empresa + regra de emissão na data da entrega.
+    Texto do bloco NOTA FISCAL: cabeçalho da empresa + regra de emissão na entrega.
     """
-    linhas = [p.strip() for p in (obs_padrao or "").split("\n") if p.strip()]
-    linhas.append(OBS_FATURAMENTO_DATA_ENTREGA)
-    return "\n".join(linhas)
+    cabecalho = [p.strip() for p in (obs_padrao or "").split("\n") if p.strip()]
+    if cabecalho:
+        return "\n".join(cabecalho) + "\n" + OBS_FATURAMENTO_DATA_ENTREGA
+    return OBS_FATURAMENTO_DATA_ENTREGA
 
 
-def _altura_obs_empresa(texto: str, escala: float) -> float:
-    """Estima altura do bloco de observação da empresa (para layout)."""
-    if not texto:
+def _linhas_bloco_obs_empresa(c, texto: str, escala: float = 1.0) -> list[str]:
+    """Quebra o texto do bloco NOTA FISCAL na largura útil do PDF."""
+    if not (texto or "").strip():
+        return []
+    tamanho = max(7.0, _OBS_EMP_TAMANHO_PT * escala)
+    largura = CW - 6 * mm
+    linhas: list[str] = []
+    for paragrafo in texto.split("\n"):
+        p = paragrafo.strip()
+        if not p:
+            continue
+        linhas.extend(
+            PedidoCompraGenerator._quebrar_texto(c, p, largura, _OBS_EMP_FONTE, tamanho)
+        )
+    return linhas
+
+
+def _medir_altura_bloco_obs_empresa(c, texto: str, escala: float = 1.0) -> float:
+    """Altura exata do bloco conforme quebra de linha real (sem espaço vazio)."""
+    linhas = _linhas_bloco_obs_empresa(c, texto, escala)
+    if not linhas:
         return 0.0
-    nl = max(1, (len(texto) // 90) + texto.count("\n") + 1)
-    return (8 * escala + nl * 4.5 * escala) * mm
+    lh = 4.2 * mm
+    pad = (4 * mm + 2.5 * mm) * escala
+    return pad + len(linhas) * lh
 
 
 def _montar_observacao(emp: dict, obs_usuario: str, material_solicitado: str = "") -> str:
@@ -240,7 +264,7 @@ class PedidoCompraGenerator:
         hent = 18 * mm * e
         hdr_h = max(5 * mm, 7 * mm * e)
         tot_h = max(14 * mm, 18 * mm * e)
-        hobs_emp = _altura_obs_empresa(obs_empresa_txt, e)
+        hobs_emp = _medir_altura_bloco_obs_empresa(c, obs_empresa_txt, e)
         hobs = 0
         if obs_txt:
             nl2 = max(1, (len(obs_txt) // 110) + obs_txt.count("\n") + 1)
@@ -291,7 +315,7 @@ class PedidoCompraGenerator:
             hdr_h   = max(5*mm, 7*mm*e)
             tot_h   = max(14*mm, 18*mm*e)
 
-            hobs_emp = _altura_obs_empresa(obs_empresa_txt, e)
+            hobs_emp = _medir_altura_bloco_obs_empresa(c, obs_empresa_txt, e)
 
             hobs = 0
             if obs_txt:
@@ -764,27 +788,18 @@ class PedidoCompraGenerator:
         c.setStrokeColor(C_LINHA); c.setLineWidth(0.5)
         c.rect(M, y-alt, CW, alt, fill=1, stroke=1)
 
-        # Renderiza o texto do obs_padrao, linha por linha
-        c.setFont("Helvetica-Bold", 7.5); c.setFillColor(C_PRETO)
-        yi = y - 5*mm
+        tamanho = max(7.0, _OBS_EMP_TAMANHO_PT)
+        lh = 4.2 * mm
+        linhas = _linhas_bloco_obs_empresa(c, obs_padrao, escala=1.0)
 
-        for paragrafo in obs_padrao.split('\n'):
-            if not paragrafo.strip():
-                yi -= 3.5*mm
-                continue
-            palavras = paragrafo.split(); linha = ""
-            for p in palavras:
-                teste = (linha + " " + p).strip()
-                if c.stringWidth(teste, "Helvetica-Bold", 7.5) > CW - 6*mm:
-                    c.drawString(M+3*mm, yi, linha)
-                    yi -= 4.5*mm; linha = p
-                else:
-                    linha = teste
-            if linha:
-                c.drawString(M+3*mm, yi, linha)
-                yi -= 4.5*mm
+        c.setFont(_OBS_EMP_FONTE, tamanho)
+        c.setFillColor(C_PRETO)
+        yi = y - 4 * mm
+        for linha in linhas:
+            c.drawString(M + 3 * mm, yi, linha)
+            yi -= lh
 
-        return y - alt - 1*mm
+        return y - alt - 1 * mm
 
     # ══════════════════════════════════════════════════════════════════════════
     # BLOCO 6 — Local de entrega
