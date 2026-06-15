@@ -708,63 +708,90 @@ class PedidoCompraGenerator:
         Bloco de faturamento — condição, forma, prazo e data prevista.
         A obs_padrao da empresa agora fica em _bloco_obs_empresa (quadrado próprio).
         """
-        c.setStrokeColor(C_LINHA); c.setLineWidth(0.8)
-        c.rect(M, y-alt, CW, alt, fill=0, stroke=1)
+        c.setStrokeColor(C_LINHA)
+        c.setLineWidth(0.8)
+        y0 = y - alt
+        c.rect(M, y0, CW, alt, fill=0, stroke=1)
 
-        cond  = str(dto.condicao_pagamento or "—").strip()
+        cond = str(dto.condicao_pagamento or "—").strip()
         forma = str(dto.forma_pagamento or "—").strip()
         cond_upper = cond.upper()
         cond_em_etapas = "%" in cond_upper or " NO ATO " in f" {cond_upper} "
         texto_faturamento = f"{cond}   {forma}" if cond_em_etapas else f"{cond} dias   {forma}"
 
+        tem_pix = self._forma_pagamento_tem_pix(dto)
+        pix = str(getattr(dto, "fornecedor_pix", "") or "").strip()
+        favorecido = str(getattr(dto, "fornecedor_favorecido", "") or "").strip()
+        tem_linha_pix = tem_pix and (pix or favorecido)
+
+        # Referência de layout em mm (14 sem PIX, 22 com PIX); posições escalam com `alt`.
+        base_ref = 22.0 if tem_linha_pix else 14.0
+
+        def y_linha(mm_do_topo: float) -> float:
+            return y - alt * (mm_do_topo / base_ref)
+
         # Linha 1: Faturamento + Estimativa de vencimento
-        c.setFont("Helvetica-Bold", 8); c.setFillColor(C_ESCURO)
-        c.drawString(M+3*mm, y-5.5*mm, "Faturamento:")
-        c.setFont("Helvetica-Bold", 9); c.setFillColor(C_PRETO)
-        c.drawString(M+32*mm, y-5.5*mm, texto_faturamento)
-        c.setFont("Helvetica-Bold", 8); c.setFillColor(C_ESCURO)
-        c.drawRightString(W-M-3*mm, y-5.5*mm,
-                          f"Estimativa de vencimento: {dto.estimativa_vencimento}")
+        y1 = y_linha(5.5)
+        c.setFont("Helvetica-Bold", 8)
+        c.setFillColor(C_ESCURO)
+        c.drawString(M + 3 * mm, y1, "Faturamento:")
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColor(C_PRETO)
+        c.drawString(M + 32 * mm, y1, texto_faturamento)
+        c.setFont("Helvetica-Bold", 8)
+        c.setFillColor(C_ESCURO)
+        c.drawRightString(W - M - 3 * mm, y1, f"Estimativa de vencimento: {dto.estimativa_vencimento}")
 
-        # Linha 2: Prazo + Data Prevista centralizada e em fonte maior
-        c.setFont("Helvetica-Bold", 8); c.setFillColor(C_ESCURO)
-        c.drawString(M+3*mm, y-11*mm, "PRAZO  ENTREGA")
-        c.setFont("Helvetica-Bold", 9); c.setFillColor(C_PRETO)
-        c.drawString(M+42*mm, y-11*mm, f"{dto.prazo_entrega} dias")
+        # Linha 2: Prazo + Data prevista (caixa alinhada ao quadro do bloco)
+        y2 = y_linha(11.0)
+        c.setFont("Helvetica-Bold", 8)
+        c.setFillColor(C_ESCURO)
+        c.drawString(M + 3 * mm, y2, "PRAZO  ENTREGA")
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColor(C_PRETO)
+        c.drawString(M + 42 * mm, y2, f"{dto.prazo_entrega} dias")
 
-        c.setFont("Helvetica-Bold", 8); c.setFillColor(C_ESCURO)
-        c.drawRightString(W-M-30*mm, y-11*mm, "DATA PREVISTA DA ENTREGA")
+        c.setFont("Helvetica-Bold", 8)
+        c.setFillColor(C_ESCURO)
+        c.drawRightString(W - M - 30 * mm, y2, "DATA PREVISTA DA ENTREGA")
 
-        # Caixinha DATA PREVISTA: vermelho até OK na obra; verde só com flag explícita no banco.
+        box_w = 25 * mm
+        box_h = alt * (6.5 / base_ref)
+        box_pad = alt * (1.0 / base_ref)
+        box_x = W - M - 28 * mm
+        box_bottom = y0 + box_pad
         ok_caixa = int(getattr(dto, "material_ok_na_obra", 0) or 0) != 0
         c.setStrokeColor(C_LINHA)
         c.setFillColor(C_PREVISTA_COM_OK if ok_caixa else C_PREVISTA_SEM_OK)
-        c.rect(W-M-28*mm, y-14*mm, 25*mm, 6.5*mm, fill=1, stroke=1)
-        c.setFont("Helvetica-Bold", 10); c.setFillColor(C_PRETO)
-        cx_data = W - M - 28*mm + 12.5*mm
-        c.drawCentredString(cx_data, y-11*mm, dto.data_prevista_entrega)
+        c.rect(box_x, box_bottom, box_w, box_h, fill=1, stroke=1)
+        c.setFont("Helvetica-Bold", 10)
+        c.setFillColor(C_PRETO)
+        cx_data = box_x + box_w / 2
+        text_y = box_bottom + box_h / 2 - 1.1 * mm
+        c.drawCentredString(cx_data, text_y, dto.data_prevista_entrega)
 
-        # Linha PIX dentro do bloco de faturamento (forma ou condição com PIX).
-        if self._forma_pagamento_tem_pix(dto):
-            pix = str(getattr(dto, "fornecedor_pix", "") or "").strip()
-            favorecido = str(getattr(dto, "fornecedor_favorecido", "") or "").strip()
+        if tem_linha_pix:
+            c.setStrokeColor(C_LINHA)
+            c.setLineWidth(0.3)
+            c.line(M + 2 * mm, y_linha(15.5), W - M - 2 * mm, y_linha(15.5))
 
-            if pix or favorecido:
-                c.setStrokeColor(C_LINHA); c.setLineWidth(0.3)
-                c.line(M+2*mm, y-15.5*mm, W-M-2*mm, y-15.5*mm)
+            y_pix = y_linha(19.5)
+            c.setFont("Helvetica-Bold", 7.5)
+            c.setFillColor(C_ESCURO)
+            c.drawString(M + 3 * mm, y_pix, "PIX:")
+            c.setFont("Helvetica-Bold", 8)
+            c.setFillColor(C_PRETO)
+            c.drawString(M + 15 * mm, y_pix, pix[:75] if pix else "—")
 
-                c.setFont("Helvetica-Bold", 7.5); c.setFillColor(C_ESCURO)
-                c.drawString(M+3*mm, y-19.5*mm, "PIX:")
-                c.setFont("Helvetica-Bold", 8); c.setFillColor(C_PRETO)
-                c.drawString(M+15*mm, y-19.5*mm, pix[:75] if pix else "—")
+            if favorecido:
+                c.setFont("Helvetica-Bold", 7.5)
+                c.setFillColor(C_ESCURO)
+                c.drawString(M + 105 * mm, y_pix, "FAVORECIDO:")
+                c.setFont("Helvetica", 7.5)
+                c.setFillColor(C_PRETO)
+                c.drawString(M + 130 * mm, y_pix, favorecido[:35])
 
-                if favorecido:
-                    c.setFont("Helvetica-Bold", 7.5); c.setFillColor(C_ESCURO)
-                    c.drawString(M+105*mm, y-19.5*mm, "FAVORECIDO:")
-                    c.setFont("Helvetica", 7.5); c.setFillColor(C_PRETO)
-                    c.drawString(M+130*mm, y-19.5*mm, favorecido[:35])
-
-        return y - alt - 1*mm
+        return y0 - 1 * mm
 
     def _bloco_obs_empresa(self, c, obs_padrao: str, y, alt):
         """

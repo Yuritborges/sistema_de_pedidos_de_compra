@@ -90,6 +90,22 @@ def _pixmap_logo_sem_fundo_branco(pix: QPixmap, limiar: int = 248) -> QPixmap:
     return QPixmap.fromImage(img)
 
 
+def _definir_cabecalhos_pedidos_gerados(tabela: QTableWidget):
+    """Títulos visíveis com o mesmo alinhamento das células."""
+    specs = [
+        ("Nº", Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
+        ("Data", Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
+        ("Obra", Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+        ("Fornecedor", Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+        ("Empresa", Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter),
+        ("Ações", Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+    ]
+    for col, (titulo, alinh) in enumerate(specs):
+        item = QTableWidgetItem(titulo)
+        item.setTextAlignment(alinh)
+        tabela.setHorizontalHeaderItem(col, item)
+
+
 class PedidosWidget(QWidget):
 
     _PAGE_SIZE = 25  # menos widgets por página = abertura mais leve
@@ -283,7 +299,7 @@ class PedidosWidget(QWidget):
 
         self.tabela = QTableWidget(0, 6)
         self.tabela.setObjectName("pedidos_gerados_tabela")
-        self.tabela.setHorizontalHeaderLabels(["Nº", "Data", "Obra", "Fornecedor", "Empresa", "Ações"])
+        _definir_cabecalhos_pedidos_gerados(self.tabela)
         self.tabela.setStyleSheet(CSS_TABLE_PEDIDOS_GERADOS)
         self.tabela.setAlternatingRowColors(False)
         self.tabela.setSelectionBehavior(QTableWidget.SelectRows)
@@ -291,7 +307,8 @@ class PedidosWidget(QWidget):
         self.tabela.verticalHeader().setVisible(False)
         self.tabela.setShowGrid(False)
         self.tabela.setFrameShape(QFrame.NoFrame)
-        hh = self.tabela.horizontalHeader(); hh.setHighlightSections(False)
+        hh = self.tabela.horizontalHeader()
+        hh.setHighlightSections(False)
         hh.setSectionResizeMode(0, QHeaderView.Fixed);  self.tabela.setColumnWidth(0, 70)
         hh.setSectionResizeMode(1, QHeaderView.Fixed);  self.tabela.setColumnWidth(1, 95)
         hh.setSectionResizeMode(2, QHeaderView.Stretch)
