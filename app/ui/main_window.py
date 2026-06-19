@@ -290,7 +290,8 @@ class MainWindow(QMainWindow):
     def _criar_pagina_cadastros(self):
         try:
             from app.ui.widgets.cadastros_widget import CadastrosWidget
-            return CadastrosWidget()
+            w = CadastrosWidget()
+            return w
         except Exception as e:
             erro_cadastros = e
 
@@ -315,6 +316,21 @@ class MainWindow(QMainWindow):
         lay.addWidget(msg)
         lay.addStretch()
         return page
+
+    def _conectar_sync_cadastros(self):
+        """Sincroniza Cadastros ↔ Pedido ao salvar/editar fornecedores e obras."""
+        if getattr(self, "_sync_cadastros_ok", False):
+            return
+        ped = self._pages.get("pedido")
+        cad = self._pages.get("cadastros")
+        if ped is None or cad is None:
+            return
+        from app.ui.widgets.cadastros_widget import CadastrosWidget
+        if not isinstance(cad, CadastrosWidget):
+            return
+        cad.cadastros_alterados.connect(ped.recarregar_cadastros_de_arquivo)
+        ped.cadastros_alterados.connect(cad._carregar_tudo)
+        self._sync_cadastros_ok = True
 
     def _registrar_atalhos(self):
         # Ctrl+1 a Ctrl+6 navegam entre as abas (ORDEM_ABAS)
@@ -431,6 +447,9 @@ class MainWindow(QMainWindow):
         if widget is None:
             return
         self._stack.setCurrentWidget(widget)
+
+        if key == "pedido" and hasattr(widget, "recarregar_cadastros_de_arquivo"):
+            widget.recarregar_cadastros_de_arquivo()
 
         # Recarrega dados ao trocar de aba (Pedidos Gerados usa cache; «Atualizar» força reload)
         if hasattr(widget, '_carregar'):
@@ -626,6 +645,7 @@ class MainWindow(QMainWindow):
                 pagina = self._page_factories[key]()
                 self._pages[key] = pagina
                 self._stack.addWidget(pagina)
+                self._conectar_sync_cadastros()
             except Exception:
                 traceback.print_exc()
                 return None

@@ -64,6 +64,9 @@ if (-not $SkipCurrent) {
     if ($rc -ge 8) {
         throw "Falha ao copiar para current (robocopy codigo $rc). Feche o SistemaPedidosV2 em todos os PCs e rode: tools\sync_current_from_dist.ps1"
     }
+
+    Write-Host "Publicando icone para atalhos (rede) ..."
+    & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "publicar_icone_atalho.ps1")
 }
 
 Write-Host "OK releases: $destRelease\SistemaPedidosV2.exe"

@@ -19,13 +19,14 @@ from app.config.settings import (
     configurar_locacoes,
     env_bool,
     normalizar_usuario,
+    resolver_base_rede_dir,
 )
 
 # ---------------------------------------------------------------------------
 # Ajuste por máquina / comprador (edite ao copiar para config.py)
 # ---------------------------------------------------------------------------
 COMPRADOR_PADRAO = "SEU_NOME"
-BASE_REDE_DIR = DEFAULT_BASE_REDE_DIR
+BASE_REDE_DIR = resolver_base_rede_dir()
 
 COMPRADOR_PADRAO = normalizar_usuario(COMPRADOR_PADRAO)
 

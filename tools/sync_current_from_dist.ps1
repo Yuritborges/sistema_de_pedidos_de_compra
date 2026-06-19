@@ -46,4 +46,7 @@ if ($rc -ge 8) {
     throw ($msg -join " ")
 }
 
+Write-Host "Publicando icone para atalhos (rede) ..."
+& powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "publicar_icone_atalho.ps1")
+
 Write-Host "OK: $cur\SistemaPedidosV2.exe"

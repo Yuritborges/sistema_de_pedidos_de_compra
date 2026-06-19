@@ -8,7 +8,8 @@ $nomes = @(
     "BrasulPedidos_BackupDiario",
     "Brasul_BackupDiario_Pedidos",
     "Brasul Backup Diario",
-    "BackupDiarioBrasul"
+    "BackupDiarioBrasul",
+    "Backup Brasul 18h"
 )
 
 Write-Host "Removendo tarefas antigas de backup local..."
@@ -21,8 +22,7 @@ foreach ($nome in $nomes) {
 }
 
 Write-Host ""
-Write-Host "Se ainda abrir CMD ao ligar o PC, verifique no Agendador de Tarefas:"
-Write-Host "  - Pasta Inicializar (Startup)"
-Write-Host "  - BACKUP_DIARIO.bat na pasta do projeto na rede"
+Write-Host "Se ainda abrir CMD ao ligar o PC, remova o atalho na pasta Inicializar:"
+Write-Host "  $env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\BrasulBackupAoLigar.cmd"
 Write-Host ""
 Write-Host "Backup atual: tools\agendar_backup_drive.ps1 -> backup_agendado.py (Google Drive)"

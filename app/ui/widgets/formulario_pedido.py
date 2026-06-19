@@ -1,6 +1,6 @@
 # app/ui/widgets/formulario_pedido.py
 # Formulário de criação e edição de pedidos de compra.
-import os, sys, subprocess, json, copy, shutil, tempfile
+import os, sys, subprocess, json, copy, shutil, tempfile, re
 from datetime import datetime
 
 from PySide6.QtWidgets import (
@@ -10,10 +10,10 @@ from PySide6.QtWidgets import (
     QDialog, QFormLayout, QDialogButtonBox, QTextEdit, QAbstractItemView,
     QFileDialog, QCheckBox,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QKeyEvent
 
-from config import (EMPRESAS_FATURADORAS, UNIDADES,
+from config import (UNIDADES,
                     CONDICOES_PAGAMENTO, FORMAS_PAGAMENTO, COMPRADOR_PADRAO)
 from app.core.dto.pedido_dto import PedidoDTO, ItemPedidoDTO
 from app.core.services.pedido_service import PedidoService
@@ -23,12 +23,21 @@ from app.data.database import (
     row_to_dict,
 )
 from app.data.cadastros_store import OBRAS_JSON as _OBR, FORNECEDORES_JSON as _FOR
+from app.data.empresas_faturadoras_store import (
+    EMPRESAS_EXTRA_JSON as _EMP,
+    get_empresas_faturadoras,
+    is_empresa_padrao,
+    is_empresa_protegida,
+    pode_excluir_empresa,
+    salvar_empresa,
+    excluir_empresa_faturadora,
+    restaurar_empresa_padrao,
+)
 
 # ── Caminhos dos arquivos JSON ─────────────────────────────────────────────────
 _ASSETS = os.path.normpath(
     os.path.join(os.path.dirname(__file__), '..', '..', '..', 'assets')
 )
-_EMP = os.path.join(_ASSETS, 'empresas_extra.json')  # empresas cadastradas pelo usuário
 _PED_RASC = os.path.join(_ASSETS, 'pedidos_salvos')  # rascunhos de pedidos salvos pelo usuário
 
 
@@ -390,15 +399,7 @@ class NovaObraDialog(QDialog):
         form.setSpacing(10); form.setContentsMargins(20,20,20,20)
 
         # Carrega empresas base + extras para o combo de faturamento
-        import config as _cfg
-        todas_empresas = list(_cfg.EMPRESAS_FATURADORAS.keys())
-        try:
-            extras = _load(_EMP)
-            for sigla in extras:
-                if sigla not in todas_empresas:
-                    todas_empresas.append(sigla)
-        except Exception:
-            pass
+        todas_empresas = list(get_empresas_faturadoras().keys())
 
         self._campos = {
             "nome": _fld(), "escola": _fld(),
@@ -502,9 +503,15 @@ class NovaEmpresaDialog(QDialog):
     # Texto base que já aparece preenchido no campo Obs. padrão
     _OBS_BASE = "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\n"
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, editar_sigla=None, editar_dados=None):
         super().__init__(parent)
-        self.setWindowTitle("Cadastrar Nova Empresa Faturadora")
+        self._modo_edicao = bool(editar_sigla)
+        self._editar_sigla = editar_sigla
+        self._restaurou_padrao = False
+        self.setWindowTitle(
+            "Editar Empresa Faturadora" if self._modo_edicao
+            else "Cadastrar Nova Empresa Faturadora"
+        )
         self.setMinimumWidth(560)
         self.setStyleSheet(f"background:{WHITE}; color:{TXT};")
 
@@ -530,6 +537,10 @@ class NovaEmpresaDialog(QDialog):
         self._nome     = _fld_upper("SIGLA USADA NO BOTÃO — EX: NOVA")
         self._razao    = _fld_upper("NOVA EMPRESA CONSTRUTORA LTDA")
         self._endereco = _fld_upper()
+        self._cidade = _fld_upper()
+        self._uf = _fld("SP")
+        self._uf.setMaxLength(2)
+        self._cep = _fld()
         self._telefone = _fld()   # telefone pode ter símbolos, não forçamos
         self._email    = _fld()   # e-mail é case-insensitive, mantemos livre
 
@@ -594,6 +605,14 @@ class NovaEmpresaDialog(QDialog):
         form.addRow(lbl("Sigla / Botão *"),        self._nome)
         form.addRow(lbl("Razão Social *"),          self._razao)
         form.addRow(lbl("Endereço"),                self._endereco)
+        row_loc = QHBoxLayout()
+        row_loc.setSpacing(8)
+        self._uf.setFixedWidth(60)
+        self._cep.setPlaceholderText("00000-000")
+        row_loc.addWidget(self._cidade, 2)
+        row_loc.addWidget(self._uf, 0)
+        row_loc.addWidget(self._cep, 1)
+        form.addRow(lbl("Cidade / UF / CEP"),       row_loc)
         form.addRow(lbl("Telefone"),                self._telefone)
         form.addRow(lbl("E-mail"),                  self._email)
         form.addRow(lbl("Obs. padrão no PDF"),      self._obs)
@@ -601,12 +620,80 @@ class NovaEmpresaDialog(QDialog):
         form.addRow(aviso_logo)
         form.addRow(lbl("Cor do botão"),            self._cor_combo)
 
+        if self._modo_edicao and editar_sigla and is_empresa_padrao(editar_sigla) and not is_empresa_protegida(editar_sigla):
+            btn_restaurar = QPushButton("↩  Restaurar padrão")
+            btn_restaurar.setCursor(Qt.PointingHandCursor)
+            btn_restaurar.setStyleSheet(f"""
+                QPushButton {{
+                    background:#ECF0F1; color:{TXT}; font-size:12px;
+                    border:1.5px solid {BDR}; border-radius:5px; padding:6px 14px;
+                }}
+                QPushButton:hover {{ background:#D5DBDB; }}
+            """)
+            btn_restaurar.setToolTip(
+                "Remove as alterações salvas e volta aos dados originais do sistema.")
+            btn_restaurar.clicked.connect(self._confirmar_restaurar_padrao)
+            form.addRow(btn_restaurar)
+
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(self._aceitar); bb.rejected.connect(self.reject)
         bb.button(QDialogButtonBox.Ok).setStyleSheet(
             f"background:{RED};color:white;font-weight:bold;"
             f"padding:6px 20px;border-radius:5px;border:none;")
         form.addRow(bb)
+
+        if self._modo_edicao and editar_sigla and editar_dados:
+            self._preencher_edicao(editar_sigla, editar_dados)
+
+    def _preencher_edicao(self, sigla, dados):
+        self._nome.setText(sigla)
+        self._nome.setReadOnly(True)
+        self._razao.setText(dados.get("razao_social", ""))
+        self._endereco.setText(dados.get("endereco", ""))
+        self._cidade.setText(dados.get("cidade", ""))
+        self._uf.setText(dados.get("uf", "SP"))
+        self._cep.setText(dados.get("cep", ""))
+        if not self._cidade.text() or not self._uf.text().strip():
+            cid, uf = self._inferir_cidade_uf(dados.get("endereco", ""))
+            if not self._cidade.text() and cid:
+                self._cidade.setText(cid)
+            if not self._uf.text().strip() and uf:
+                self._uf.setText(uf)
+        if not self._cep.text().strip():
+            cep = self._inferir_cep(dados.get("endereco", ""))
+            if cep:
+                self._cep.setText(cep)
+        self._telefone.setText(dados.get("telefone", ""))
+        self._email.setText(dados.get("email", ""))
+        self._obs.setPlainText(dados.get("obs_padrao", self._OBS_BASE))
+
+        cor_btn = dados.get("cor_btn")
+        if not cor_btn:
+            cor_raw = dados.get("cor_header", (80, 80, 80))
+            if isinstance(cor_raw, (list, tuple)) and len(cor_raw) >= 3:
+                r, g, b = cor_raw[:3]
+                cor_btn = f"#{r:02X}{g:02X}{b:02X}"
+        if cor_btn:
+            idx = self._cor_combo.findData(cor_btn)
+            if idx >= 0:
+                self._cor_combo.setCurrentIndex(idx)
+
+        logo = dados.get("logo", "")
+        if logo:
+            self._lbl_logo.setText(f"  {logo}")
+
+    def _confirmar_restaurar_padrao(self):
+        if not self._editar_sigla:
+            return
+        resp = QMessageBox.question(
+            self, "Restaurar padrão",
+            f"Deseja restaurar '{self._editar_sigla}' aos dados originais?\n\n"
+            "As alterações salvas serão descartadas.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if resp != QMessageBox.Yes:
+            return
+        self._restaurou_padrao = True
+        self.accept()
 
     def _obs_maiusculas(self):
                 # Mantém o conteúdo do campo Obs. sempre em maiúsculas.
@@ -682,6 +769,9 @@ class NovaEmpresaDialog(QDialog):
             "sigla":        nome,
             "razao_social": razao,
             "endereco":     self._endereco.text().strip(),
+            "cidade":       self._cidade.text().strip(),
+            "uf":           self._uf.text().strip().upper() or "SP",
+            "cep":          self._cep.text().strip(),
             "telefone":     self._telefone.text().strip(),
             "email":        self._email.text().strip(),
             "obs_padrao":   self._obs.toPlainText().strip(),
@@ -690,6 +780,26 @@ class NovaEmpresaDialog(QDialog):
             "cor_btn":      hx,
         }
         self.accept()
+
+    @staticmethod
+    def _inferir_cep(endereco: str) -> str:
+        m = re.search(
+            r"CEP[:\s]*([0-9]{2}\.?[0-9]{3}-?[0-9]{3}|[0-9]{5}-?[0-9]{3}|[0-9]{8})",
+            endereco or "",
+            re.I,
+        )
+        return m.group(1).replace(".", "") if m else ""
+
+    @staticmethod
+    def _inferir_cidade_uf(endereco: str) -> tuple[str, str]:
+        end = endereco or ""
+        m = re.search(r"([A-Za-zÀ-ÿ\s]+)\s+([A-Z]{2})\s*[-–]\s*CEP", end, re.I)
+        if m:
+            return m.group(1).strip(), m.group(2).strip().upper()
+        m = re.search(r"([A-Za-zÀ-ÿ\s]+),\s*([A-Z]{2})(?:\s*[-–]|$)", end)
+        if m:
+            return m.group(1).strip(), m.group(2).strip().upper()
+        return "", ""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -708,6 +818,8 @@ class PedidoWidget(QWidget):
         5. Observação       — campo livre para informações extras
         6. Gerar / Limpar   — botões por empresa + botão limpar
     """
+
+    cadastros_alterados = Signal()
 
     def __init__(self):
         super().__init__()
@@ -906,7 +1018,7 @@ class PedidoWidget(QWidget):
         box = _grp("Obra")
         vl  = QVBoxLayout(); vl.setSpacing(10)
         hl1 = QHBoxLayout(); hl1.setSpacing(10)
-        self.e_obra = QComboBox()
+        self.e_obra = _ComboSemRoda()
         self.e_obra.setEditable(True); self.e_obra.setInsertPolicy(QComboBox.NoInsert)
         self.e_obra.setMinimumWidth(340); self.e_obra.setStyleSheet(CSS_COMBO)
         self.e_obra.view().setStyleSheet(
@@ -923,7 +1035,7 @@ class PedidoWidget(QWidget):
         vl.addLayout(hl1)
         hl2 = QHBoxLayout(); hl2.setSpacing(10)
         self.e_escola   = _fld()
-        self.e_fat      = _combo(list(EMPRESAS_FATURADORAS.keys()))
+        self.e_fat      = _combo(list(get_empresas_faturadoras().keys()))
         self.e_end      = _fld(); self.e_bairro  = _fld()
         self.e_cep      = _fld(); self.e_cidade  = _fld()
         self.e_uf       = _fld("SP"); self.e_contrato = _fld("0")
@@ -947,7 +1059,7 @@ class PedidoWidget(QWidget):
         box = _grp("Fornecedor")
         vl  = QVBoxLayout(); vl.setSpacing(10)
         hl1 = QHBoxLayout(); hl1.setSpacing(10)
-        self.e_fsel = QComboBox()
+        self.e_fsel = _ComboSemRoda()
         self.e_fsel.setEditable(True); self.e_fsel.setInsertPolicy(QComboBox.NoInsert)
         self.e_fsel.setMinimumWidth(340); self.e_fsel.setStyleSheet(CSS_COMBO)
         self.e_fsel.view().setStyleSheet(
@@ -1224,10 +1336,26 @@ class PedidoWidget(QWidget):
         btn_nova.clicked.connect(self._cad_empresa)
         br.addWidget(btn_nova)
 
+        # Botão "✏" — editar empresa faturadora (inclui BRASUL, B&B, etc.)
+        btn_edit = QPushButton("✏")
+        btn_edit.setFixedSize(36, 46)
+        btn_edit.setToolTip("Editar dados da empresa faturadora (endereço de cobrança, etc.)")
+        btn_edit.setCursor(Qt.PointingHandCursor)
+        btn_edit.setStyleSheet("""
+            QPushButton {
+                background:#ECF0F1; color:#2874A6; font-size:16px;
+                border-radius:8px; border:1.5px solid #BDC3C7;
+            }
+            QPushButton:hover   { background:#D6EAF8; color:#1B4F72; }
+            QPushButton:pressed { background:#AED6F1; }
+        """)
+        btn_edit.clicked.connect(self._editar_empresa)
+        br.addWidget(btn_edit)
+
         # Botão "🗑" — excluir empresa cadastrada pelo usuário
         btn_del = QPushButton("🗑")
         btn_del.setFixedSize(36, 46)
-        btn_del.setToolTip("Excluir empresa cadastrada pelo usuário")
+        btn_del.setToolTip("Excluir empresa faturadora (BRASUL não pode ser removida)")
         btn_del.setCursor(Qt.PointingHandCursor)
         btn_del.setStyleSheet("""
             QPushButton {
@@ -1322,13 +1450,16 @@ class PedidoWidget(QWidget):
             self._frame_empresas.addWidget(b)
 
     def _get_todas_empresas(self):
-                # Mescla empresas do config.py com as extras salvas pelo usuário.
-        import config as _cfg
-        todas = dict(_cfg.EMPRESAS_FATURADORAS)
-        for sigla, dados in _load(_EMP).items():
-            if sigla not in todas:
-                todas[sigla] = dados
-        return todas
+        return get_empresas_faturadoras()
+
+    def _atualizar_combo_faturamento_obras(self):
+        atual = self.e_fat.currentText()
+        self.e_fat.blockSignals(True)
+        self.e_fat.clear()
+        self.e_fat.addItems(list(get_empresas_faturadoras().keys()))
+        idx = self.e_fat.findText(atual)
+        self.e_fat.setCurrentIndex(idx if idx >= 0 else 0)
+        self.e_fat.blockSignals(False)
 
     def _cad_empresa(self):
                 # Abre diálogo de cadastro e salva a nova empresa em empresas_extra.json.
@@ -1341,42 +1472,80 @@ class PedidoWidget(QWidget):
             QMessageBox.information(self, "Já existe",
                 f"A empresa '{sigla}' já está cadastrada."); return
 
-        extras = _load(_EMP)
-        extras[sigla] = {k: v for k, v in r.items() if k != "sigla"}
-        _save(_EMP, extras)
+        salvar_empresa(sigla, {k: v for k, v in r.items() if k != "sigla"})
         self._rebuild_botoes_empresa()
+        self._atualizar_combo_faturamento_obras()
         QMessageBox.information(self, "Empresa cadastrada!",
             f"'{sigla}' adicionada com sucesso.\n\n"
             f"Dica: adicione o logo em  assets/logos/{r['logo']}")
 
-    def _excluir_empresa(self):
-                # Permite excluir apenas empresas cadastradas pelo usuário (não as 5 originais).
+    def _editar_empresa(self):
         from PySide6.QtWidgets import QInputDialog
-        extras = _load(_EMP)
-        if not extras:
-            QMessageBox.information(self, "Nada para excluir",
-                "Não há empresas cadastradas pelo usuário.\n\n"
-                "As 5 empresas originais não podem ser removidas."); return
-
+        empresas = self._get_todas_empresas()
         escolha, ok = QInputDialog.getItem(
-            self, "Excluir empresa",
-            "Selecione a empresa que deseja remover:",
-            list(extras.keys()), 0, False)
+            self, "Editar empresa",
+            "Selecione a empresa faturadora:",
+            list(empresas.keys()), 0, False)
         if not ok or not escolha:
             return
 
+        dlg = NovaEmpresaDialog(
+            self, editar_sigla=escolha, editar_dados=empresas[escolha])
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        if dlg._restaurou_padrao:
+            restaurar_empresa_padrao(escolha)
+            self._rebuild_botoes_empresa()
+            self._atualizar_combo_faturamento_obras()
+            QMessageBox.information(
+                self, "Restaurado",
+                f"'{escolha}' voltou aos dados originais do sistema.")
+            return
+
+        r = dlg.resultado
+        salvar_empresa(escolha, {k: v for k, v in r.items() if k != "sigla"})
+        self._rebuild_botoes_empresa()
+        self._atualizar_combo_faturamento_obras()
+        QMessageBox.information(
+            self, "Empresa atualizada!",
+            f"Os dados de '{escolha}' foram salvos.\n\n"
+            "O endereço de cobrança nos PDFs usará as novas informações.")
+
+    def _excluir_empresa(self):
+        from PySide6.QtWidgets import QInputDialog
+        empresas = self._get_todas_empresas()
+        opcoes = sorted(sigla for sigla in empresas if pode_excluir_empresa(sigla))
+        if not opcoes:
+            QMessageBox.information(
+                self, "Nada para excluir",
+                "Só a BRASUL está cadastrada.\n\n"
+                "A BRASUL é a empresa principal e não pode ser removida.")
+            return
+
+        escolha, ok = QInputDialog.getItem(
+            self, "Excluir empresa",
+            "Selecione a empresa faturadora a remover:",
+            opcoes, 0, False)
+        if not ok or not escolha:
+            return
+
+        msg = (
+            f"Deseja realmente excluir '{escolha}'?\n\n"
+            "Ela deixará de aparecer nos botões e nos PDFs novos.\n"
+            "A BRASUL continua disponível.")
         resp = QMessageBox.question(
-            self, "Confirmar exclusão",
-            f"Deseja realmente excluir  '{escolha}'?\n\nEsta ação não pode ser desfeita.",
+            self, "Confirmar exclusão", msg,
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if resp != QMessageBox.Yes:
             return
 
-        del extras[escolha]
-        _save(_EMP, extras)
+        excluir_empresa_faturadora(escolha)
         self._rebuild_botoes_empresa()
-        QMessageBox.information(self, "Removida",
-            f"Empresa '{escolha}' removida com sucesso.")
+        self._atualizar_combo_faturamento_obras()
+        QMessageBox.information(
+            self, "Removida",
+            f"Empresa '{escolha}' excluída com sucesso.")
 
     # ══════════════════════════════════════════════════════════════════════════
     # LÓGICA DE DESCONTO
@@ -1572,6 +1741,23 @@ class PedidoWidget(QWidget):
     # LÓGICA DE OBRAS / FORNECEDORES
     # ══════════════════════════════════════════════════════════════════════════
 
+    def recarregar_cadastros_de_arquivo(self):
+        """Recarrega obras e fornecedores do JSON compartilhado (sincroniza com Cadastros)."""
+        obra_sel = self.e_obra.currentText()
+        forn_sel = self.e_fsel.currentText()
+        self._obras = _load(_OBR)
+        self._forns = _load(_FOR)
+        self._reload_obras()
+        self._reload_forns()
+        if obra_sel:
+            idx = self.e_obra.findText(obra_sel)
+            if idx >= 0:
+                self.e_obra.setCurrentIndex(idx)
+        if forn_sel:
+            idx = self.e_fsel.findText(forn_sel)
+            if idx >= 0:
+                self.e_fsel.setCurrentIndex(idx)
+
     def _reload_obras(self):
         lst = sorted(self._obras.keys())
         self.e_obra.blockSignals(True)
@@ -1638,6 +1824,7 @@ class PedidoWidget(QWidget):
         _save(_OBR, self._obras); self._reload_obras()
         idx = self.e_obra.findText(nome)
         if idx >= 0: self.e_obra.setCurrentIndex(idx)
+        self.cadastros_alterados.emit()
         QMessageBox.information(self,"Salvo!",f"'{nome}' cadastrada com sucesso.")
 
     def _cad_forn(self):
@@ -1651,6 +1838,7 @@ class PedidoWidget(QWidget):
         _save(_FOR, self._forns); self._reload_forns()
         idx = self.e_fsel.findText(nome)
         if idx >= 0: self.e_fsel.setCurrentIndex(idx)
+        self.cadastros_alterados.emit()
         QMessageBox.information(self,"Salvo!",f"'{nome}' cadastrado com sucesso.")
 
     def _persistir_fornecedor_em_cadastro(self):
@@ -1684,6 +1872,7 @@ class PedidoWidget(QWidget):
             self._forns[nome] = merged
             _save(_FOR, self._forns)
             self._reload_forns()
+            self.cadastros_alterados.emit()
             idx = self.e_fsel.findText(nome)
             if idx >= 0:
                 self.e_fsel.setCurrentIndex(idx)

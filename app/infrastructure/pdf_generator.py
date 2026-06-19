@@ -5,7 +5,8 @@ from reportlab.lib import colors
 from reportlab.pdfgen import canvas as rl_canvas
 from app.data.database import copiar_arquivo_para_rede
 from app.data.usuarios_store import obter_email_comprador
-from config import EMPRESAS_FATURADORAS, PEDIDOS_DIR
+from config import PEDIDOS_DIR
+from app.data.empresas_faturadoras_store import get_empresas_faturadoras_completas
 from app.config.settings import OBS_FATURAMENTO_DATA_ENTREGA
 from app.core.dto.pedido_dto import PedidoDTO
 
@@ -18,26 +19,27 @@ _ALIASES_EMPRESA_FATURADORA = {
 
 def _resolver_empresa_faturadora(empresa_faturadora: str) -> dict:
     """
-    Retorna o bloco de EMPRESAS_FATURADORAS para o nome gravado no pedido.
+    Retorna o bloco de empresas faturadoras para o nome gravado no pedido.
     Evita cair na Brasul quando o texto vem como nome longo (ex.: CONSTRUTORA INTERIORANA LTDA).
     """
+    empresas = get_empresas_faturadoras_completas()
     raw = str(empresa_faturadora or "").strip()
     if not raw:
-        return EMPRESAS_FATURADORAS["BRASUL"]
-    if raw in EMPRESAS_FATURADORAS:
-        return EMPRESAS_FATURADORAS[raw]
+        return empresas["BRASUL"]
+    if raw in empresas:
+        return empresas[raw]
     up = raw.upper()
     alias_key = _ALIASES_EMPRESA_FATURADORA.get(up)
-    if alias_key and alias_key in EMPRESAS_FATURADORAS:
-        return EMPRESAS_FATURADORAS[alias_key]
-    if up in EMPRESAS_FATURADORAS:
-        return EMPRESAS_FATURADORAS[up]
-    if ("B&B" in raw or "B & B" in up) and "B&B" in EMPRESAS_FATURADORAS:
-        return EMPRESAS_FATURADORAS["B&B"]
-    for key in ("INTERIORANA", "INTERBRAS", "JB", "BRASUL"):
-        if key in EMPRESAS_FATURADORAS and key in up:
-            return EMPRESAS_FATURADORAS[key]
-    return EMPRESAS_FATURADORAS["BRASUL"]
+    if alias_key and alias_key in empresas:
+        return empresas[alias_key]
+    if up in empresas:
+        return empresas[up]
+    if ("B&B" in raw or "B & B" in up) and "B&B" in empresas:
+        return empresas["B&B"]
+    for key in ("INTERIORANA", "INTERBRAS", "BRASUL"):
+        if key in empresas and key in up:
+            return empresas[key]
+    return empresas["BRASUL"]
 
 
 def _empresa_sem_email_cabecalho(empresa_faturadora: str) -> bool:
@@ -166,37 +168,51 @@ def _montar_observacao(emp: dict, obs_usuario: str, material_solicitado: str = "
 
 
 def _cep_empresa(emp: dict) -> str:
-    """Extrai o CEP do endereço da empresa (último token com 8-9 dígitos)."""
+    """Extrai o CEP do endereço da empresa ou do campo cep."""
+    if emp.get("cep"):
+        return str(emp["cep"]).strip()
     end = emp.get("endereco", "")
+    m = re.search(
+        r"CEP[:\s]*([0-9]{2}\.?[0-9]{3}-?[0-9]{3}|[0-9]{5}-?[0-9]{3}|[0-9]{8})",
+        end,
+        re.I,
+    )
+    if m:
+        return m.group(1).replace(".", "")
     for token in reversed(end.replace(",", " ").split()):
-        t = token.strip()
-        if len(t) in (8, 9) and any(c.isdigit() for c in t):
-            return t
+        t = re.sub(r"\D", "", token.strip())
+        if len(t) == 8:
+            return f"{t[:5]}-{t[5:]}"
     return ""
 
 
 def _cidade_uf_empresa(emp: dict):
     """
     Tenta extrair cidade e UF do endereço da empresa.
-    Suporta formatos: 'Cidade, UF - CEP', 'Cidade/UF', 'Cidade, UF'
+    Suporta: campos diretos, 'Cidade, UF', 'Cidade/UF', 'Cidade UF - CEP'.
     """
-    # Primeiro verifica se a empresa tem campos diretos
-    cidade = emp.get("cidade", "").strip()
-    uf     = emp.get("uf", "").strip()
+    cidade = str(emp.get("cidade", "") or "").strip()
+    uf = str(emp.get("uf", "") or "").strip()
     if cidade and uf:
         return cidade, uf
 
     end = emp.get("endereco", "")
     try:
-        # Formato: Cidade/UF (ex: São Paulo/SP)
-        m = re.search(r'([A-Za-zÀ-ÿ\s]+)/([A-Z]{2})', end)
+        m = re.search(
+            r"([A-Za-zÀ-ÿ\s]+)\s+([A-Z]{2})\s*[-–]\s*CEP",
+            end,
+            re.I,
+        )
         if m:
-            return m.group(1).strip(), m.group(2).strip()
+            return m.group(1).strip(), m.group(2).strip().upper()
 
-        # Formato: Cidade, UF - ou Cidade, UF (fim)
-        m = re.search(r'([A-Za-zÀ-ÿ\s]+),\s*([A-Z]{2})(?:\s*[-–]|$)', end)
+        m = re.search(r"([A-Za-zÀ-ÿ\s]+)/([A-Z]{2})", end)
         if m:
-            return m.group(1).strip(), m.group(2).strip()
+            return m.group(1).strip(), m.group(2).strip().upper()
+
+        m = re.search(r"([A-Za-zÀ-ÿ\s]+),\s*([A-Z]{2})(?:\s*[-–]|$)", end)
+        if m:
+            return m.group(1).strip(), m.group(2).strip().upper()
     except Exception:
         pass
     return "", ""
@@ -691,7 +707,11 @@ class PedidoCompraGenerator:
             off = c.stringWidth(lbl, "Helvetica-Bold", 7.5) + 2
             c.drawString(x+off, yy, str(val or "—")[:50])
 
-        par("Endereço de Cobrança:", end_cob[:52], M+3*mm,    y-5*mm)
+        par("Endereço de Cobrança:", end_cob[:72], M+3*mm,    y-5*mm)
+        if len(end_cob) > 72:
+            c.setFont("Helvetica", 7.5)
+            c.setFillColor(C_PRETO)
+            c.drawString(M+3*mm, y-8.2*mm, end_cob[72:145])
         par("CEP:",      cep_cob,   M+CW*0.75,                y-5*mm)
         par("Cidade:",   cidade,    M+3*mm,                    y-11*mm)
         par("UF:",       uf,        M+CW*0.5,                  y-11*mm)

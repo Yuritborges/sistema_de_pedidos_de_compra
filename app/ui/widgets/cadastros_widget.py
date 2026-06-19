@@ -6,7 +6,7 @@ import os
 import json
 from datetime import datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QComboBox,
@@ -20,6 +20,7 @@ from app.data.cadastros_store import (
     OBRAS_JSON,
     FUNCIONARIOS_JSON,
 )
+from app.ui.combo_sem_roda import ComboSemRoda
 
 
 def _load_json(path, default):
@@ -49,6 +50,8 @@ def _save_json(path, data):
 
 
 class CadastrosWidget(QWidget):
+    cadastros_alterados = Signal()
+
     def __init__(self):
         super().__init__()
         self.fornecedores = {}
@@ -182,7 +185,7 @@ class CadastrosWidget(QWidget):
         layout = QVBoxLayout(card); layout.setContentsMargins(18,16,18,16); layout.setSpacing(14)
         title = QLabel("Editar Fornecedor"); title.setObjectName("sectionTitle"); layout.addWidget(title)
         top = QHBoxLayout(); top.setSpacing(10)
-        self.cb_fornecedor = QComboBox(); self.cb_fornecedor.setEditable(True); self.cb_fornecedor.setInsertPolicy(QComboBox.NoInsert)
+        self.cb_fornecedor = ComboSemRoda(); self.cb_fornecedor.setEditable(True); self.cb_fornecedor.setInsertPolicy(QComboBox.NoInsert)
         self.cb_fornecedor.currentTextChanged.connect(self._fornecedor_selecionado)
         comp = QCompleter(); comp.setCaseSensitivity(Qt.CaseInsensitive); comp.setFilterMode(Qt.MatchContains); self.cb_fornecedor.setCompleter(comp)
         top.addWidget(self._field("Fornecedor existente", self.cb_fornecedor), 1)
@@ -213,7 +216,7 @@ class CadastrosWidget(QWidget):
         layout = QVBoxLayout(card); layout.setContentsMargins(18,16,18,16); layout.setSpacing(14)
         title = QLabel("Editar Obra"); title.setObjectName("sectionTitle"); layout.addWidget(title)
         top = QHBoxLayout(); top.setSpacing(10)
-        self.cb_obra = QComboBox(); self.cb_obra.setEditable(True); self.cb_obra.setInsertPolicy(QComboBox.NoInsert)
+        self.cb_obra = ComboSemRoda(); self.cb_obra.setEditable(True); self.cb_obra.setInsertPolicy(QComboBox.NoInsert)
         self.cb_obra.currentTextChanged.connect(self._obra_selecionada)
         comp = QCompleter(); comp.setCaseSensitivity(Qt.CaseInsensitive); comp.setFilterMode(Qt.MatchContains); self.cb_obra.setCompleter(comp)
         top.addWidget(self._field("Obra existente", self.cb_obra), 1)
@@ -297,14 +300,18 @@ class CadastrosWidget(QWidget):
             if resp != QMessageBox.Yes: return
             self.fornecedores.pop(nome_antigo, None)
         self.fornecedores[nome_novo] = dados; _save_json(FORNECEDORES_JSON, self.fornecedores)
-        self._popular_fornecedores(); self.cb_fornecedor.setCurrentText(nome_novo); QMessageBox.information(self, "Salvo", "Fornecedor salvo com sucesso.")
+        self._popular_fornecedores(); self.cb_fornecedor.setCurrentText(nome_novo)
+        self.cadastros_alterados.emit()
+        QMessageBox.information(self, "Salvo", "Fornecedor salvo com sucesso.")
 
     def _excluir_fornecedor(self):
         nome = self.cb_fornecedor.currentText().strip()
         if not nome or nome not in self.fornecedores: QMessageBox.warning(self, "Atenção", "Selecione um fornecedor existente para excluir."); return
         resp = QMessageBox.question(self, "Confirmar exclusão", f"Tem certeza que deseja excluir o fornecedor?\n\n{nome}\n\nEssa ação remove o cadastro da base JSON.", QMessageBox.Yes | QMessageBox.No)
         if resp != QMessageBox.Yes: return
-        self.fornecedores.pop(nome, None); _save_json(FORNECEDORES_JSON, self.fornecedores); self._popular_fornecedores(); QMessageBox.information(self, "Excluído", "Fornecedor excluído com sucesso.")
+        self.fornecedores.pop(nome, None); _save_json(FORNECEDORES_JSON, self.fornecedores)
+        self._popular_fornecedores(); self.cadastros_alterados.emit()
+        QMessageBox.information(self, "Excluído", "Fornecedor excluído com sucesso.")
 
     def _obra_selecionada(self, nome):
         nome = (nome or "").strip()
@@ -328,11 +335,15 @@ class CadastrosWidget(QWidget):
             if resp != QMessageBox.Yes: return
             self.obras.pop(nome_antigo, None)
         self.obras[nome_novo] = dados; _save_json(OBRAS_JSON, self.obras)
-        self._popular_obras(); self.cb_obra.setCurrentText(nome_novo); QMessageBox.information(self, "Salvo", "Obra salva com sucesso.")
+        self._popular_obras(); self.cb_obra.setCurrentText(nome_novo)
+        self.cadastros_alterados.emit()
+        QMessageBox.information(self, "Salvo", "Obra salva com sucesso.")
 
     def _excluir_obra(self):
         nome = self.cb_obra.currentText().strip()
         if not nome or nome not in self.obras: QMessageBox.warning(self, "Atenção", "Selecione uma obra existente para excluir."); return
         resp = QMessageBox.question(self, "Confirmar exclusão", f"Tem certeza que deseja excluir a obra?\n\n{nome}\n\nEssa ação remove o cadastro da base JSON.", QMessageBox.Yes | QMessageBox.No)
         if resp != QMessageBox.Yes: return
-        self.obras.pop(nome, None); _save_json(OBRAS_JSON, self.obras); self._popular_obras(); QMessageBox.information(self, "Excluído", "Obra excluída com sucesso.")
+        self.obras.pop(nome, None); _save_json(OBRAS_JSON, self.obras)
+        self._popular_obras(); self.cadastros_alterados.emit()
+        QMessageBox.information(self, "Excluído", "Obra excluída com sucesso.")

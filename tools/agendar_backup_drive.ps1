@@ -54,7 +54,7 @@ Register-ScheduledTask `
 
 Write-Host "OK Tarefa agendada: $TaskName"
 Write-Host "   Horario: todo dia as $Hora"
-Write-Host "   Script:  $Script (pythonw — sem CMD)"
+Write-Host "   Script:  $Script (pythonw, sem CMD)"
 Write-Host "   Log:     $Root\backup_agendado.log"
 Write-Host ""
 

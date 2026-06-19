@@ -65,6 +65,7 @@ THEME: dict[str, Any] = {
 # ---------------------------------------------------------------------------
 # Rede — valores padrão (config.py pode sobrescrever por máquina)
 # ---------------------------------------------------------------------------
+DEFAULT_BASE_REDE_SUFFIX = os.path.join("0 OBRAS", "brasul_pedidos")
 DEFAULT_BASE_REDE_DIR = r"Z:\0 OBRAS\brasul_pedidos"
 DEFAULT_REDE_SYNC_INTERVALO_SEGUNDOS = 300
 DEFAULT_BACKUP_REDE_INTERVALO_SEGUNDOS = 900
@@ -90,20 +91,6 @@ EMPRESAS_FATURADORAS: dict[str, dict[str, Any]] = {
             "BRASUL CONSTRUTORA LTDA"
         ),
         "cor_header": (0, 51, 102),
-    },
-    "JB": {
-        "razao_social": "JB CONSTRUÇÕES E EMPREENDIMENTOS LTDA",
-        "endereco": "Av Luis Dummount Vilares 2078, São Paulo, SP - CEP 02239-000",
-        "telefone": "(11) 3313-8220",
-        "email": "compras2@brasulconstrutora.com.br",
-        "email_rodape_1": "notafiscal@brasulconstrutora.com.br",
-        "email_rodape_2": "viviane@brasulconstrutora.com.br",
-        "logo": "logo_jb.png",
-        "obs_padrao": (
-            "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\n"
-            "JB CONSTRUÇÕES E EMPREENDIMENTOS LTDA"
-        ),
-        "cor_header": (180, 0, 0),
     },
     "B&B": {
         "razao_social": "B & B Engenharia e Construções LTDA",
@@ -205,6 +192,46 @@ def slug_usuario(nome: str) -> str:
     return slug or "usuario"
 
 
+def _pasta_rede_brasul_valida(caminho: str) -> bool:
+    """True se a pasta parece ser a raiz brasul_pedidos na rede."""
+    if not caminho or not os.path.isdir(caminho):
+        return False
+    marcadores = (
+        os.path.join(caminho, "cotacao_rede.db"),
+        os.path.join(caminho, "cadastros_compartilhados"),
+        os.path.join(caminho, "Iury"),
+        os.path.join(caminho, "Thamyres"),
+    )
+    return any(os.path.exists(m) for m in marcadores)
+
+
+def resolver_base_rede_dir() -> str:
+    """
+    Descobre a pasta brasul_pedidos na rede.
+
+    Ordem: variável BRASUL_REDE_DIR → letras Z..U → DEFAULT_BASE_REDE_DIR.
+    Assim funciona tanto com Z: (Iury) quanto Y: (Thamyres) após queda da rede.
+    """
+    env = (os.environ.get("BRASUL_REDE_DIR") or "").strip()
+    candidatos: list[str] = []
+    if env:
+        candidatos.append(env)
+    for letra in "ZYXWVUTSRQPONMLKJIHGFED":
+        candidatos.append(os.path.join(f"{letra}:\\", DEFAULT_BASE_REDE_SUFFIX))
+    candidatos.append(DEFAULT_BASE_REDE_DIR)
+
+    vistos: set[str] = set()
+    for bruto in candidatos:
+        caminho = os.path.normpath(bruto)
+        chave = caminho.lower()
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        if _pasta_rede_brasul_valida(caminho):
+            return caminho
+    return DEFAULT_BASE_REDE_DIR
+
+
 def caminhos_comprador(base_rede_dir: str, comprador: str) -> dict[str, str]:
     """
     Monta caminhos de banco, PDFs, cotações e backup para um comprador.
@@ -262,9 +289,17 @@ DRIVE_BACKUP_FOLDER_NAME: str = "Brasul_Backups"
 DRIVE_FOLDER_ID: str = "15o-YjEScb-IxtsgBNd6_ODAqi1NPvm0T"
 
 # Banco consolidado enviado ao Drive (auditoria / backup principal)
-DRIVE_BANCO_ORIGEM: str = r"Z:\0 OBRAS\brasul_pedidos\cotacao_rede.db"
-# Cópia local antes do upload (mesma árvore do banco na rede)
-DRIVE_PASTA_BACKUP_LOCAL: str = r"Z:\0 OBRAS\brasul_pedidos\BACKUPS"
+def _drive_paths_rede() -> tuple[str, str]:
+    base = resolver_base_rede_dir()
+    return (
+        os.path.join(base, "cotacao_rede.db"),
+        os.path.join(base, "BACKUPS"),
+    )
+
+
+_DRIVE_BANCO, _DRIVE_BACKUP = _drive_paths_rede()
+DRIVE_BANCO_ORIGEM: str = _DRIVE_BANCO
+DRIVE_PASTA_BACKUP_LOCAL: str = _DRIVE_BACKUP
 DRIVE_BACKUP_LOG_PATH: str = str(_PROJECT_ROOT / "backup_agendado.log")
 
 # ---------------------------------------------------------------------------

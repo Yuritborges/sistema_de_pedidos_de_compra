@@ -19,7 +19,12 @@ from PySide6.QtWidgets import (
 
 from app.core.funcionarios import listar as listar_funcionarios
 
-REDE_DB = r"Z:\0 OBRAS\brasul_pedidos\cotacao_rede.db"
+try:
+    from config import BASE_REDE_DIR
+except Exception:
+    from app.config.settings import DEFAULT_BASE_REDE_DIR as BASE_REDE_DIR
+
+REDE_DB = os.path.join(BASE_REDE_DIR, "cotacao_rede.db")
 
 ASSETS_DIR = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..", "assets")

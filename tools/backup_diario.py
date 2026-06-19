@@ -25,6 +25,9 @@ CADASTROS_FILES = {
     "fornecedores": os.path.join(BASE_REDE, "cadastros_compartilhados", "fornecedores.json"),
     "obras": os.path.join(BASE_REDE, "cadastros_compartilhados", "obras.json"),
     "funcionarios": os.path.join(BASE_REDE, "cadastros_compartilhados", "funcionarios.json"),
+    "empresas_faturadoras": os.path.join(
+        BASE_REDE, "cadastros_compartilhados", "empresas_faturadoras.json"
+    ),
 }
 
 CURRENT_DIR = os.path.join(BASE_PROJETO, "current")
