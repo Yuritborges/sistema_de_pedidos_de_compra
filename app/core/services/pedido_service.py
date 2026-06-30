@@ -106,20 +106,6 @@ class PedidoService:
                     )
 
     def _calcular_total_seguro(self, dto):
-        try:
-            total_liquido = getattr(dto, "total_liquido", None)
-            if total_liquido not in (None, ""):
-                return round(float(total_liquido), 2)
-        except Exception:
-            pass
-
-        try:
-            total = getattr(dto, "total", None)
-            if total not in (None, ""):
-                return round(float(total), 2)
-        except Exception:
-            pass
-
         total_itens = 0.0
         for item in getattr(dto, "itens", []) or []:
             try:
@@ -136,6 +122,18 @@ class PedidoService:
 
         return round(total_itens - desconto, 2)
 
+    def _desconto_do_dto(self, dto) -> tuple[float, str, float]:
+        try:
+            desconto = round(float(getattr(dto, "desconto", 0) or 0), 2)
+        except Exception:
+            desconto = 0.0
+        tipo = str(getattr(dto, "desconto_tipo", "%") or "%").strip() or "%"
+        try:
+            valor_digitado = float(getattr(dto, "desconto_valor_digitado", 0) or 0)
+        except Exception:
+            valor_digitado = 0.0
+        return desconto, tipo, valor_digitado
+
     def _salvar_no_banco(self, dto, caminho_pdf):
         from app.data.database import get_connection
         from config import COMPRADOR_PADRAO
@@ -143,6 +141,7 @@ class PedidoService:
         numero = str(getattr(dto, "numero", "")).strip()
         comprador = str(getattr(dto, "comprador", "") or COMPRADOR_PADRAO).strip().upper()
         total = self._calcular_total_seguro(dto)
+        desconto, desconto_tipo, desconto_valor = self._desconto_do_dto(dto)
         editar_id = getattr(dto, "pedido_existente_id", None)
 
         with get_connection() as conn:
@@ -197,6 +196,9 @@ class PedidoService:
                         comprador          = ?,
                         material_solicitado_por = ?,
                         valor_total        = ?,
+                        desconto           = ?,
+                        desconto_tipo      = ?,
+                        desconto_valor_digitado = ?,
                         caminho_pdf        = ?,
                         emitido_em         = datetime('now'),
                         status             = 'emitido'
@@ -219,6 +221,9 @@ class PedidoService:
                     comprador,
                     (getattr(dto, "material_solicitado_por", "") or "").strip(),
                     total,
+                    desconto,
+                    desconto_tipo,
+                    desconto_valor,
                     caminho_pdf,
                     pedido_id,
                 ))
@@ -255,9 +260,12 @@ class PedidoService:
                         comprador,
                         material_solicitado_por,
                         valor_total,
+                        desconto,
+                        desconto_tipo,
+                        desconto_valor_digitado,
                         caminho_pdf,
                         status
-                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'emitido')
+                    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'emitido')
                 """, (
                     numero,
                     getattr(dto, "data_pedido", ""),
@@ -276,6 +284,9 @@ class PedidoService:
                     comprador,
                     (getattr(dto, "material_solicitado_por", "") or "").strip(),
                     total,
+                    desconto,
+                    desconto_tipo,
+                    desconto_valor,
                     caminho_pdf,
                 ))
 

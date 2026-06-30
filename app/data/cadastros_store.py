@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 
@@ -45,4 +46,78 @@ def ensure_cadastros_storage():
 
 
 ensure_cadastros_storage()
+
+
+def _carregar_obras_json() -> dict:
+    try:
+        with open(OBRAS_JSON, encoding="utf-8") as f:
+            bruto = json.load(f)
+        return bruto if isinstance(bruto, dict) else {}
+    except Exception:
+        return {}
+
+
+def resolver_endereco_obra(obra_nome: str, escola: str = "") -> dict[str, str]:
+    """
+    Endereço de entrega a partir do cadastro de obras (rede).
+    Usado ao reimprimir pedidos — o banco antigo não guardava esses campos.
+    """
+    obras = _carregar_obras_json()
+    nome = (obra_nome or "").strip().upper()
+    dados = obras.get(nome) or {}
+
+    if not dados and escola:
+        esc_u = (escola or "").strip().upper()
+        for item in obras.values():
+            if not isinstance(item, dict):
+                continue
+            if (item.get("escola") or "").strip().upper() == esc_u:
+                dados = item
+                break
+
+    return {
+        "endereco_entrega": str(dados.get("endereco") or ""),
+        "bairro_entrega": str(dados.get("bairro") or ""),
+        "cep_entrega": str(dados.get("cep") or ""),
+        "cidade_entrega": str(dados.get("cidade") or ""),
+        "uf_entrega": str(dados.get("uf") or "SP"),
+        "contrato_obra": str(dados.get("contrato") or "0"),
+    }
+
+
+def _carregar_obras_json() -> dict:
+    try:
+        with open(OBRAS_JSON, encoding="utf-8") as f:
+            bruto = json.load(f)
+        return bruto if isinstance(bruto, dict) else {}
+    except Exception:
+        return {}
+
+
+def resolver_endereco_obra(obra_nome: str, escola: str = "") -> dict[str, str]:
+    """
+    Endereço de entrega a partir do cadastro de obras (rede).
+    Usado ao reimprimir pedidos — o banco antigo não guardava esses campos.
+    """
+    obras = _carregar_obras_json()
+    nome = (obra_nome or "").strip().upper()
+    dados = obras.get(nome) or {}
+
+    if not dados and escola:
+        esc_u = (escola or "").strip().upper()
+        for item in obras.values():
+            if not isinstance(item, dict):
+                continue
+            if (item.get("escola") or "").strip().upper() == esc_u:
+                dados = item
+                break
+
+    return {
+        "endereco_entrega": str(dados.get("endereco") or ""),
+        "bairro_entrega": str(dados.get("bairro") or ""),
+        "cep_entrega": str(dados.get("cep") or ""),
+        "cidade_entrega": str(dados.get("cidade") or ""),
+        "uf_entrega": str(dados.get("uf") or "SP"),
+        "contrato_obra": str(dados.get("contrato") or "0"),
+    }
 

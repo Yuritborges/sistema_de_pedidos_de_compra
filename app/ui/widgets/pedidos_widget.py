@@ -369,6 +369,7 @@ class PedidosWidget(QWidget):
 
             try:
                 from app.data.database import get_connection
+                from app.core.pedido_valores import valor_liquido_pedido
 
                 with get_connection() as conn:
                     comprador_atual = str(COMPRADOR_PADRAO or "").strip().upper()
@@ -386,6 +387,8 @@ class PedidosWidget(QWidget):
                             p.condicao_pagamento,
                             p.forma_pagamento,
                             p.valor_total,
+                            COALESCE(p.desconto, 0) AS desconto,
+                            COALESCE(it.soma_itens, 0) AS soma_itens,
                             p.caminho_pdf,
                             p.comprador,
                             p.material_solicitado_por,
@@ -397,7 +400,8 @@ class PedidosWidget(QWidget):
                         LEFT JOIN (
                             SELECT
                                 pedido_id,
-                                GROUP_CONCAT(COALESCE(descricao, ''), ' | ') AS itens_texto
+                                GROUP_CONCAT(COALESCE(descricao, ''), ' | ') AS itens_texto,
+                                ROUND(SUM(COALESCE(valor_total, 0)), 2) AS soma_itens
                             FROM itens_pedido
                             GROUP BY pedido_id
                         ) it ON it.pedido_id = p.id
@@ -439,7 +443,11 @@ class PedidosWidget(QWidget):
                         )
 
                         try:
-                            valor_total = float(row["valor_total"] or 0)
+                            valor_total = valor_liquido_pedido(
+                                row["valor_total"],
+                                row["soma_itens"],
+                                row["desconto"],
+                            )
                         except Exception:
                             valor_total = 0.0
 
@@ -1386,6 +1394,20 @@ class PedidosWidget(QWidget):
                     f"O pedido #{numero} não tem itens registrados no banco.")
                 return
 
+            from app.data.cadastros_store import resolver_endereco_obra
+
+            endereco = resolver_endereco_obra(
+                str(ped.get("obra_nome") or ""),
+                str(ped.get("escola") or ""),
+            )
+            for chave in (
+                "endereco_entrega", "bairro_entrega", "cep_entrega",
+                "cidade_entrega", "uf_entrega", "contrato_obra",
+            ):
+                if str(ped.get(chave) or "").strip():
+                    endereco[chave] = str(ped[chave]).strip()
+
+            desconto = float(ped.get("desconto") or 0)
             dto = PedidoDTO(
                 numero=str(ped["numero"]),
                 data_pedido=str(ped["data_pedido"] or ""),
@@ -1394,8 +1416,13 @@ class PedidosWidget(QWidget):
                 material_solicitado_por=str(ped.get("material_solicitado_por") or ""),
                 obra=str(ped["obra_nome"] or ""),
                 escola=str(ped["escola"] or ""),
-                endereco_entrega="", bairro_entrega="",
-                cep_entrega="", cidade_entrega="", uf_entrega="SP",
+                endereco_entrega=endereco["endereco_entrega"],
+                bairro_entrega=endereco["bairro_entrega"],
+                cep_entrega=endereco["cep_entrega"],
+                cidade_entrega=endereco["cidade_entrega"],
+                uf_entrega=endereco["uf_entrega"],
+                contrato_obra=endereco["contrato_obra"],
+                desconto=desconto,
                 fornecedor_nome=str(ped["fornecedor_nome"] or ""),
                 fornecedor_razao=str(ped["fornecedor_razao"] or ""),
                 condicao_pagamento=str(ped["condicao_pagamento"] or ""),

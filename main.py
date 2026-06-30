@@ -49,6 +49,13 @@ def main():
         def marcar(etapa):
             tempos.append((etapa, time.perf_counter() - inicio_total))
 
+        if sys.platform == "win32":
+            try:
+                from app.infrastructure.confiar_rede_windows import aplicar_se_necessario
+                aplicar_se_necessario()
+            except Exception:
+                pass
+
         # Cada processo deve escolher utilizador de novo (evita env herdado).
         os.environ.pop("BRASUL_USUARIO", None)
 

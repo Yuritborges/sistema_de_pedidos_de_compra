@@ -42,18 +42,39 @@ def _resolver_empresa_faturadora(empresa_faturadora: str) -> dict:
     return empresas["BRASUL"]
 
 
-def _empresa_sem_email_cabecalho(empresa_faturadora: str) -> bool:
-    """Empresas que exibem só telefone/CNPJ no topo (sem e-mail do comprador)."""
-    return "INTERBRAS" in str(empresa_faturadora or "").upper()
+def _emails_rodape_pdf(emp: dict, empresa_faturadora: str = "") -> list[str]:
+    """
+    E-mails oficiais do rodapé — valores fixos por empresa (não dependem de JSON/.exe antigo).
+    """
+    raw = str(empresa_faturadora or "").strip().upper()
+    oficiais: dict[str, list[str]] = {
+        "BRASUL": ["notafiscal@brasulconstrutora.com.br"],
+        "B&B": ["notafiscal@brasulconstrutora.com.br"],
+        "INTERIORANA": ["notafiscal@construtorainteriorana.com"],
+        "INTERBRAS": ["notafiscal@brasulconstrutora.com.br"],
+    }
+    if raw in oficiais:
+        return oficiais[raw]
+    if "B & B" in raw or "B&B" in raw:
+        return oficiais["B&B"]
+    for chave in ("INTERIORANA", "INTERBRAS", "BRASUL"):
+        if chave in raw and chave in oficiais:
+            return oficiais[chave]
+
+    emails: list[str] = []
+    for chave in ("email_rodape_1", "email_rodape_2"):
+        valor = str(emp.get(chave) or "").strip()
+        if valor.endswith("@construtorainteriorana.com.br"):
+            valor = "notafiscal@construtorainteriorana.com"
+        if valor and valor not in emails:
+            emails.append(valor)
+    if emails:
+        return emails
+    return ["notafiscal@brasulconstrutora.com.br"]
 
 
 def _email_cabecalho_pdf(dto: PedidoDTO, emp: dict) -> str:
-    """
-    E-mail no topo do PDF: do comprador logado/cadastrado.
-    Interbras: sem e-mail por enquanto. Demais: fallback no config da empresa.
-    """
-    if _empresa_sem_email_cabecalho(dto.empresa_faturadora):
-        return ""
+    """E-mail no topo do PDF: do comprador logado/cadastrado ou fallback da empresa."""
     email = obter_email_comprador(dto.comprador)
     if email:
         return email
@@ -216,6 +237,69 @@ def _cidade_uf_empresa(emp: dict):
     except Exception:
         pass
     return "", ""
+
+
+def _dados_endereco_cobranca(emp: dict) -> dict[str, str]:
+    """Endereço de cobrança normalizado — mesmo formato em todos os PDFs."""
+    end_cob_bruto = str(emp.get("endereco") or "").strip()
+    cep_cob = str(emp.get("cep") or "").strip() or _cep_empresa(emp)
+
+    cidade = str(emp.get("cidade") or "").strip()
+    uf = str(emp.get("uf") or "").strip()
+    if not cidade or not uf:
+        cidade_p, uf_p = _cidade_uf_empresa(emp)
+        if not cidade:
+            cidade = cidade_p
+        if not uf:
+            uf = uf_p
+
+    end_cob = end_cob_bruto
+    if cidade:
+        low_end = end_cob.lower()
+        low_cid = str(cidade).strip().lower()
+        idx = low_end.rfind(low_cid)
+        if idx > 0:
+            tail = low_end[idx + len(low_cid):].strip()
+            if not tail or tail in (",", "-", "–"):
+                end_cob = end_cob[:idx].rstrip(" ,–-")
+
+    return {
+        "endereco": end_cob,
+        "cidade": cidade,
+        "uf": uf,
+        "cep": cep_cob,
+    }
+
+
+def _endereco_linha_cabecalho(emp: dict) -> str:
+    """
+    Uma linha completa no topo do PDF (como antes): logradouro + cidade/UF/CEP.
+    """
+    end = re.sub(r"\s+", " ", str(emp.get("endereco") or "").strip())
+    if re.search(r"CEP", end, re.I):
+        return end
+
+    cidade = str(emp.get("cidade") or "").strip()
+    uf = str(emp.get("uf") or "").strip()
+    cep = str(emp.get("cep") or "").strip() or _cep_empresa(emp)
+    if not cidade or not uf:
+        cidade_p, uf_p = _cidade_uf_empresa(emp)
+        if not cidade:
+            cidade = cidade_p
+        if not uf:
+            uf = uf_p
+
+    if cidade and uf:
+        sufixo = f"{cidade}, {uf}"
+        if cep:
+            sufixo += f" - CEP {cep}"
+        low_end = end.lower()
+        if cidade.lower() in low_end and uf.upper() in end.upper():
+            return end
+        if end:
+            return f"{end} – {sufixo}"
+        return sufixo
+    return end
 
 
 class PedidoCompraGenerator:
@@ -562,19 +646,27 @@ class PedidoCompraGenerator:
             c.drawString(M + LOGO_PAD, y0 + alt / 2 - 2, dto.empresa_faturadora)
 
         cx = sep_x + 2 * mm
+        endereco_topo = _endereco_linha_cabecalho(emp)
         c.setFont("Helvetica-Bold", 11); c.setFillColor(C_PRETO)
-        c.drawString(cx, y-8*mm, emp["razao_social"])
+        c.drawString(cx, y - 8 * mm, emp["razao_social"])
         c.setFont("Helvetica", 7.5); c.setFillColor(C_ESCURO)
-        c.drawString(cx, y-13*mm, emp["endereco"][:80])
+        linhas_end = self._quebrar_texto(
+            c, endereco_topo, CW - (cx - M) - 4 * mm, "Helvetica", 7.5
+        )[:2]
+        y_lin = y - 13 * mm
+        for linha in linhas_end:
+            c.drawString(cx, y_lin, linha)
+            y_lin -= 3.5 * mm
         tel = str(emp.get("telefone") or "").strip()
         email_cab = _email_cabecalho_pdf(dto, emp)
+        y_lin -= 1 * mm
         if email_cab:
-            c.drawString(cx, y-17.5*mm, f"Tel: {tel}   |   {email_cab}")
+            c.drawString(cx, y_lin, f"Tel: {tel}   |   {email_cab}")
         else:
-            c.drawString(cx, y-17.5*mm, f"Tel: {tel}")
+            c.drawString(cx, y_lin, f"Tel: {tel}")
         cnpj = str(emp.get("cnpj", "") or "").strip()
         if cnpj:
-            c.drawString(cx, y-22*mm, f"CNPJ: {cnpj}")
+            c.drawString(cx, y_lin - 4.5 * mm, f"CNPJ: {cnpj}")
 
         c.setFont("Helvetica-Bold", 22); c.setFillColor(C_PRETO)
         c.drawRightString(W-M-2*mm, y-11*mm, f"#{dto.numero}")
@@ -671,34 +763,15 @@ class PedidoCompraGenerator:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _bloco_cob(self, c, dto, emp, y, alt):
-        """Endereço de cobrança — lê cidade/UF do config.py."""
+        """Endereço de cobrança — mesma normalização do cabeçalho."""
         c.setStrokeColor(C_LINHA); c.setLineWidth(0.8)
         c.rect(M, y-alt, CW, alt, fill=0, stroke=1)
 
-        # Endereço de cobrança = endereço da empresa faturadora (config.py)
-        end_cob_bruto = emp.get("endereco", "")
-        cep_cob = emp.get("cep", "") or _cep_empresa(emp)
-
-        # Extrai cidade e UF do config.py diretamente se disponível,
-        # senão tenta parsear do campo endereco
-        cidade = emp.get("cidade", "")
-        uf     = emp.get("uf", "")
-        if not cidade or not uf:
-            cidade_p, uf_p = _cidade_uf_empresa(emp)
-            if not cidade: cidade = cidade_p
-            if not uf:     uf     = uf_p
-
-        # Remove cidade repetida do fim do endereço de cobrança (ex.: «... – Piracicaba»),
-        # pois a cidade já aparece na linha própria logo abaixo.
-        end_cob = end_cob_bruto or ""
-        if cidade:
-            low_end = end_cob.lower()
-            low_cid = str(cidade).strip().lower()
-            idx = low_end.rfind(low_cid)
-            if idx > 0:
-                tail = low_end[idx + len(low_cid):].strip()
-                if not tail or tail in (",", "-", "–"):
-                    end_cob = end_cob[:idx].rstrip(" ,–-")
+        cob = _dados_endereco_cobranca(emp)
+        end_cob = cob["endereco"]
+        cep_cob = cob["cep"]
+        cidade = cob["cidade"]
+        uf = cob["uf"]
 
         def par(lbl, val, x, yy):
             c.setFont("Helvetica-Bold", 7.5); c.setFillColor(C_ESCURO)
@@ -1076,10 +1149,9 @@ class PedidoCompraGenerator:
         c.setFillColor(C_RODAPE_TXT)
         c.drawString(col_esq, y_emails, "Notas e Boletos encaminha para:")
 
-        e1 = str(emp.get("email_rodape_1") or "").strip() or "notafiscal@brasulconstrutora.com.br"
-        e2 = str(emp.get("email_rodape_2") or "").strip() or "viviane@brasulconstrutora.com.br"
+        emails_rodape = _emails_rodape_pdf(emp, empresa_faturadora)
         self._desenhar_linhas_rodape(
-            c, [e1, e2], col_esq, y_emails - 5 * mm, tamanho=_RODAPE_FONT_TEXTO
+            c, emails_rodape, col_esq, y_emails - 5 * mm, tamanho=_RODAPE_FONT_TEXTO
         )
 
         y_dir = y - 4.5 * mm

@@ -20,6 +20,13 @@ from app.data.locacoes_import import LOCACOES_DIAS_ALERTA_ANTECEDENCIA
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
+
+def _titulo_janela_com_versao() -> str:
+    from app.config.settings import APP_VERSION
+
+    return f"Sistema de Pedidos — Brasul Construtora v{APP_VERSION}"
+
+
 # Cores da sidebar
 S_BG = "#F0EDED"
 S_ITEM = "#E8DEDE"
@@ -166,7 +173,8 @@ class MainWindow(QMainWindow):
         if icon_path:
             self.setWindowIcon(QIcon(icon_path))
         self.setWindowTitle("Sistema de Pedidos — Brasul Construtora")
-        self._title_base = self.windowTitle()
+        self._title_base = _titulo_janela_com_versao()
+        self.setWindowTitle(self._title_base)
         self._locacoes_venc = 0
         self._locacoes_alert = 0
         self._locacoes_blink_phase = False

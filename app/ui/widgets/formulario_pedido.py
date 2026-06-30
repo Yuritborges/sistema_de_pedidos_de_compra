@@ -542,7 +542,11 @@ class NovaEmpresaDialog(QDialog):
         self._uf.setMaxLength(2)
         self._cep = _fld()
         self._telefone = _fld()   # telefone pode ter símbolos, não forçamos
-        self._email    = _fld()   # e-mail é case-insensitive, mantemos livre
+        self._email    = _fld()   # e-mail cabeçalho (comprador)
+        self._email_rodape_1 = _fld()
+        self._email_rodape_1.setPlaceholderText("notafiscal@...")
+        self._email_rodape_2 = _fld()
+        self._email_rodape_2.setPlaceholderText("financeiro@...")
 
         # Obs. padrão — QTextEdit para suportar quebra de linha, já pré-preenchido
         self._obs = QTextEdit()
@@ -614,7 +618,14 @@ class NovaEmpresaDialog(QDialog):
         row_loc.addWidget(self._cep, 1)
         form.addRow(lbl("Cidade / UF / CEP"),       row_loc)
         form.addRow(lbl("Telefone"),                self._telefone)
-        form.addRow(lbl("E-mail"),                  self._email)
+        form.addRow(lbl("E-mail (cabeçalho PDF)"), self._email)
+        form.addRow(
+            lbl("E-mail rodapé 1"),
+            self._email_rodape_1,
+        )
+        self._email_rodape_1.setToolTip(
+            "Aparece no rodapé do PDF em \"Notas e Boletos encaminha para:\"")
+        form.addRow(lbl("E-mail rodapé 2"),         self._email_rodape_2)
         form.addRow(lbl("Obs. padrão no PDF"),      self._obs)
         form.addRow(lbl("Logo da empresa"),         logo_row)
         form.addRow(aviso_logo)
@@ -665,6 +676,8 @@ class NovaEmpresaDialog(QDialog):
                 self._cep.setText(cep)
         self._telefone.setText(dados.get("telefone", ""))
         self._email.setText(dados.get("email", ""))
+        self._email_rodape_1.setText(dados.get("email_rodape_1", ""))
+        self._email_rodape_2.setText(dados.get("email_rodape_2", ""))
         self._obs.setPlainText(dados.get("obs_padrao", self._OBS_BASE))
 
         cor_btn = dados.get("cor_btn")
@@ -774,6 +787,8 @@ class NovaEmpresaDialog(QDialog):
             "cep":          self._cep.text().strip(),
             "telefone":     self._telefone.text().strip(),
             "email":        self._email.text().strip(),
+            "email_rodape_1": self._email_rodape_1.text().strip(),
+            "email_rodape_2": self._email_rodape_2.text().strip(),
             "obs_padrao":   self._obs.toPlainText().strip(),
             "logo":         nome_logo,
             "cor_header":   list(rgb),
@@ -2235,10 +2250,29 @@ class PedidoWidget(QWidget):
                 if vl:
                     vl.setValue(float(item.get("valor_unitario") or 0))
 
+            # Desconto salvo no banco (reimpressão / edição)
+            try:
+                desconto_db = float(pedido.get("desconto") or 0)
+            except Exception:
+                desconto_db = 0.0
+            tipo_db = str(pedido.get("desconto_tipo") or "%").strip() or "%"
+            try:
+                valor_db = float(pedido.get("desconto_valor_digitado") or 0)
+            except Exception:
+                valor_db = 0.0
+            if desconto_db > 0:
+                if tipo_db != self._desconto_tipo:
+                    self._set_tipo_desconto(tipo_db)
+                self.spin_desconto.blockSignals(True)
+                self.spin_desconto.setValue(valor_db if valor_db > 0 else desconto_db)
+                self.spin_desconto.blockSignals(False)
+                self._desconto_tipo = tipo_db
+            else:
+                self._desconto_tipo = "%"
+                self.spin_desconto.setValue(0.0)
+                self._set_tipo_desconto("%")
+
             # Desconto e observações não existem em todos os bancos antigos.
-            self._desconto_tipo = "%"
-            self.spin_desconto.setValue(0.0)
-            self._set_tipo_desconto("%")
             self.e_material_solicitado.setText(
                 str(pedido.get("material_solicitado_por") or "")
             )
@@ -2388,6 +2422,8 @@ class PedidoWidget(QWidget):
             observacao_extra=self.e_obs.toPlainText().strip(),
             material_solicitado_por=self.e_material_solicitado.text().strip(),
             desconto=desconto_reais,
+            desconto_tipo=self._desconto_tipo,
+            desconto_valor_digitado=self.spin_desconto.value(),
             material_entregue_em=getattr(self, "_material_entregue_em_db", "") or "",
             material_ok_na_obra=int(getattr(self, "_material_ok_na_obra_db", 0) or 0),
             itens=itens,

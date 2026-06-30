@@ -12,7 +12,7 @@ from typing import Any
 # Metadados do aplicativo
 # ---------------------------------------------------------------------------
 APP_NAME = "Sistema de Pedidos — Brasul"
-APP_VERSION = "2.1.2"
+APP_VERSION = "2.1.3"
 ORGANIZATION_NAME = "Brasul Construtora"
 
 def env_bool(name: str, default: bool) -> bool:
@@ -71,6 +71,9 @@ DEFAULT_REDE_SYNC_INTERVALO_SEGUNDOS = 300
 DEFAULT_BACKUP_REDE_INTERVALO_SEGUNDOS = 900
 DEFAULT_REDE_SYNC_CONSOLIDAR_COMPLETO = True
 DEFAULT_REDE_SYNC_MESCLAR_CONSOLIDADO = False
+# Servidor de arquivos (Intranet Windows — evita aviso ao abrir atalhos na rede)
+DEFAULT_SERVIDOR_REDE_HOST = "192.168.15.250"
+DEFAULT_CONFIGURAR_INTRANET_WINDOWS = True
 
 # ---------------------------------------------------------------------------
 # Empresas faturadoras (dados dos PDFs de pedido)
@@ -84,7 +87,7 @@ EMPRESAS_FATURADORAS: dict[str, dict[str, Any]] = {
         "telefone": "(11) 3313-8220",
         "email": "compras2@brasulconstrutora.com.br",
         "email_rodape_1": "notafiscal@brasulconstrutora.com.br",
-        "email_rodape_2": "viviane@brasulconstrutora.com.br",
+        "email_rodape_2": "",
         "logo": "logo_brasul.png",
         "obs_padrao": (
             "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\n"
@@ -99,7 +102,7 @@ EMPRESAS_FATURADORAS: dict[str, dict[str, Any]] = {
         "telefone": "(11) 3313-8220",
         "email": "compras2@brasulconstrutora.com.br",
         "email_rodape_1": "notafiscal@brasulconstrutora.com.br",
-        "email_rodape_2": "viviane@brasulconstrutora.com.br",
+        "email_rodape_2": "",
         "logo": "logo_bb.png",
         "obs_padrao": (
             "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\n"
@@ -111,13 +114,16 @@ EMPRESAS_FATURADORAS: dict[str, dict[str, Any]] = {
         "razao_social": "CONSTRUTORA INTERIORANA LTDA",
         "cnpj": "10.471.329/0001-94",
         "endereco": (
-            "Av. Independência, 546 sala 93 – Cidade Alta – "
-            "Piracicaba, SP - CEP 13419-160"
+            "Rua Cel Jordão, 458 Fundos Sala 2 – Vila Paiva – "
+            "São Paulo, SP - CEP 02075-030"
         ),
+        "cidade": "São Paulo",
+        "uf": "SP",
+        "cep": "02075-030",
         "telefone": "(11) 3641-9169",
         "email": "compra2@construtorainteriorana.com",
-        "email_rodape_1": "notafiscal@construtorainteriorana.com.br",
-        "email_rodape_2": "financeiro2@construtorainteriorana.com.br",
+        "email_rodape_1": "notafiscal@construtorainteriorana.com",
+        "email_rodape_2": "",
         "logo": "logo_interiorana.png",
         "obs_padrao": (
             "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\n"
@@ -132,7 +138,7 @@ EMPRESAS_FATURADORAS: dict[str, dict[str, Any]] = {
         "telefone": "(11) 3313-8220",
         "email": "",
         "email_rodape_1": "notafiscal@brasulconstrutora.com.br",
-        "email_rodape_2": "viviane@brasulconstrutora.com.br",
+        "email_rodape_2": "",
         "logo": "logo_interbras.png",
         "obs_padrao": (
             "NOTA FISCAL DEVE SER FATURADA EM NOME DA EMPRESA\n"

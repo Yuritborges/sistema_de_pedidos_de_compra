@@ -62,6 +62,8 @@ class PedidoDTO:
     observacao_extra:   str   = ""
     material_solicitado_por: str = ""
     desconto:           float = 0.0
+    desconto_tipo:      str   = "%"       # "%" ou "R$"
+    desconto_valor_digitado: float = 0.0  # valor no spin (% ou R$)
     # Preenchido ao reemitir / editar do banco: cor da caixa "DATA PREVISTA" no PDF.
     material_entregue_em: str = ""
     # 1 só após «OK NA OBRA» no banco; lista e PDF usam isto (não inferem só pelo carimbo).

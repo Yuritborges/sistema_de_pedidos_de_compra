@@ -65,8 +65,18 @@ if (-not $SkipCurrent) {
         throw "Falha ao copiar para current (robocopy codigo $rc). Feche o SistemaPedidosV2 em todos os PCs e rode: tools\sync_current_from_dist.ps1"
     }
 
-    Write-Host "Publicando icone para atalhos (rede) ..."
+    Write-Host "Publicando icone em current\ e atualizando atalho em 0 OBRAS ..."
     & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "publicar_icone_atalho.ps1")
+    & powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "atualizar_atalho_pedidos_rede.ps1")
+
+    $stamp = Get-Date -Format "yyyy-MM-dd HH:mm"
+    $relInfo = @(
+        "build $stamp",
+        "versao fonte: veja app/config/settings.py APP_VERSION",
+        "exe: SistemaPedidosV2.exe"
+    ) -join "`n"
+    Set-Content -Path (Join-Path $cur "RELEASE.txt") -Value $relInfo -Encoding UTF8
+    Write-Host "RELEASE.txt -> build $stamp"
 }
 
 Write-Host "OK releases: $destRelease\SistemaPedidosV2.exe"

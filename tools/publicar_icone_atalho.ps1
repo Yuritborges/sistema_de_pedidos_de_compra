@@ -1,12 +1,12 @@
-# Copia .ico ao lado do .exe (Explorer/atalho na rede) e opcionalmente recria atalho na Area de Trabalho.
+# Copia .ico ao lado do .exe e recria atalhos com caminhos UNC (funciona com Z:, Y:, etc.).
 #
-# Windows costuma NAO mostrar icone embutido no .exe em pasta de rede (Z:/Y:).
-# O icone na barra de tarefas vem do programa aberto; atalho precisa apontar para o .ico explicito.
+# Atalho na pasta de rede: icone embutido no .exe (sem .ico extra em 0 OBRAS).
+# Area de trabalho: icone copiado para %LOCALAPPDATA%\BrasulPedidos (Windows nao acha .ico so na rede).
 #
 # Uso (na raiz do projeto):
 #   powershell -ExecutionPolicy Bypass -File tools\publicar_icone_atalho.ps1
 #   powershell -ExecutionPolicy Bypass -File tools\publicar_icone_atalho.ps1 -CriarAtalhoDesktop
-#   powershell -ExecutionPolicy Bypass -File tools\publicar_icone_atalho.ps1 -PastaAtalho "Y:\0 OBRAS\Atalhos"
+#   powershell -ExecutionPolicy Bypass -File tools\publicar_icone_atalho.ps1 -PastaAtalho "Z:\0 OBRAS" -NomeAtalho "SISTEMA DE PEDIDOS DE COMPRAS BRASUL"
 
 param(
     [switch]$CriarAtalhoDesktop,
@@ -17,6 +17,9 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path $PSScriptRoot -Parent
 Set-Location $Root
+
+$IconeNomeRede = "IconePedidosBrasul.ico"
+$IconeNomeLocal = "SistemaPedidosV2.ico"
 
 function Get-IconeOrigem {
     $candidatos = @(
@@ -30,14 +33,34 @@ function Get-IconeOrigem {
     throw "Nenhum .ico encontrado em assets\ (logo_brasul.ico ou iconebrasul2.ico)."
 }
 
+function Convert-PathToUnc {
+    param([string]$Path)
+    if (-not $Path) { return $Path }
+    $resolved = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+    if ($resolved -match '^\\\\') { return $resolved }
+    if ($resolved -match '^([A-Za-z]):\\') {
+        $letra = $Matches[1]
+        $psDrive = Get-PSDrive -Name $letra -ErrorAction SilentlyContinue
+        $uncRoot = ($psDrive.DisplayRoot -as [string]).TrimEnd('\')
+        if ($uncRoot -and $uncRoot -match '^\\\\') {
+            $rel = $resolved.Substring(2)  # remove "Z:"
+            return $uncRoot + $rel
+        }
+    }
+    return $resolved
+}
+
 function Publish-IconeEm {
-    param([string]$PastaDestino)
-    if (-not (Test-Path $PastaDestino)) { return $false }
+    param(
+        [string]$PastaDestino,
+        [string]$NomeArquivo = $IconeNomeLocal
+    )
+    if (-not (Test-Path $PastaDestino)) { return $null }
     $origem = Get-IconeOrigem
-    $destino = Join-Path $PastaDestino "SistemaPedidosV2.ico"
+    $destino = Join-Path $PastaDestino $NomeArquivo
     Copy-Item -Path $origem -Destination $destino -Force
     Write-Host "  Icone: $destino"
-    return $true
+    return $destino
 }
 
 function New-AtalhoPedidos {
@@ -50,16 +73,25 @@ function New-AtalhoPedidos {
     if (-not (Test-Path $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
+
+    $exeUnc = Convert-PathToUnc $ExePath
+    $iconUnc = Convert-PathToUnc $IconPath
+    $workUnc = Convert-PathToUnc (Split-Path $ExePath -Parent)
+
     $Wsh = New-Object -ComObject WScript.Shell
     $sc = $Wsh.CreateShortcut($CaminhoLnk)
-    $sc.TargetPath = $ExePath
-    $sc.WorkingDirectory = Split-Path $ExePath -Parent
+    $sc.TargetPath = $exeUnc
+    $sc.WorkingDirectory = $workUnc
     if (Test-Path $IconPath) {
-        $sc.IconLocation = "$IconPath,0"
+        $sc.IconLocation = "$iconUnc,0"
+    } elseif (Test-Path $ExePath) {
+        $sc.IconLocation = "$exeUnc,0"
     }
     $sc.Description = "Sistema de Pedidos - Brasul Construtora"
     $sc.Save()
     Write-Host "  Atalho: $CaminhoLnk"
+    Write-Host "  Destino (UNC): $($sc.TargetPath)"
+    Write-Host "  Icone (UNC):   $($sc.IconLocation)"
 }
 
 $cur = Join-Path $Root "current"
@@ -70,9 +102,8 @@ if (-not (Test-Path $exe)) {
 
 Write-Host "Publicando icone em current\ ..."
 Publish-IconeEm -PastaDestino $cur | Out-Null
-$icon = Join-Path $cur "SistemaPedidosV2.ico"
+$iconCurrent = Join-Path $cur $IconeNomeLocal
 
-# Tambem em releases mais recente (opcional)
 $releases = Join-Path $Root "releases"
 if (Test-Path $releases) {
     $ultimo = Get-ChildItem $releases -Directory -Filter "SistemaPedidosV2_*" |
@@ -83,18 +114,26 @@ if (Test-Path $releases) {
     }
 }
 
-if ($CriarAtalhoDesktop) {
-    Write-Host "Criando atalho na Area de Trabalho ..."
-    $desktop = [Environment]::GetFolderPath("Desktop")
-    New-AtalhoPedidos -CaminhoLnk (Join-Path $desktop "$NomeAtalho.lnk") -ExePath $exe -IconPath $icon
+if ($PastaAtalho) {
+    Write-Host "Atualizando atalho em $PastaAtalho (icone do .exe, sem arquivos novos) ..."
+    New-AtalhoPedidos `
+        -CaminhoLnk (Join-Path $PastaAtalho "$NomeAtalho.lnk") `
+        -ExePath $exe `
+        -IconPath $exe
 }
 
-if ($PastaAtalho) {
-    Write-Host "Criando atalho em $PastaAtalho ..."
-    New-AtalhoPedidos -CaminhoLnk (Join-Path $PastaAtalho "$NomeAtalho.lnk") -ExePath $exe -IconPath $icon
+if ($CriarAtalhoDesktop) {
+    Write-Host "Criando atalho na Area de Trabalho (icone local) ..."
+    $localDir = Join-Path $env:LOCALAPPDATA "BrasulPedidos"
+    New-Item -ItemType Directory -Path $localDir -Force | Out-Null
+    $iconLocal = Publish-IconeEm -PastaDestino $localDir -NomeArquivo $IconeNomeLocal
+    $desktop = [Environment]::GetFolderPath("Desktop")
+    New-AtalhoPedidos `
+        -CaminhoLnk (Join-Path $desktop "$NomeAtalho.lnk") `
+        -ExePath $exe `
+        -IconPath $iconLocal
 }
 
 Write-Host ""
-Write-Host "OK. Se um atalho antigo ainda mostra icone branco:"
-Write-Host "  Botao direito no atalho -> Propriedades -> Alterar icone -> escolha:"
-Write-Host "  $icon"
+Write-Host "OK. Atalhos usam caminho UNC (vale para Z:, Y: ou sem letra de unidade)."
+Write-Host "Na maquina da Thamyres: F5 na pasta ou rode tools\corrigir_atalho_icone_maquina.ps1"

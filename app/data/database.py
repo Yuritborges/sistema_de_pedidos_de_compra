@@ -544,6 +544,7 @@ def _init_db_schema_e_migracoes():
         _garantir_coluna_material_entregue_obra(conn)
         _garantir_coluna_material_ok_na_obra(conn)
         _garantir_coluna_material_solicitado_por(conn)
+        _garantir_colunas_desconto_pedidos(conn)
         _garantir_ferramentas_escola_e_historico(conn)
         migracao_uma_vez_zera_flags_ok_obra_sqlite(conn)
         migracao_uma_vez_ok_legado_todos_pedidos_sqlite(conn)
@@ -593,6 +594,19 @@ def _garantir_coluna_material_solicitado_por(conn):
         conn.execute(
             "ALTER TABLE pedidos ADD COLUMN material_solicitado_por TEXT DEFAULT ''"
         )
+
+
+def _garantir_colunas_desconto_pedidos(conn):
+    """Desconto aplicado no pedido (relatórios e reimpressão)."""
+    colunas = {
+        "desconto": "ALTER TABLE pedidos ADD COLUMN desconto REAL DEFAULT 0",
+        "desconto_tipo": "ALTER TABLE pedidos ADD COLUMN desconto_tipo TEXT DEFAULT '%'",
+        "desconto_valor_digitado": "ALTER TABLE pedidos ADD COLUMN desconto_valor_digitado REAL DEFAULT 0",
+    }
+    existentes = {row["name"] for row in conn.execute("PRAGMA table_info(pedidos)").fetchall()}
+    for nome, sql in colunas.items():
+        if nome not in existentes:
+            conn.execute(sql)
 
 
 def _garantir_ferramentas_escola_e_historico(conn):
