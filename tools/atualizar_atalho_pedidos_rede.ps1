@@ -30,21 +30,24 @@ if (-not (Test-Path $exe)) {
     throw "Nao encontrei $exe. Rode build_release.ps1 antes."
 }
 
-$obras = $null
-foreach ($letra in "ZYXWVUTSRQPONMLKJIHGFED") {
-    $p = "${letra}:\0 OBRAS"
-    if (Test-Path $p) { $obras = $p; break }
+# Mapeamento novo (2026-07): a unidade pode apontar direto para "0 obras",
+# deixando o atalho na raiz ({letra}:\). Mantem compatibilidade com o layout
+# antigo ({letra}:\0 OBRAS) e com o caminho UNC.
+$pastasCandidatas = @()
+foreach ($letra in "ZYXWVUTSRQPONMLKJIHGFED".ToCharArray()) {
+    $pastasCandidatas += "${letra}:\"
+    $pastasCandidatas += "${letra}:\0 OBRAS"
 }
-if (-not $obras) {
-    $obras = "\\192.168.15.250\arquivos brasul\0 OBRAS"
-}
-if (-not (Test-Path $obras)) {
-    throw "Pasta 0 OBRAS nao encontrada."
-}
+$pastasCandidatas += "\\192.168.15.250\arquivos brasul\0 obras"
 
-$lnk = Join-Path $obras "$NomeAtalho.lnk"
-if (-not (Test-Path $lnk)) {
-    throw "Atalho nao encontrado: $lnk"
+$lnk = $null
+foreach ($pasta in $pastasCandidatas) {
+    if (-not (Test-Path $pasta)) { continue }
+    $cand = Join-Path $pasta "$NomeAtalho.lnk"
+    if (Test-Path $cand) { $lnk = $cand; break }
+}
+if (-not $lnk) {
+    throw "Atalho '$NomeAtalho.lnk' nao encontrado (raiz da unidade, 0 OBRAS ou UNC)."
 }
 
 $exeUnc = Convert-PathToUnc $exe
