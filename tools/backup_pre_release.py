@@ -97,7 +97,9 @@ def main() -> int:
     except Exception as e:
         print(f"[AVISO] Banco local/config: {e}", flush=True)
 
-    rede = Path(r"Z:\0 OBRAS\brasul_pedidos")
+    from app.config.settings import resolver_base_rede_dir
+
+    rede = Path(resolver_base_rede_dir())
     pares = [
         ("iury", rede / "Iury" / "cotacao_iury.db"),
         ("thamyres", rede / "Thamyres" / "cotacao_thamyres.db"),

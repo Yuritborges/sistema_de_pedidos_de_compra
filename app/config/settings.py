@@ -66,7 +66,11 @@ THEME: dict[str, Any] = {
 # Rede — valores padrão (config.py pode sobrescrever por máquina)
 # ---------------------------------------------------------------------------
 DEFAULT_BASE_REDE_SUFFIX = os.path.join("0 OBRAS", "brasul_pedidos")
+# Mapeamento novo (2026-07): unidade pode apontar direto para "0 obras",
+# ficando a pasta em {letra}:\brasul_pedidos.
+DEFAULT_BASE_REDE_NOME = "brasul_pedidos"
 DEFAULT_BASE_REDE_DIR = r"Z:\0 OBRAS\brasul_pedidos"
+DEFAULT_BASE_REDE_UNC = r"\\192.168.15.250\arquivos brasul\0 OBRAS\brasul_pedidos"
 DEFAULT_REDE_SYNC_INTERVALO_SEGUNDOS = 300
 DEFAULT_BACKUP_REDE_INTERVALO_SEGUNDOS = 900
 DEFAULT_REDE_SYNC_CONSOLIDAR_COMPLETO = True
@@ -224,6 +228,9 @@ def resolver_base_rede_dir() -> str:
         candidatos.append(env)
     for letra in "ZYXWVUTSRQPONMLKJIHGFED":
         candidatos.append(os.path.join(f"{letra}:\\", DEFAULT_BASE_REDE_SUFFIX))
+        # Mapeamento novo: unidade aponta direto para a pasta "0 obras"
+        candidatos.append(os.path.join(f"{letra}:\\", DEFAULT_BASE_REDE_NOME))
+    candidatos.append(DEFAULT_BASE_REDE_UNC)
     candidatos.append(DEFAULT_BASE_REDE_DIR)
 
     vistos: set[str] = set()

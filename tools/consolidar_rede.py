@@ -9,9 +9,10 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from app.core.material_obra import migrar_coluna_material_ok_na_obra_sqlite
+from app.config.settings import resolver_base_rede_dir
 
 
-BASE_REDE = r"Z:\0 OBRAS\brasul_pedidos"
+BASE_REDE = resolver_base_rede_dir()
 DB_IURY = os.path.join(BASE_REDE, "Iury", "cotacao_iury.db")
 DB_THAMYRES = os.path.join(BASE_REDE, "Thamyres", "cotacao_thamyres.db")
 DB_REDE = os.path.join(BASE_REDE, "cotacao_rede.db")

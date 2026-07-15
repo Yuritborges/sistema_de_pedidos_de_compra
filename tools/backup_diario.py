@@ -10,8 +10,12 @@ from datetime import datetime
 from zipfile import ZipFile, ZIP_DEFLATED
 
 
-BASE_REDE = r"Z:\0 OBRAS\brasul_pedidos"
 BASE_PROJETO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_PROJETO not in sys.path:
+    sys.path.insert(0, BASE_PROJETO)
+from app.config.settings import resolver_base_rede_dir  # noqa: E402
+
+BASE_REDE = resolver_base_rede_dir()
 _ROOT = BASE_PROJETO
 
 DB_FILES = {

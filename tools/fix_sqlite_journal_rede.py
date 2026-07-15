@@ -14,7 +14,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-BASE = Path(r"Z:\0 OBRAS\brasul_pedidos")
+from app.config.settings import resolver_base_rede_dir  # noqa: E402
+
+BASE = Path(resolver_base_rede_dir())
 ARQUIVOS = [
     BASE / "Iury" / "cotacao_iury.db",
     BASE / "Thamyres" / "cotacao_thamyres.db",
