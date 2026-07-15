@@ -66,9 +66,11 @@ LOCACOES_PLANILHA_CANDIDATES = _loc["LOCACOES_PLANILHA_CANDIDATES"]
 LOCACOES_AUTO_IMPORT_SE_VAZIO = _loc["LOCACOES_AUTO_IMPORT_SE_VAZIO"]
 LOCACOES_AUTO_SYNC_PLANILHA_NOVA = _loc["LOCACOES_AUTO_SYNC_PLANILHA_NOVA"]
 
-# Cria as pastas necessárias automaticamente
-for _pasta in (PEDIDOS_DIR, COTACOES_DIR, RELACOES_DIR, BACKUP_DIR):
-    os.makedirs(_pasta, exist_ok=True)
+# Cria as pastas do comprador automaticamente — somente se a base da rede
+# existir, para nunca recriar a arvore brasul_pedidos em caminho errado.
+if os.path.isdir(BASE_REDE_DIR):
+    for _pasta in (PEDIDOS_DIR, COTACOES_DIR, RELACOES_DIR, BACKUP_DIR):
+        os.makedirs(_pasta, exist_ok=True)
 
 # Impede uso acidental deste arquivo como config em produção.
 if os.path.basename(os.path.abspath(__file__)).lower() == "config_exemplo.py":
