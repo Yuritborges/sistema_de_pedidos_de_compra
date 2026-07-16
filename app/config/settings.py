@@ -72,6 +72,12 @@ DEFAULT_BASE_REDE_NOME = "brasul_pedidos"
 # Fallback no layout NOVO — nunca recriar a estrutura antiga em 0 OBRAS.
 DEFAULT_BASE_REDE_DIR = r"Z:\brasul_pedidos"
 DEFAULT_BASE_REDE_UNC = r"\\192.168.15.250\arquivos brasul\0 obras\brasul_pedidos"
+DEFAULT_PASTA_FERRAMENTAS_NOME = "FERRAMENTAS"
+# Layout antigo (pre-remap): {letra}:\0 OBRAS\FERRAMENTAS
+DEFAULT_PASTA_FERRAMENTAS_SUFFIX = os.path.join("0 OBRAS", "FERRAMENTAS")
+# Layout novo (2026-07): unidade aponta para "0 obras" -> {letra}:\FERRAMENTAS
+DEFAULT_PASTA_FERRAMENTAS_DIR = r"Z:\FERRAMENTAS"
+DEFAULT_PASTA_FERRAMENTAS_UNC = r"\\192.168.15.250\arquivos brasul\0 obras\FERRAMENTAS"
 DEFAULT_REDE_SYNC_INTERVALO_SEGUNDOS = 300
 DEFAULT_BACKUP_REDE_INTERVALO_SEGUNDOS = 900
 DEFAULT_REDE_SYNC_CONSOLIDAR_COMPLETO = True
@@ -284,6 +290,41 @@ def resolver_base_rede_dir() -> str:
                 return caminho
     return DEFAULT_BASE_REDE_DIR
 
+
+
+
+def _candidatos_pasta_ferramentas() -> list[str]:
+    """Candidatos da pasta de fotos FERRAMENTAS: layout novo antes do antigo."""
+    env = (os.environ.get("BRASUL_FERRAMENTAS_DIR") or "").strip()
+    candidatos: list[str] = []
+    if env:
+        candidatos.append(env)
+    for letra in "ZYXWVUTSRQPONMLKJIHGFED":
+        candidatos.append(os.path.join(f"{letra}:\\", DEFAULT_PASTA_FERRAMENTAS_NOME))
+    candidatos.append(DEFAULT_PASTA_FERRAMENTAS_UNC)
+    for letra in "ZYXWVUTSRQPONMLKJIHGFED":
+        candidatos.append(os.path.join(f"{letra}:\\", DEFAULT_PASTA_FERRAMENTAS_SUFFIX))
+    candidatos.append(DEFAULT_PASTA_FERRAMENTAS_DIR)
+    return candidatos
+
+
+def resolver_pasta_ferramentas() -> str:
+    """
+    Descobre a pasta FERRAMENTAS na rede (fotos dos equipamentos).
+
+    Ordem: BRASUL_FERRAMENTAS_DIR -> layout novo ({letra}:\FERRAMENTAS) ->
+    UNC -> layout antigo ({letra}:\0 OBRAS\FERRAMENTAS) -> DEFAULT_PASTA_FERRAMENTAS_DIR.
+    """
+    vistos: set[str] = set()
+    for bruto in _candidatos_pasta_ferramentas():
+        caminho = os.path.normpath(bruto)
+        chave = caminho.lower()
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        if os.path.isdir(caminho):
+            return caminho
+    return DEFAULT_PASTA_FERRAMENTAS_DIR
 
 def caminhos_comprador(base_rede_dir: str, comprador: str) -> dict[str, str]:
     """

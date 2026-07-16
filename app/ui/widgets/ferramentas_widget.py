@@ -296,10 +296,15 @@ class RegistroFerramentaDialog(QDialog):
         return _resolver_obra_do_texto(self.e_obra.currentText(), self._obras_dict)
 
     def _selecionar_foto(self):
+        from app.config.settings import resolver_pasta_ferramentas
+
+        inicio = resolver_pasta_ferramentas()
+        if not os.path.isdir(inicio):
+            inicio = os.path.expanduser("~")
         caminho, _ = QFileDialog.getOpenFileName(
             self,
             "Selecionar foto da ferramenta",
-            os.path.expanduser("~"),
+            inicio,
             "Imagens (*.png *.jpg *.jpeg *.webp *.bmp *.gif)"
         )
         if caminho:
@@ -690,13 +695,34 @@ class FerramentasWidget(QWidget):
             return ""
         if os.path.exists(txt):
             return txt
+
+        from app.config.settings import resolver_pasta_ferramentas
+
+        pasta_rede = resolver_pasta_ferramentas()
+        nome = os.path.basename(txt.replace("/", os.sep))
+        candidatos = []
+        if nome:
+            candidatos.append(os.path.join(pasta_rede, nome))
+
+        # Remapeia caminhos antigos Z:/0 OBRAS/FERRAMENTAS/... apos remap do Z:
+        low = txt.lower().replace("/", "\\")
+        for marc in ("\\0 obras\\ferramentas\\", "\\ferramentas\\"):
+            idx = low.rfind(marc)
+            if idx >= 0:
+                rel = txt.replace("/", "\\")[idx + len(marc):]
+                if rel:
+                    candidatos.append(os.path.join(pasta_rede, rel))
+                break
+
         base = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-        candidatos = [
+        candidatos.extend([
             os.path.join(base, txt),
             os.path.join(base, "documentos", "ferramentas", txt),
+            os.path.join(base, "documentos", "ferramentas", nome),
             os.path.join(base, "assets", txt),
-        ]
-        return next((p for p in candidatos if os.path.exists(p)), "")
+            os.path.join(base, "assets", nome),
+        ])
+        return next((p for p in candidatos if p and os.path.exists(p)), "")
 
     def _ao_selecionar_linha(self):
         row = self.tabela.currentRow()
