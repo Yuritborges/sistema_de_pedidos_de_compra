@@ -363,6 +363,10 @@ def configurar_locacoes(pkg_root: str) -> dict[str, Any]:
         "LOCACOES_PLANILHA_CANDIDATES": [
             os.path.join(pkg_root, "LOCAÇÕES - LANÇAMENTO.xlsm"),
             os.path.join(pkg_root, "LOCAÇOES - LANÇAMENTO.xlsm"),
+            r"Z:\LOCAÇÕES - LANÇAMENTO.xlsm",
+            r"Z:\LOCAÇOES - LANÇAMENTO.xlsm",
+            rf"\\{DEFAULT_SERVIDOR_REDE_HOST}\arquivos brasul\0 obras\LOCAÇÕES - LANÇAMENTO.xlsm",
+            rf"\\{DEFAULT_SERVIDOR_REDE_HOST}\arquivos brasul\0 obras\LOCAÇOES - LANÇAMENTO.xlsm",
         ],
         "LOCACOES_AUTO_IMPORT_SE_VAZIO": env_bool("BRASUL_LOCACOES_AUTO", True),
         "LOCACOES_AUTO_SYNC_PLANILHA_NOVA": env_bool("BRASUL_LOCACOES_SYNC_MTIME", False),

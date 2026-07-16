@@ -31,6 +31,7 @@ from app.ui.style import (
 from config import PEDIDOS_DIR, COMPRADOR_PADRAO
 
 from app.infrastructure.prazo_entrega_imagem import prazo_entrega_dias_efetivo
+from app.infrastructure.rede_path_remap import resolver_caminho_arquivo_rede
 
 
 def _indexar_pdfs_pasta(pasta: str) -> dict:
@@ -68,7 +69,7 @@ def _indexar_pdfs_pasta(pasta: str) -> dict:
 
 
 def _resolver_caminho_pdf(numero: str, caminho_db: str, indice_pdfs: dict) -> tuple:
-    caminho = str(caminho_db or "").strip()
+    caminho = resolver_caminho_arquivo_rede(str(caminho_db or "").strip(), str(numero or "").strip())
     if caminho and os.path.exists(caminho):
         return caminho, os.path.basename(caminho)
     hit = indice_pdfs.get(str(numero or "").strip())
@@ -991,6 +992,7 @@ class PedidosWidget(QWidget):
     # ══════════════════════════════════════════════════════════════════════════
 
     def _abrir_pdf(self, caminho):
+        caminho = resolver_caminho_arquivo_rede(caminho or "")
         if not caminho or not os.path.exists(caminho):
             QMessageBox.warning(
                 self,
@@ -1047,6 +1049,7 @@ class PedidosWidget(QWidget):
         return False
 
     def _imprimir_ou_abrir_pdf(self, caminho):
+        caminho = resolver_caminho_arquivo_rede(caminho or "")
         if not caminho or not os.path.exists(caminho):
             return False
         alvo = self._preparar_pdf_local(caminho)
@@ -1074,6 +1077,7 @@ class PedidosWidget(QWidget):
             return caminho
 
     def _exportar(self, caminho_origem, nome_arquivo):
+        caminho_origem = resolver_caminho_arquivo_rede(caminho_origem or "")
         if not caminho_origem or not os.path.exists(caminho_origem):
             QMessageBox.warning(
                 self,

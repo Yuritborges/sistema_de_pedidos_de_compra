@@ -56,6 +56,7 @@ from app.data.locacoes_import import (
     registrar_planilha_na_meta,
     to_iso_date as _to_iso_date,
 )
+from app.infrastructure.rede_path_remap import resolver_caminho_arquivo_rede
 from app.ui.style import (
     BG,
     BDR,
@@ -1563,14 +1564,17 @@ class LocacoesWidget(QWidget):
                     (num,),
                 ).fetchone()
                 if pr and _clean(pr["caminho_pdf"]):
-                    return _clean(pr["caminho_pdf"]), _clean(pr["numero"])
+                    num_found = _clean(pr["numero"])
+                    pth = resolver_caminho_arquivo_rede(_clean(pr["caminho_pdf"]), num_found)
+                    return pth, num_found
 
                 for row in conn.execute(
                     "SELECT numero, caminho_pdf FROM pedidos WHERE caminho_pdf IS NOT NULL AND TRIM(caminho_pdf) != ''"
                 ):
                     n_db = _clean(row["numero"])
                     if self._compact_pedido_numero(n_db).upper() == cn:
-                        return _clean(row["caminho_pdf"]), n_db
+                        pth = resolver_caminho_arquivo_rede(_clean(row["caminho_pdf"]), n_db)
+                        return pth, n_db
         except Exception:
             pass
         return "", ""
@@ -1585,6 +1589,7 @@ class LocacoesWidget(QWidget):
         return out
 
     def _abrir_arquivo_pdf(self, path: str) -> bool:
+        path = resolver_caminho_arquivo_rede(path or "")
         path = os.path.normpath(path)
         if not os.path.isfile(path):
             return False

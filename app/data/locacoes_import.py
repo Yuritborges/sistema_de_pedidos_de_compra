@@ -154,14 +154,23 @@ def destaque_visual_linha_locacao_db(row: dict) -> str | None:
 
 def resolver_caminho_planilha_locacoes() -> str | None:
     """Primeiro caminho válido: variável de ambiente → manual em config → pasta do projeto."""
-    if LOCACOES_PLANILHA_ENV and os.path.isfile(LOCACOES_PLANILHA_ENV):
-        return os.path.normpath(LOCACOES_PLANILHA_ENV)
-    manual = (LOCACOES_PLANILHA_MANUAL or "").strip()
-    if manual and os.path.isfile(manual):
-        return os.path.normpath(manual)
-    for p in LOCACOES_PLANILHA_CANDIDATES:
-        if p and os.path.isfile(p):
+    from app.infrastructure.rede_path_remap import resolver_caminho_existente_rede
+
+    if LOCACOES_PLANILHA_ENV:
+        p = resolver_caminho_existente_rede(LOCACOES_PLANILHA_ENV)
+        if os.path.isfile(p):
             return os.path.normpath(p)
+    manual = (LOCACOES_PLANILHA_MANUAL or "").strip()
+    if manual:
+        p = resolver_caminho_existente_rede(manual)
+        if os.path.isfile(p):
+            return os.path.normpath(p)
+    for p in LOCACOES_PLANILHA_CANDIDATES:
+        if not p:
+            continue
+        cand = resolver_caminho_existente_rede(p)
+        if os.path.isfile(cand):
+            return os.path.normpath(cand)
     return None
 
 

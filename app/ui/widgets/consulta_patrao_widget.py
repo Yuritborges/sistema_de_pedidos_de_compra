@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.funcionarios import listar as listar_funcionarios
+from app.infrastructure.rede_path_remap import resolver_caminho_arquivo_rede
 
 try:
     from config import BASE_REDE_DIR
@@ -640,7 +641,10 @@ class ConsultaPatraoWidget(QWidget):
             for row in rows:
                 item = dict(row)
                 item["origem"] = (item.get("comprador") or "").strip().upper()
-                item["pdf_rede"] = item.get("caminho_pdf") or ""
+                item["pdf_rede"] = resolver_caminho_arquivo_rede(
+                    item.get("caminho_pdf") or "",
+                    str(item.get("numero") or ""),
+                )
                 resultados.append(item)
         finally:
             conn.close()
@@ -779,7 +783,7 @@ class ConsultaPatraoWidget(QWidget):
             self._set_item(row_idx, 8, self._fmt_moeda(item.get("valor_total")))
 
             path = item.get("pdf_rede", "") or ""
-            if path and os.path.exists(path):
+            if path and os.path.isfile(path):
                 btn_pdf = QPushButton("Abrir")
                 btn_pdf.setObjectName("pdfButton")
                 btn_pdf.clicked.connect(lambda _, p=path: self._abrir_pdf(p))
@@ -915,6 +919,7 @@ class ConsultaPatraoWidget(QWidget):
                 self._clear_nested(item.layout())
 
     def _abrir_pdf(self, caminho_pdf):
+        caminho_pdf = resolver_caminho_arquivo_rede(caminho_pdf or "")
         if not caminho_pdf:
             QMessageBox.warning(self, "PDF não encontrado", "Não foi possível localizar o PDF informado no banco.")
             return

@@ -697,6 +697,7 @@ class FerramentasWidget(QWidget):
             return txt
 
         from app.config.settings import resolver_pasta_ferramentas
+        from app.infrastructure.rede_path_remap import candidatos_caminho_rede
 
         pasta_rede = resolver_pasta_ferramentas()
         nome = os.path.basename(txt.replace("/", os.sep))
@@ -704,15 +705,11 @@ class FerramentasWidget(QWidget):
         if nome:
             candidatos.append(os.path.join(pasta_rede, nome))
 
-        # Remapeia caminhos antigos Z:/0 OBRAS/FERRAMENTAS/... apos remap do Z:
-        low = txt.lower().replace("/", "\\")
-        for marc in ("\\0 obras\\ferramentas\\", "\\ferramentas\\"):
-            idx = low.rfind(marc)
-            if idx >= 0:
-                rel = txt.replace("/", "\\")[idx + len(marc):]
-                if rel:
-                    candidatos.append(os.path.join(pasta_rede, rel))
-                break
+        for cand in candidatos_caminho_rede(txt):
+            candidatos.append(cand)
+            rel_nome = os.path.basename(cand)
+            if rel_nome:
+                candidatos.append(os.path.join(pasta_rede, rel_nome))
 
         base = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
         candidatos.extend([
