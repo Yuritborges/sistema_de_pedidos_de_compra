@@ -240,8 +240,8 @@ def _cidade_uf_empresa(emp: dict):
 
 
 def _dados_endereco_cobranca(emp: dict) -> dict[str, str]:
-    """Endereço de cobrança normalizado — mesmo formato em todos os PDFs."""
-    end_cob_bruto = str(emp.get("endereco") or "").strip()
+    """Endereço de cobrança normalizado — logradouro sem cidade/UF/CEP (campos separados)."""
+    end_cob_bruto = re.sub(r"\s+", " ", str(emp.get("endereco") or "").strip())
     cep_cob = str(emp.get("cep") or "").strip() or _cep_empresa(emp)
 
     cidade = str(emp.get("cidade") or "").strip()
@@ -254,14 +254,29 @@ def _dados_endereco_cobranca(emp: dict) -> dict[str, str]:
             uf = uf_p
 
     end_cob = end_cob_bruto
-    if cidade:
-        low_end = end_cob.lower()
-        low_cid = str(cidade).strip().lower()
-        idx = low_end.rfind(low_cid)
-        if idx > 0:
-            tail = low_end[idx + len(low_cid):].strip()
-            if not tail or tail in (",", "-", "–"):
-                end_cob = end_cob[:idx].rstrip(" ,–-")
+    # Remove CEP do logradouro (fica só no campo CEP)
+    end_cob = re.sub(
+        r"\s*[-–,]?\s*CEP[:\s]*[0-9.\-]+",
+        "",
+        end_cob,
+        flags=re.I,
+    ).strip()
+    # Remove "Cidade, UF" / "Cidade UF" do final (já tem campos próprios)
+    if cidade and uf:
+        end_cob = re.sub(
+            rf"\s*[-–,]?\s*{re.escape(cidade)}\s*[,/]?\s*{re.escape(uf)}\s*$",
+            "",
+            end_cob,
+            flags=re.I,
+        ).strip()
+    elif cidade:
+        end_cob = re.sub(
+            rf"\s*[-–,]?\s*{re.escape(cidade)}\s*$",
+            "",
+            end_cob,
+            flags=re.I,
+        ).strip()
+    end_cob = end_cob.rstrip(" ,–-")
 
     return {
         "endereco": end_cob,
@@ -763,7 +778,7 @@ class PedidoCompraGenerator:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _bloco_cob(self, c, dto, emp, y, alt):
-        """Endereço de cobrança — mesma normalização do cabeçalho."""
+        """Endereço de cobrança — logradouro + CEP/cidade/UF/comprador sem quebra errada."""
         c.setStrokeColor(C_LINHA); c.setLineWidth(0.8)
         c.rect(M, y-alt, CW, alt, fill=0, stroke=1)
 
@@ -773,22 +788,30 @@ class PedidoCompraGenerator:
         cidade = cob["cidade"]
         uf = cob["uf"]
 
-        def par(lbl, val, x, yy):
+        def par(lbl, val, x, yy, max_w=None):
             c.setFont("Helvetica-Bold", 7.5); c.setFillColor(C_ESCURO)
             c.drawString(x, yy, lbl)
             c.setFont("Helvetica", 7.5); c.setFillColor(C_PRETO)
             off = c.stringWidth(lbl, "Helvetica-Bold", 7.5) + 2
-            c.drawString(x+off, yy, str(val or "—")[:50])
+            txt = str(val or "—")
+            if max_w is not None:
+                while txt and c.stringWidth(txt, "Helvetica", 7.5) > max_w - off:
+                    txt = txt[:-1]
+                if txt != str(val or "—") and len(txt) > 1:
+                    txt = txt[:-1] + "…"
+            c.drawString(x + off, yy, txt)
 
-        par("Endereço de Cobrança:", end_cob[:72], M+3*mm,    y-5*mm)
-        if len(end_cob) > 72:
-            c.setFont("Helvetica", 7.5)
-            c.setFillColor(C_PRETO)
-            c.drawString(M+3*mm, y-8.2*mm, end_cob[72:145])
-        par("CEP:",      cep_cob,   M+CW*0.75,                y-5*mm)
-        par("Cidade:",   cidade,    M+3*mm,                    y-11*mm)
-        par("UF:",       uf,        M+CW*0.5,                  y-11*mm)
-        par("Comprador:", dto.comprador, M+CW*0.72,            y-11*mm)
+        x0 = M + 3 * mm
+        y1 = y - 5 * mm
+        y2 = y - 11 * mm
+        x_cep = M + CW * 0.72
+        # Logradouro ocupa a faixa até antes do CEP (evita cortar no meio e sobrar pedaço na linha de baixo)
+        largura_end = x_cep - x0 - 4 * mm
+        par("Endereço de Cobrança:", end_cob, x0, y1, max_w=largura_end)
+        par("CEP:", cep_cob, x_cep, y1)
+        par("Cidade:", cidade, x0, y2)
+        par("UF:", uf, M + CW * 0.42, y2)
+        par("Comprador:", dto.comprador, x_cep, y2)
 
         return y - alt - 1*mm
 
@@ -835,7 +858,7 @@ class PedidoCompraGenerator:
         c.setFillColor(C_ESCURO)
         c.drawRightString(W - M - 3 * mm, y1, f"Estimativa de vencimento: {dto.estimativa_vencimento}")
 
-        # Linha 2: Prazo + Data prevista (caixa alinhada ao quadro do bloco)
+        # Linha 2: Prazo + Data prevista (rótulo e caixa na MESMA linha)
         y2 = y_linha(11.0)
         c.setFont("Helvetica-Bold", 8)
         c.setFillColor(C_ESCURO)
@@ -844,24 +867,25 @@ class PedidoCompraGenerator:
         c.setFillColor(C_PRETO)
         c.drawString(M + 42 * mm, y2, f"{dto.prazo_entrega} dias")
 
-        c.setFont("Helvetica-Bold", 8)
+        box_w = 26 * mm
+        box_h = min(5.8 * mm, alt * 0.42)
+        box_x = W - M - box_w - 2 * mm
+        box_bottom = y2 - 1.7 * mm
+        c.setFont("Helvetica-Bold", 7.5)
         c.setFillColor(C_ESCURO)
-        c.drawRightString(W - M - 30 * mm, y2, "DATA PREVISTA DA ENTREGA")
+        c.drawRightString(box_x - 2 * mm, y2, "DATA PREVISTA DA ENTREGA")
 
-        box_w = 25 * mm
-        box_h = alt * (6.5 / base_ref)
-        box_pad = alt * (1.0 / base_ref)
-        box_x = W - M - 28 * mm
-        box_bottom = y0 + box_pad
         ok_caixa = int(getattr(dto, "material_ok_na_obra", 0) or 0) != 0
         c.setStrokeColor(C_LINHA)
         c.setFillColor(C_PREVISTA_COM_OK if ok_caixa else C_PREVISTA_SEM_OK)
         c.rect(box_x, box_bottom, box_w, box_h, fill=1, stroke=1)
         c.setFont("Helvetica-Bold", 10)
         c.setFillColor(C_PRETO)
-        cx_data = box_x + box_w / 2
-        text_y = box_bottom + box_h / 2 - 1.1 * mm
-        c.drawCentredString(cx_data, text_y, dto.data_prevista_entrega)
+        c.drawCentredString(
+            box_x + box_w / 2,
+            box_bottom + box_h / 2 - 1.1 * mm,
+            dto.data_prevista_entrega,
+        )
 
         if tem_linha_pix:
             c.setStrokeColor(C_LINHA)
