@@ -55,7 +55,8 @@ def candidatos_caminho_rede(caminho: str) -> list[str]:
             break
 
     if "\\0 obras\\" in low and not m:
-        stripped = re.sub(r"\\0 obras\\", "\\", slash, count=1, flags=re.IGNORECASE)
+        idx = low.find("\\0 obras\\")
+        stripped = slash[:idx] + "\\" + slash[idx + len("\\0 obras\\"):]
         _add(stripped)
 
     return out
@@ -92,19 +93,20 @@ def resolver_caminho_arquivo_rede(caminho: str, numero_pedido: str = "") -> str:
             if os.path.isfile(p):
                 return p
         if os.path.isdir(pasta):
-            cn = re.sub(r"[^0-9A-Z]", "", num.upper())
+            alvo = num.upper()
             try:
                 with os.scandir(pasta) as it:
                     for entry in it:
                         if not entry.is_file() or not entry.name.lower().endswith(".pdf"):
                             continue
-                        if cn and cn in re.sub(r"[^0-9A-Z]", "", entry.name.upper()):
+                        nu = entry.name.upper()
+                        if nu.startswith(f"PC-{alvo}-") or nu == f"PC-{alvo}.PDF":
                             return entry.path
             except OSError:
                 pass
 
     cands = candidatos_caminho_rede(caminho)
-    return cands[0] if cands else txt
+    return cands[0] if cands else str(caminho or "")
 
 
 def resolver_caminho_existente_rede(caminho: str) -> str:
